@@ -77,11 +77,15 @@ public class SimulationTable {
         BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
 
         BasicDBObject actionMapObject = new BasicDBObject();
-        for(HandSituation hs : simulationTable.actionMap.keySet()){
-            String keyAsString = hs.getStringFromEncoding();
-            DecisionCell dc = simulationTable.actionMap.get(hs);
-            BasicDBObject decisionCellObject = dc.getDBObject();
-            actionMapObject.append(keyAsString, decisionCellObject);
+        for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
+            for(HandSituation hs : simulationTable.actionMap.keySet()){
+                if(orderedHS.equals(hs)) {
+                    String keyAsString = hs.getStringFromEncoding();
+                    DecisionCell dc = simulationTable.actionMap.get(hs);
+                    BasicDBObject decisionCellObject = dc.getDBObject();
+                    actionMapObject.append(keyAsString, decisionCellObject);
+                }
+            }
         }
 
         BasicDBObject query = new BasicDBObject();

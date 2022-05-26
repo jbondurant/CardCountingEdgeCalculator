@@ -48,7 +48,6 @@ public class PayoffTable {
         GranularCount gc = er.granularCount;
         double payoff = er.payoff;
 
-        CountPayoff countPayoff = null;
         for(CountPayoff cp : countPayoffs){
             if(cp.granularCount.equals(gc)){
                 cp.actionPayoff.insertEvent(payoff);

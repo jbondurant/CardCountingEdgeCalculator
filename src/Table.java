@@ -19,7 +19,7 @@ public class Table {
     }
 
 
-    public Table halfDeepCopy(){
+    /*public Table halfDeepCopy(){
         CountMethod cmCopy = this.countMethod;
         Table tCopy = new Table(1, cmCopy);
 
@@ -29,14 +29,23 @@ public class Table {
         tCopy.runningCount = this.runningCount;
         return tCopy;
 
-    }
+    }*/
 
-    public GranularCount getGranularCount(int deckSize, double countGranularity){
+    public GranularCount getGranularCount(int deckSize, double countGranularity, int minC, int maxC){
         double numDecksRoundedUpDouble = (double) CountMethod.getNumDecksRoundedUp(gameDeck.cards.size(), countMethod.deckEstimationPrecision, deckSize);
         double runningCountDouble = (double) runningCount;
         double trueCount = runningCount / numDecksRoundedUpDouble;
         double grainTrueCount = GranularCount.roundToGrain(trueCount, countGranularity);
-        return new GranularCount(grainTrueCount);
+        GranularCount granularCount = new GranularCount(grainTrueCount);
+
+        if(granularCount.getDoubleFromCount() < minC){
+            granularCount = new GranularCount((double) minC);
+        }
+        else if(granularCount.getDoubleFromCount()> maxC){
+            granularCount = new GranularCount((double) maxC);
+        }
+
+        return granularCount;
     }
 
     //TODO wow this is bad
@@ -85,7 +94,7 @@ public class Table {
         playerCards.add(c2);
         runningCount += countMethod.rankToCount.get(c1.rank);
         runningCount += countMethod.rankToCount.get(c2.rank);
-        randomishPlayer.playerHands.add(new PlayerHand(playerCards));
+        randomishPlayer.playerHands.playerHand = new PlayerHand(playerCards);
     }
 
     public void givePlayer2CardsThatFitHandEncodingAndCount(HandEncoding he, HashMap<HandEncoding, ArrayList<DoubleRanks>> handEncodingToDoubleRanks){
@@ -111,7 +120,7 @@ public class Table {
                 break;
             }
         }
-        randomishPlayer.playerHands.add(new PlayerHand(handResult));
+        randomishPlayer.playerHands.playerHand = new PlayerHand(handResult);
     }
 
     public void givePlayer3CardsThatFitHandEncodingAndCount(HandEncoding he, ArrayList<TripleRanks> allHard20PossibleTripleRanks, ArrayList<TripleRanks> allHard21PossibleTripleRanks){
@@ -149,7 +158,8 @@ public class Table {
                 break;
             }
         }
-        randomishPlayer.playerHands.add(new PlayerHand(handResult));
+        randomishPlayer.playerHands.playerHand = new PlayerHand(handResult);
+
     }
 
     /*
