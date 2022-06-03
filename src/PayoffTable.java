@@ -44,6 +44,17 @@ public class PayoffTable {
     }
 
 
+    public void insertEventSmart(EventResult er){
+        GranularCount gc = er.granularCount;
+        double payoff = er.payoff;
+
+        for(CountPayoff cp : countPayoffs){
+            if(cp.granularCount.equals(gc)){
+                cp.actionPayoff.insertEventSmart(payoff);
+            }
+        }
+    }
+
     public void insertEvent(EventResult er){
         GranularCount gc = er.granularCount;
         double payoff = er.payoff;

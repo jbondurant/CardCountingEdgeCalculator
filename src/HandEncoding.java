@@ -141,6 +141,11 @@ public class HandEncoding {
         return softCount;
     }
 
+    public static ArrayList<TripleRanks> allPossibleTripleRanksForSoft21(CompositeCardSource multiDeck){
+        HandEncoding he = new HandEncoding(true, false, 11);
+        return allPossibleTripleRanksForHandEncoding(multiDeck, he);
+    }
+
     public static ArrayList<TripleRanks> allPossibleTripleRanksForHard21(CompositeCardSource multiDeck){
         HandEncoding he = new HandEncoding(false, false, 21);
         return allPossibleTripleRanksForHandEncoding(multiDeck, he);

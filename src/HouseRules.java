@@ -41,12 +41,12 @@ public class HouseRules {
         hr.penetrationPercentage = penPercent;
         hr.hitsOnSoft17 = true;
         hr.blackjackPayout = 1.5;
-        hr.numSplitsNotAces = 3;// could also be 4
-        hr.numSplitsAces = 1;//
+        hr.numSplitsNotAces = 3;
+        hr.numSplitsAces = 1;
         hr.ranksThatCanBeDoubledDownAfterSplit = Rank.getSetAllRanksExceptAce();
         hr.canHitAfterSplittingAces = false;
         hr.maxNumCardsAfterSplittingAces = 1;
-        hr.dealerPeeksBlackjack = true;// I think
+        hr.dealerPeeksBlackjack = true;
 
         hr.blackjackOnSplitPairs = true;
         hr.possibleSideBets = EnumSet.of(PlayerSideBetMove.Insurance);

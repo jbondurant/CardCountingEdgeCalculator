@@ -1,9 +1,30 @@
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Random;
 
 public class GranularCount implements Comparable<GranularCount> {
     int units;
     int firstDecimal;
     int secondDecimal;
+
+    public static int numGranCount(double countPrecision, int minC, int maxC){
+        double interval = (double) (maxC - minC);
+        return (int) (interval / countPrecision + 1.0);
+    }
+
+    public static GranularCount getRandomCount(int minC, int maxC, double countPrecision){
+        ArrayList<GranularCount> allCounts = new ArrayList<>();
+        double currentCount = minC;
+        while(currentCount <= maxC){
+            GranularCount gc = new GranularCount(currentCount);
+            allCounts.add(gc);
+            currentCount += countPrecision;
+        }
+        Random rand = new Random();
+        GranularCount randomCount = allCounts.get(rand.nextInt(allCounts.size()));
+        return randomCount;
+    }
 
     public String countToCellString(){
         String result = "";
@@ -34,6 +55,26 @@ public class GranularCount implements Comparable<GranularCount> {
         if(units == minC || units == maxC){
             if(firstDecimal !=0 || secondDecimal != 0){
                 return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean forceCountIntoBoundaries(int minC, int maxC){
+        if(units < minC){
+            units = minC;
+            firstDecimal = 0;
+            secondDecimal = 0;
+        }
+        if(units > maxC){
+            units = maxC;
+            firstDecimal = 0;
+            secondDecimal = 0;
+        }
+        if(units == minC || units == maxC){
+            if(firstDecimal !=0 || secondDecimal != 0){
+                firstDecimal = 0;
+                secondDecimal = 0;
             }
         }
         return true;

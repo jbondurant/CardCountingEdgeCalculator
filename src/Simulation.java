@@ -13,19 +13,19 @@ public class Simulation {
 
         //TODO select option
         //op1
-        runMetaSimulation();
+        //runMetaSimulation();
 
         //op2
         //printTables();
 
         //op3
-        //runMetaPayoffFinderSim();
+        runMetaPayoffFinderSim();
     }
 
 
 
     public static Simulation initializeSimulation() throws UnknownHostException {
-        Simulation s = getSimulation3();
+        Simulation s = getSimulation2();
         return s;
     }
 
@@ -46,11 +46,11 @@ public class Simulation {
         HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
         CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
         double countGranularity = 1.0;
-        int minHitsPerDecisionCellCountA = 30000;//move to at least 500
-        int minHitsPerDecisionCellCountB = 30000;
+        int minHitsPerDecisionCellCount = 250000;//move to at least 500
+        int minMetaDealer = 250000;
         int minCountish = -0;//move perhaps to -5
         int maxCountish = 0;//move perhaps to 5
-        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCountA, minHitsPerDecisionCellCountB, minCountish, maxCountish);
+        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCount, minMetaDealer, minCountish, maxCountish);
         //actionmap??
         SimulationTable simulationTable = new SimulationTable(simulationParameters, name);
         Simulation simulation = new Simulation(simulationTable, name);
@@ -65,79 +65,22 @@ public class Simulation {
         HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
         CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
         double countGranularity = 1.0;
-        int minHitsPerDecisionCellCountA = 80000;//move to at least 500
-        int minHitsPerDecisionCellCountB = 80000;
-        int minCountish = -0;//move perhaps to -5
-        int maxCountish = 0;//move perhaps to 5
-        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCountA, minHitsPerDecisionCellCountB, minCountish, maxCountish);
+        int minHitsPerDecisionCellCount = 10000;//move to at least 500
+        int minMetaDealer = 15000;
+        int minCountish = -5;//move perhaps to -5
+        int maxCountish = 5 ;//move perhaps to 5
+        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCount, minMetaDealer, minCountish, maxCountish);
         //actionmap??
         SimulationTable simulationTable = new SimulationTable(simulationParameters, name);
         Simulation simulation = new Simulation(simulationTable, name);
         return simulation;
-    }
-    public static Simulation getSimulation3(){
-        String namePreHex = "testTable3";
-        String name = fixName(namePreHex);
-        int penPercent = 75;
-        int deckPrecision = 1;
-        HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
-        CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
-        double countGranularity = 1.0;
-        int minHitsPerDecisionCellCountA = 2000;//move to at least 500
-        int minHitsPerDecisionCellCountB = 2000;
-        int minCountish = -6;//move perhaps to -5
-        int maxCountish = 6;//move perhaps to 5
-        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCountA, minHitsPerDecisionCellCountB, minCountish, maxCountish);
-        //actionmap??
-        SimulationTable simulationTable = new SimulationTable(simulationParameters, name);
-        Simulation simulation = new Simulation(simulationTable, name);
-        return simulation;
-    }
-
-
-    public static Simulation getSimulation5() throws UnknownHostException {
-        String namePreHex2= "testTable4";
-        String name2 = fixName(namePreHex2);
-
-        int penPercent = 75;
-        int deckPrecision = 1;
-        HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
-        CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
-        double countGranularity = 1.0;
-        int minHitsPerDecisionCellCountA = 3000;//move to at least 500
-        int minHitsPerDecisionCellCountB = 3000;
-        int minCountish = -0;//move perhaps to -5
-        int maxCountish = 0;//move perhaps to 5
-        SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCountA, minHitsPerDecisionCellCountB, minCountish, maxCountish);
-        //actionmap??
-        SimulationTable simulationTable2 = new SimulationTable(simulationParameters, name2);
-        simulationTable2 = SimulationTable.getTable(name2, simulationTable2);
-        Simulation simulation2 = new Simulation(simulationTable2, name2);
-        HashMap<HandSituation, DecisionCell> updatedActionMap = new HashMap<>();
-        HandEncoding split10sEncoding = new HandEncoding(false, true, 20);
-        for(HandSituation hs : HandSituation.getOrderedSituations()){
-            if(!hs.playerHE.equals(split10sEncoding)){
-                updatedActionMap.put(hs, simulation2.simulationTable.actionMap.get(hs));
-            }
-            else {
-                break;
-            }
-        }
-        simulation2.simulationTable.actionMap = updatedActionMap;
-
-        String namePreHex3= "testTable5";
-        String name3 = fixName(namePreHex3);
-        simulation2.name = name3;
-        simulation2.simulationTable.name = name3;
-        Simulation simulation3 = simulation2;
-
-        return simulation3;
-
     }
 
 
     public static void runMetaSimulation() throws InterruptedException, UnknownHostException {
         Simulation simulation = initializeSimulation();
+
+
         int numMinutes = 10;
         int numTenMinutes = 0;
         for(int i=0; i<100; i++) {
@@ -159,13 +102,13 @@ public class Simulation {
 
     public static void runMetaPayoffFinderSim() throws InterruptedException, UnknownHostException {
         Simulation simulation = initializeSimulation();
-        int numMinutes = 3;
-        int numThreeMinutes = 0;
-        for(int i=0; i<100; i++){
-            numThreeMinutes++;
+        int numMinutes = 1;
+        int numOneMinutes = 0;
+        for(int i=0; i<10; i++){
+            numOneMinutes++;
             simulation.runPayoffFinderSim(numMinutes);
             Thread.sleep(10 * 1000);
-            System.out.println("ran " + numThreeMinutes + " three minute sessions");
+            System.out.println("ran " + numOneMinutes + " one minute sessions");
         }
     }
 
@@ -177,7 +120,7 @@ public class Simulation {
         name = n;
     }
 
-    public HandSituation handSituationToPlayV3(int minHitsPerDecisionCellCountA, int minHitsPerDecisionCellCountB, int minCountish, int maxCountish, double countPrecision){
+    public HandSituation handSituationToPlayV3(int minHitsPerDecisionCellCount, int minCountish, int maxCountish, double countPrecision){
         HashMap<HandSituation, DecisionCell> am = this.simulationTable.actionMap;
         ArrayList<HandSituation> orderedHS =  HandSituation.getOrderedSituations();
 
@@ -190,7 +133,7 @@ public class Simulation {
             }
             DecisionCell dc = am.get(hs);
             //this should work for using numGranCount since count is similar to a normal distribution
-            if(dc.countToMoveChoice.keySet().size() < dc.numGranCount(countPrecision, minCountish, maxCountish)){
+            if(dc.countToMoveChoice.keySet().size() < GranularCount.numGranCount(countPrecision, minCountish, maxCountish)){
                 return hs;
             }
             for(GranularCount gc : dc.countToMoveChoice.keySet()){
@@ -198,18 +141,15 @@ public class Simulation {
                     continue;
                 }
                 MoveChoices mcs = dc.countToMoveChoice.get(gc);
+                boolean oneMoveHitMaxNeededForCurrCount = false;
                 for(PlayerMove pm : mcs.actionPayoffs.keySet()){
                     ActionPayoff ap = mcs.actionPayoffs.get(pm);
-                    if(initialEncodings.contains(handEnc)) {
-                        if (ap.numTimes < minHitsPerDecisionCellCountA) {
-                            return hs;
-                        }
+                    if (ap.numTimes >= minHitsPerDecisionCellCount) {
+                        oneMoveHitMaxNeededForCurrCount = true;
                     }
-                    else{
-                        if (ap.numTimes < minHitsPerDecisionCellCountB) {
-                            return hs;
-                        }
-                    }
+                }
+                if(!oneMoveHitMaxNeededForCurrCount){
+                    return hs;
                 }
             }
         }
@@ -235,34 +175,52 @@ public class Simulation {
                 continue;
             }
 
-            payoffTable.insertEvent(eventResult);
+            payoffTable.insertEventSmart(eventResult);
         }
         System.out.println("Average payoff:\t" + payoffTable.getAveragePayoff());
         PayoffTable.saveTable(payoffTable);
     }
 
 
-
     //need to code it so that I can start with partial SimulationParameters
     public void runSimulation(int numMinutes) throws UnknownHostException, InterruptedException {
         Date start = new Date();
         Date end = new Date(start.getTime() + numMinutes * 60 * 1000);
-        //TODO may 24 undo comment
+        double oddsBestMove = 0.5;
+        double oddsSecondBestMove = 0.3;
         simulationTable = SimulationTable.getTable(name, this.simulationTable);
         SimulationParameters sp = simulationTable.simulationParameters;
-        int mhpdcca = sp.minHitsPerDecisionCellCountA;
-        int mhpdccb = sp.minHitsPerDecisionCellCountB;
+
+        HashMap<PlayerDealerBestScore, Outcome> outcomeFinder = PlayerDealerBestScore.initializeOutcomeFinderForTable(simulationTable.simulationParameters.houseRules);
+
         int minC = sp.minCountish;
         int maxC = sp.maxCountish;
         double countPrecision = sp.countGranularity;
+
+        int minMetaDealer = sp.minMetaDealer;
+        boolean dealerPeeksForBlackjack = sp.houseRules.dealerPeeksBlackjack;
+        MetaDealer md = MetaDealer.getMetaDealer(name);
+        while((!md.isCompleted(minMetaDealer, minC, maxC, countPrecision)) && (new Date()).before(end)){
+            MetaDealerEventResult mdEventResult = runSingleMetaDealerEvent();
+            GranularCount mdEventGC = mdEventResult.granularCount;
+            mdEventGC.forceCountIntoBoundaries(minC, maxC);
+            md.insertEvent(mdEventResult, dealerPeeksForBlackjack);
+        }
+        md.saveToDB();
+
+
+        int mhpdcc = sp.minHitsPerDecisionCellCount;
 
         CompositeCardSource multiDeckExample = this.table.gameDeck.deepCopy();
         HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr = HandEncoding.handEncodingToDoubleRanks(multiDeckExample);
         ArrayList<TripleRanks> ah20ptr = HandEncoding.allPossibleTripleRanksForHard20(multiDeckExample);
         ArrayList<TripleRanks> ah21ptr = HandEncoding.allPossibleTripleRanksForHard21(multiDeckExample);
-
-        while(this.handSituationToPlayV3(mhpdcca, mhpdccb, minC, maxC, countPrecision) != null && (new Date()).before(end)){
-            EventResult eventResult = runSingleEvent(hetdr, ah20ptr, ah21ptr);
+        ArrayList<TripleRanks> as21ptr = HandEncoding.allPossibleTripleRanksForSoft21(multiDeckExample);
+        while(this.handSituationToPlayV3(mhpdcc, minC, maxC, countPrecision) != null && (new Date()).before(end)){
+            EventResult eventResult = runSingleEvent(hetdr, ah20ptr, ah21ptr, as21ptr, outcomeFinder, md, oddsBestMove, oddsSecondBestMove);
+            if(eventResult == null){
+                continue;
+            }
             GranularCount eventGC = eventResult.granularCount;
             if(!eventGC.isCountInBoundaries(minC, maxC)){
                 //this makes a count of say 3 for [-3, 3] as a count of 3+.
@@ -273,11 +231,9 @@ public class Simulation {
                     eventResult.granularCount = new GranularCount((double) maxC);
                 }
 
+            }
+            simulationTable.insertEvent(eventResult);
 
-            }
-            if(eventResult.payoff > -25.0){
-                simulationTable.insertEvent(eventResult);
-            }
 
 
 
@@ -333,21 +289,44 @@ public class Simulation {
         }
         DecisionCell dc = simulationTable.actionMap.get(hs);
         if(dc == null){
-            int k = 1;
+            return null;
         }
         MoveChoices mcs = dc.countToMoveChoice.get(gc);
+        if(mcs == null){
+            //System.out.println("hmm");
+            return null;
+        }
         PlayerMove pm = mcs.getActionWithBestPayoff(legalMoves);
         return pm;
     }
 
-
-
-    public EventResult runSingleEvent(HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr, ArrayList<TripleRanks> ah20ptr, ArrayList<TripleRanks> ah21ptr){
+    public MetaDealerEventResult runSingleMetaDealerEvent(){
         HouseRules hr = simulationTable.simulationParameters.houseRules;
         table = new Table(hr.numDecks, simulationTable.simulationParameters.countMethod);
-        setCards(hetdr, ah20ptr, ah21ptr);
+        setCardsSmart();
+
+        int deckSize = table.gameDeck.startingSize / hr.numDecks;
+        int minC = this.simulationTable.simulationParameters.minCountish;
+        int maxC = this.simulationTable.simulationParameters.maxCountish;
+        GranularCount granularCount = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
+        boolean hitsOnSoft17 = hr.hitsOnSoft17;
+        table.dealerPlay(hitsOnSoft17);
+        int dealerRevealedCardScore = table.dealer.revealedCards.get(0).rank.getRankpoints();
+        boolean dealerHasBlackjack = table.dealer.dealerHasBlackjack();
+        HandEncoding dealerHE = new HandEncoding(table.dealer.getDealerCards());
+        int dealerBestScore = dealerHE.getBestScore();
+
+        return new MetaDealerEventResult(granularCount, dealerBestScore, dealerHasBlackjack, dealerRevealedCardScore);
+    }
+
+
+    public EventResult runSingleEvent(HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr, ArrayList<TripleRanks> ah20ptr, ArrayList<TripleRanks> ah21ptr, ArrayList<TripleRanks> as21ptr, HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealer metaDealer, double oddsBestMove, double oddsSecondBestMove){
+        HouseRules hr = simulationTable.simulationParameters.houseRules;
+        table = new Table(hr.numDecks, simulationTable.simulationParameters.countMethod);
+        setCards(hetdr, ah20ptr, ah21ptr, as21ptr);
 
         HandEncoding playerHE = new HandEncoding(table.randomishPlayer.playerHands.playerHand.handCards);
+
         //System.out.println(playerHE.getStringFromEncoding());
         boolean canDouble = table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canSplit = playerHE.canSplit;
@@ -359,20 +338,42 @@ public class Simulation {
             canHit = false;
         }
 
-
-
-        PlayerMove playerMove = PlayerMove.getMove(canDouble, canSplit, canSurrender, canHit);
-
         Rank dealerRevealedRank = table.dealer.revealedCards.get(0).rank;
         int deckSize = table.gameDeck.startingSize / hr.numDecks;
         int minC = this.simulationTable.simulationParameters.minCountish;
         int maxC = this.simulationTable.simulationParameters.maxCountish;
         GranularCount granularCount = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
 
-        double payoff = doPlayerMoveAndGetPayoff(playerMove, table.randomishPlayer.playerHands);
+        HandSituation playerHS = new HandSituation(playerHE, dealerRevealedRank.getRankpoints());
+        EnumSet<PlayerMove> legalMoves = PlayerMove.getLegalMoves(canDouble, canSplit, canSurrender, canHit);
+        PlayerMove bestMove = getBestPlayerMove(playerHS, granularCount, legalMoves, minC, maxC);
+        PlayerMove secondBestMove = PlayerMove.Stand;
+        if(bestMove == null){
+            bestMove = PlayerMove.Stand;
 
+        }
+        else {
+            legalMoves.remove(bestMove);
+            secondBestMove = getBestPlayerMove(playerHS, granularCount, legalMoves, minC, maxC);
+            if(secondBestMove == null){
+                secondBestMove = PlayerMove.Stand;
+            }
+        }
+
+        PlayerMove playerMove = PlayerMove.getEpsilonMove(canDouble, canSplit, canSurrender, canHit, bestMove, secondBestMove, oddsBestMove, oddsSecondBestMove);
+
+
+        if(table.dealer.dealerHasBlackjack() && hr.dealerPeeksBlackjack){
+            return null;
+        }
+
+        HandEncoding soft21 = new HandEncoding(true, false, 11);
+        if(playerHE.equals(soft21) && playerMove.equals(PlayerMove.Stand)){
+            int k = 1;
+        }
+
+        double payoff = doPlayerMoveAndGetPayoff(playerMove, table.randomishPlayer.playerHands, outcomeFinder, metaDealer);
         EventResult eventResult = new EventResult(payoff, playerHE, dealerRevealedRank, playerMove, granularCount);
-
         return eventResult;
     }
 
@@ -392,14 +393,16 @@ public class Simulation {
                 if(!this.table.randomishPlayer.playerHasBlackjack()){
                     return -1.0;
                 }
-                return 0.0;
+                //return 0.0;
+                //todo june 3 remove this
+                return 0.00001;
             }
         }
 
         if(firstMove.equals(PlayerMove.Stand)){
             table.dealerPlay(hitsOnSoft17);
-            Outcome outcome = playerOutcomeVsDealer(table.randomishPlayer, handNode, this.table.dealer, hr.dealerPeeksBlackjack, hr.pushOnDealerHard22, hr.player21AlwaysWins, true);
-            return outcomePayoff(outcome, hr.blackjackPayout);
+            Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
+            return Outcome.outcomePayoff(outcome, hr.blackjackPayout);
         }
         else if(firstMove.equals(PlayerMove.Hit)){
             //i'll need a while loop and i'll need to remove double from my nex possible moves
@@ -428,8 +431,8 @@ public class Simulation {
                 }
                 else if(bestMove.equals(PlayerMove.Stand)){
                     table.dealerPlay(hitsOnSoft17);
-                    Outcome outcome = playerOutcomeVsDealer(table.randomishPlayer, handNode, this.table.dealer, hr.dealerPeeksBlackjack, hr.pushOnDealerHard22, hr.player21AlwaysWins, true);
-                    return outcomePayoff(outcome, hr.blackjackPayout);
+                    Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
+                    return Outcome.outcomePayoff(outcome, hr.blackjackPayout);
                 }
                 // best move is hit
                 Card cNext = table.gameDeck.cards.remove(0);
@@ -445,8 +448,8 @@ public class Simulation {
             }
 
             table.dealerPlay(hitsOnSoft17);
-            Outcome outcome = playerOutcomeVsDealer(table.randomishPlayer, handNode, this.table.dealer, hr.dealerPeeksBlackjack, hr.pushOnDealerHard22, hr.player21AlwaysWins, true);
-            return 2.0 * outcomePayoff(outcome, hr.blackjackPayout);
+            Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
+            return 2.0 * Outcome.outcomePayoff(outcome, hr.blackjackPayout);
         }
 
 
@@ -500,32 +503,28 @@ public class Simulation {
     }
 
 
-    public double doPlayerMoveAndGetPayoff(PlayerMove pm, HandNode handNode){
+    public double doPlayerMoveAndGetPayoff(PlayerMove pm, HandNode handNode, HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealer metaDealer){
         HouseRules hr = this.simulationTable.simulationParameters.houseRules;
         PlayerMove firstMove = pm;
         boolean hitsOnSoft17 = hr.hitsOnSoft17;
         int deckSize = table.gameDeck.startingSize / hr.numDecks;
-        CountMethod countMethod = this.simulationTable.simulationParameters.countMethod;
+        double countGranularity = simulationTable.simulationParameters.countGranularity;
+        CountMethod countMethod = simulationTable.simulationParameters.countMethod;
         int maxSplitsAces = hr.numSplitsAces;
         int maxSplitsNotAces = hr.numSplitsNotAces;
         int minC = this.simulationTable.simulationParameters.minCountish;
         int maxC = this.simulationTable.simulationParameters.maxCountish;
 
-        if(hr.dealerPeeksBlackjack){
-            if(this.table.dealer.dealerHasBlackjack()){
-                return -50.0;
-                /*if(!this.table.randomishPlayer.playerHasBlackjack()){
-                    return -1.0;
-                }
-                return 0.0;*/
-            }
-        }
-
-
         if(firstMove.equals(PlayerMove.Stand)){
-            table.dealerPlay(hitsOnSoft17);
-            Outcome outcome = playerOutcomeVsDealer(table.randomishPlayer, handNode, this.table.dealer, hr.dealerPeeksBlackjack, hr.pushOnDealerHard22, hr.player21AlwaysWins, false);
-            return outcomePayoff(outcome, hr.blackjackPayout);
+            GranularCount gcKey = table.getGranularCount(deckSize, countGranularity, minC, maxC);
+            int dKey = table.dealer.revealedCards.get(0).rank.getRankpoints();
+            GranularCountAndDealerUpCard gcadup = new GranularCountAndDealerUpCard(gcKey, dKey);
+            MetaDealerResult mdr = metaDealer.dealerCountAndUpCardToResults.get(gcadup);
+            HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
+            int playerBestScore = playerHE.getBestScore();
+            boolean playerHasBlackjack = table.randomishPlayer.playerHasBlackjack();
+            boolean dealerHasBlackjack = false;
+            return PlayerDealerBestScore.getPlayerPayoff(outcomeFinder, mdr, playerBestScore, hr.blackjackPayout, playerHasBlackjack, dealerHasBlackjack);
         }
         else if(firstMove.equals(PlayerMove.Hit)){
             Card c = table.gameDeck.cards.remove(0);
@@ -599,14 +598,14 @@ public class Simulation {
                 leftPayoff = playBestNotSplit(handNode.leftChildHandNode);
             }
             else {
-                leftPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.leftChildHandNode);
+                leftPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.leftChildHandNode, outcomeFinder, metaDealer);
             }
             double rightPayoff = 0.0;
             if(cantSplitRight){
                 rightPayoff = playBestNotSplit(handNode.rightChildHandNode);
             }
             else {
-                rightPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.rightChildHandNode);
+                rightPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.rightChildHandNode, outcomeFinder, metaDealer);
             }
             double totalPayoff = leftPayoff + rightPayoff;
             return totalPayoff;
@@ -614,103 +613,9 @@ public class Simulation {
         }
     }
 
-    public static double outcomePayoff(Outcome outcome, double blackjackPayoff){
-        if(outcome.equals(Outcome.WINBLACKJACK)){
-            return blackjackPayoff;
-        }
-        else if (outcome.equals(Outcome.WIN)){
-            return 1.0;
-        }
-        else if(outcome.equals(Outcome.PUSH)){
-            return 0.0;
-        }
-        else{
-            return -1.0;
-        }
-
-    }
-
-    //TODO, I think I want to add surrender stuff to this method.
-
-    public static Outcome playerOutcomeVsDealer(RandomishPlayer player, HandNode handNode, Dealer dealer, boolean dealerPeeksBlackjack, boolean pushOnDealerHard22, boolean player21AlwaysWins, boolean isSmart){
 
 
-        HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
-        HandEncoding dealerHE = new HandEncoding(dealer.getDealerCards());
 
-        int bestScorePlayer = playerHE.getBestScore();
-        int bestScoreDealer = dealerHE.getBestScore();
-
-        if(dealerPeeksBlackjack && dealer.dealerHasBlackjack()){
-            if(!player.playerHasBlackjack()){
-                return Outcome.LOSS;
-            }
-            return Outcome.PUSH;
-
-        }
-
-        if(bestScoreDealer >= 22 && player.playerHasBlackjack()){
-            if(handNode.getNumActualNodes() == 1) {//for no blackjack after split
-                //may 26 todo
-                if(isSmart) {
-                    return Outcome.WINBLACKJACK;
-                }
-
-            }
-            return Outcome.WIN;
-        }
-        else if(bestScoreDealer == 22 & bestScorePlayer == 21 && (!player.playerHasBlackjack())){
-            if(pushOnDealerHard22){
-                return Outcome.PUSH;
-            }
-            return Outcome.WIN;
-        }
-        else if(dealer.dealerHasBlackjack() && player.playerHasBlackjack()){
-            if(player21AlwaysWins){
-                if(handNode.getNumActualNodes() == 1) {//for no blackjack after split
-                    if(isSmart) {
-                        return Outcome.WINBLACKJACK;
-                    }
-                }
-                return Outcome.WIN;
-            }
-            else{
-                return Outcome.PUSH;
-            }
-        }
-        else if(player.playerHasBlackjack()){
-            if(handNode.getNumActualNodes() == 1) {//for no blackjack after split
-                if(isSmart) {
-                    return Outcome.WINBLACKJACK;
-                }
-                if(bestScoreDealer == 21){//may 26 todo
-                    return Outcome.PUSH;
-                }
-            }
-            return Outcome.WIN;
-        }
-        else if(bestScoreDealer == 21 && bestScorePlayer == 21){
-            if(player21AlwaysWins){
-                return Outcome.WIN;
-            }
-            return Outcome.PUSH;
-        }
-        else if(bestScorePlayer > 21){
-            return Outcome.LOSS;
-        }
-        else if(bestScoreDealer > 21){
-            return Outcome.WIN;
-        }
-        else if(bestScoreDealer == bestScorePlayer){
-            return Outcome.PUSH;
-        }
-        else if(bestScorePlayer > bestScoreDealer){
-            return Outcome.WIN;
-        }
-        else{
-            return Outcome.LOSS;
-        }
-    }
 
     public double getBestPlayerMovePayoff(HandSituation playerHS, GranularCount gc, EnumSet<PlayerMove> legalMoves){
         return simulationTable.getBestPlayerMovePayoff(playerHS, gc, legalMoves);
@@ -722,32 +627,38 @@ public class Simulation {
         int minC = sp.minCountish;
         int maxC = sp.maxCountish;
         double countPrecision = sp.countGranularity;
-
-        this.table.givePlayer2RandomCardsAndRunCount();
-        this.table.giveDealerRandomHandAndRunCount();
-        this.table.removeRandomAmountCardsAndRunCount(penPercent);
+        //todo june 3 attempt
+        this.table.givePlayer2RandomCardsAndRunCountMaybe(false);
+        this.table.giveDealerRandomHandAndRunCountMaybe(false);
+        this.table.removeRandomAmountCardsAndRunCountSmart(penPercent);
     }
 
-    public void setCards(HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr, ArrayList<TripleRanks> ah20ptr, ArrayList<TripleRanks> ah21ptr){
+    public void setCards(HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr, ArrayList<TripleRanks> ah20ptr, ArrayList<TripleRanks> ah21ptr, ArrayList<TripleRanks> as21ptr){
         SimulationParameters sp = this.simulationTable.simulationParameters;
         int penPercent = sp.houseRules.penetrationPercentage;
-        int mhpdcca = sp.minHitsPerDecisionCellCountA;
-        int mhpdccb = sp.minHitsPerDecisionCellCountB;
+        int mhpdcc = sp.minHitsPerDecisionCellCount;
         int minC = sp.minCountish;
         int maxC = sp.maxCountish;
         double countPrecision = sp.countGranularity;
+        int deckSize = table.gameDeck.startingSize / this.simulationTable.simulationParameters.houseRules.numDecks;
 
-        HandSituation hs = this.handSituationToPlayV3(mhpdcca, mhpdccb, minC, maxC, countPrecision);
+        HandSituation hs = this.handSituationToPlayV3(mhpdcc, minC, maxC, countPrecision);
         HandEncoding he = hs.playerHE;
         HashSet initEncodedHands = HandEncoding.getStartingEncodings();
-        if(initEncodedHands.contains(he)){
-            this.table.givePlayer3CardsThatFitHandEncodingAndCount(he, ah20ptr, ah21ptr);
+        HandEncoding soft21HE = new HandEncoding(true, false, 11);
+        if(initEncodedHands.contains(he) || he.equals(soft21HE)){
+            if(soft21HE.equals(he)){
+                int k = 1;
+            }
+            this.table.givePlayer3CardsThatFitHandEncodingAndCountMaybe(he, ah20ptr, ah21ptr, as21ptr, false);
         }
         else{
-            this.table.givePlayer2CardsThatFitHandEncodingAndCount(he, hetdr);//TODO and above
+            this.table.givePlayer2CardsThatFitHandEncodingAndCountMaybe(he, hetdr, false);
         }
-        this.table.giveDealerHandAndRunCount(hs.dealerRankVal);
-        this.table.removeRandomAmountCardsAndRunCount(penPercent);
+        this.table.giveDealerHandAndRunCountMaybe(hs.dealerRankVal, false);
+
+        GranularCount randomCount = GranularCount.getRandomCount(minC, maxC, countPrecision);
+        this.table.removeRandomAmountCardsAndRunCount(penPercent, randomCount, deckSize, countPrecision, minC, maxC);
     }
 
     public double playBestSmartNotSplit(HandNode handNode){
@@ -806,7 +717,7 @@ public class Simulation {
             legalMoves.remove(PlayerMove.Double);
         }
         if(legalMoves.size() == 0){
-            return -50.0;
+            return 0.0;//not optimal but ok should not matter with many simulations
         }
         double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
         return nextMoveAveragePayoff;

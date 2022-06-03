@@ -48,8 +48,35 @@ public class Table {
         return granularCount;
     }
 
-    //TODO wow this is bad
-    public void removeRandomAmountCardsAndRunCount(int maxPenetration){
+    public void removeRandomAmountCardsAndRunCount(int maxPenetration, GranularCount randomCount, int deckSize, double countGranularity, int minC, int maxC){
+        double ogSizeDouble = (double) gameDeck.startingSize;
+        double maxPenDouble = (double) maxPenetration;
+        double maxPenDoublePercent = maxPenDouble / 100.0;
+        int minDeckSize = (int) ((1 - maxPenDoublePercent) * ogSizeDouble);
+        int maxCardsRemoved = gameDeck.cards.size() - minDeckSize;
+
+        CompositeCardSource currDeckCopy = gameDeck.deepCopy();
+        int runningCountCopy = runningCount;
+        while(true) {
+            int numCardsToRemove = (int) (Math.random() * ((maxCardsRemoved) + 1));
+            for (int i = 0; i < numCardsToRemove; i++) {
+                Card cardRemoved = gameDeck.cards.remove(0);
+                runningCount += countMethod.rankToCount.get(cardRemoved.rank);
+            }
+
+            GranularCount trueCount = getGranularCount(deckSize, countGranularity, minC, maxC);
+            if(trueCount.equals(randomCount)){
+                //System.out.println("break");
+                break;
+            }
+
+            gameDeck = currDeckCopy.deepCopy();
+            gameDeck.shuffle();
+            runningCount = runningCountCopy;
+        }
+    }
+
+    public void removeRandomAmountCardsAndRunCountSmart(int maxPenetration){
         double ogSizeDouble = (double) gameDeck.startingSize;
         double maxPenDouble = (double) maxPenetration;
         double maxPenDoublePercent = maxPenDouble / 100.0;
@@ -62,21 +89,25 @@ public class Table {
         }
     }
 
-    public void giveDealerRandomHandAndRunCount(){
+    public void giveDealerRandomHandAndRunCountMaybe(boolean runCount){
         Card c1 = gameDeck.cards.remove(0);
         Card c2 = gameDeck.cards.remove(0);
-        runningCount += countMethod.rankToCount.get(c1.rank);
+        if(runCount) {
+            runningCount += countMethod.rankToCount.get(c1.rank);
+        }
         dealer.revealedCards.add(c1);
         dealer.hiddenCard.add(c2);
 
     }
 
-    public void giveDealerHandAndRunCount(int dealerRankValue){
+    public void giveDealerHandAndRunCountMaybe(int dealerRankValue, boolean runCount){
         for(int i=0; i<gameDeck.cards.size(); i++){
             Card c1 = gameDeck.cards.get(i);
             if(c1.rank.getRankpoints() == dealerRankValue){
                 Card cardRemoved = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(cardRemoved.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(cardRemoved.rank);
+                }
                 dealer.revealedCards.add(cardRemoved);
                 break;
             }
@@ -86,18 +117,20 @@ public class Table {
         dealer.hiddenCard.add(gameDeck.cards.remove(randomCard));
     }
 
-    public void givePlayer2RandomCardsAndRunCount(){
+    public void givePlayer2RandomCardsAndRunCountMaybe(boolean runCount){
         Card c1 = gameDeck.cards.remove(0);
         Card c2 = gameDeck.cards.remove(0);
         ArrayList<Card> playerCards = new ArrayList<>();
         playerCards.add(c1);
         playerCards.add(c2);
-        runningCount += countMethod.rankToCount.get(c1.rank);
-        runningCount += countMethod.rankToCount.get(c2.rank);
+        if(runCount) {
+            runningCount += countMethod.rankToCount.get(c1.rank);
+            runningCount += countMethod.rankToCount.get(c2.rank);
+        }
         randomishPlayer.playerHands.playerHand = new PlayerHand(playerCards);
     }
 
-    public void givePlayer2CardsThatFitHandEncodingAndCount(HandEncoding he, HashMap<HandEncoding, ArrayList<DoubleRanks>> handEncodingToDoubleRanks){
+    public void givePlayer2CardsThatFitHandEncodingAndCountMaybe(HandEncoding he, HashMap<HandEncoding, ArrayList<DoubleRanks>> handEncodingToDoubleRanks, boolean runCount){
         ArrayList<DoubleRanks> drs = handEncodingToDoubleRanks.get(he);
         int randomDoubleRank = (int) (Math.random() * drs.size());
         DoubleRanks dr = drs.get(randomDoubleRank);
@@ -108,7 +141,9 @@ public class Table {
             if(gameDeck.cards.get(i).rank.equals(dr.r1)){
                 Card c1 = gameDeck.cards.remove(i);
                 handResult.add(c1);
-                runningCount += countMethod.rankToCount.get(c1.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(c1.rank);
+                }
                 break;
             }
         }
@@ -116,18 +151,24 @@ public class Table {
             if (gameDeck.cards.get(i).rank.equals(dr.r2)) {
                 Card c2 = gameDeck.cards.remove(i);
                 handResult.add(c2);
-                runningCount += countMethod.rankToCount.get(c2.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(c2.rank);
+                }
                 break;
             }
         }
         randomishPlayer.playerHands.playerHand = new PlayerHand(handResult);
     }
 
-    public void givePlayer3CardsThatFitHandEncodingAndCount(HandEncoding he, ArrayList<TripleRanks> allHard20PossibleTripleRanks, ArrayList<TripleRanks> allHard21PossibleTripleRanks){
+    public void givePlayer3CardsThatFitHandEncodingAndCountMaybe(HandEncoding he, ArrayList<TripleRanks> allHard20PossibleTripleRanks, ArrayList<TripleRanks> allHard21PossibleTripleRanks, ArrayList<TripleRanks> allSoft21PossibleTripleRanks, boolean runCount){
         ArrayList<TripleRanks> trs = allHard20PossibleTripleRanks;
-        HandEncoding hard21He = new HandEncoding(false, false, 21);
-        if(he.equals(hard21He)){
+        HandEncoding hard21HE = new HandEncoding(false, false, 21);
+        HandEncoding soft21HE = new HandEncoding(true, false, 11);
+        if(he.equals(hard21HE)){
             trs = allHard21PossibleTripleRanks;
+        }
+        else if(he.equals(soft21HE)){
+            trs = allSoft21PossibleTripleRanks;
         }
         int randomDoubleRank = (int) (Math.random() * trs.size());
         TripleRanks tr = trs.get(randomDoubleRank);
@@ -138,7 +179,9 @@ public class Table {
             if(gameDeck.cards.get(i).rank.equals(tr.r1)){
                 Card c1 = gameDeck.cards.remove(i);
                 handResult.add(c1);
-                runningCount += countMethod.rankToCount.get(c1.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(c1.rank);
+                }
                 break;
             }
         }
@@ -146,7 +189,9 @@ public class Table {
             if (gameDeck.cards.get(i).rank.equals(tr.r2)) {
                 Card c2 = gameDeck.cards.remove(i);
                 handResult.add(c2);
-                runningCount += countMethod.rankToCount.get(c2.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(c2.rank);
+                }
                 break;
             }
         }
@@ -154,97 +199,15 @@ public class Table {
             if (gameDeck.cards.get(i).rank.equals(tr.r3)) {
                 Card c3 = gameDeck.cards.remove(i);
                 handResult.add(c3);
-                runningCount += countMethod.rankToCount.get(c3.rank);
+                if(runCount) {
+                    runningCount += countMethod.rankToCount.get(c3.rank);
+                }
                 break;
             }
         }
         randomishPlayer.playerHands.playerHand = new PlayerHand(handResult);
 
     }
-
-    /*
-    public void givePlayer2CardsThatFitHandEncodingAndCount(HandEncoding he){
-        HashMap<HandEncoding, EnumSet<Rank>> encToRank = HandEncoding.getEncodingsToPossibleFirstCardRanks();
-        ArrayList<Card> handResult = new ArrayList<>();
-        for(int i=0; i<gameDeck.cards.size()-1; i++){
-            Card c1 = gameDeck.cards.get(i);
-            if(!encToRank.get(he).contains(c1.rank)){
-                continue;
-            }
-            for(int j=i+1; j<gameDeck.cards.size(); j++){
-                ArrayList<Card> hand = new ArrayList<>();
-                Card c2 = gameDeck.cards.get(j);
-                hand.add(c1);
-                hand.add(c2);
-                HandEncoding he2 = new HandEncoding(hand);
-                if(!he.equals(he2)){
-                    continue;
-                }
-                handResult = hand;
-            }
-        }
-        for(int i=0; i<gameDeck.cards.size(); i++){
-            if(gameDeck.cards.get(i).equals(handResult.get(0))){
-                Card c = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(c.rank);
-                break;
-            }
-        }
-        for(int i=0; i<gameDeck.cards.size(); i++){
-            if(gameDeck.cards.get(i).equals(handResult.get(1))){
-                Card c = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(c.rank);
-                break;
-            }
-        }
-        randomishPlayer.playerHands.add(new PlayerHand(handResult));
-    }
-
-    public void givePlayer3CardsThatFitHandEncodingAndCount(HandEncoding he){
-        ArrayList<Card> handResult = new ArrayList<>();
-        for(int i=0; i<gameDeck.cards.size()-2; i++){
-            Card c1 = gameDeck.cards.get(i);
-            for(int j=i+1; j<gameDeck.cards.size()-1; j++){
-                Card c2 = gameDeck.cards.get(j);
-                for(int k=j+1; k<gameDeck.cards.size(); k++){
-                    Card c3 = gameDeck.cards.get(k);
-                    ArrayList<Card> hand = new ArrayList<>();
-                    hand.add(c1);
-                    hand.add(c2);
-                    hand.add(c3);
-                    HandEncoding he2 = new HandEncoding(hand);
-                    if(!he.equals(he2)){
-                        continue;
-                    }
-                    handResult = hand;
-                }
-            }
-        }
-
-        for(int i=0; i<gameDeck.cards.size(); i++){
-            if(gameDeck.cards.get(i).equals(handResult.get(0))){
-                Card c = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(c.rank);
-                break;
-            }
-        }
-        for(int i=0; i<gameDeck.cards.size(); i++){
-            if(gameDeck.cards.get(i).equals(handResult.get(1))){
-                Card c = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(c.rank);
-                break;
-            }
-        }
-        for(int i=0; i<gameDeck.cards.size(); i++){
-            if(gameDeck.cards.get(i).equals(handResult.get(2))){
-                Card c = gameDeck.cards.remove(i);
-                runningCount += countMethod.rankToCount.get(c.rank);
-                break;
-            }
-        }
-        randomishPlayer.playerHands.add(new PlayerHand(handResult));
-    }
-    */
 
     public void dealerPlay(boolean hitsOnSoft17){
         if(dealer.hiddenCard.size() == 0){

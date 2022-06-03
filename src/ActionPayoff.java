@@ -9,11 +9,15 @@ public class ActionPayoff {
     public int numTimes;
     public double avPayoff;
     public BigDecimal avPayoffPrecise;
+    public int numPlayerBlackjacks;
+    public double playerBlackjackPercentage;
 
     public ActionPayoff(){
         numTimes = 0;
         avPayoff = 0;
         avPayoffPrecise = BigDecimal.ZERO;
+        numPlayerBlackjacks = 0;
+        double playerBlackjackPercentage;
     }
 
     public ActionPayoff(int nt, double ap, BigDecimal app){
@@ -44,48 +48,49 @@ public class ActionPayoff {
         avPayoff = updatedAverage.doubleValue();
     }
 
+    public void insertEventSmart(double payoff){
+        BigDecimal multipliedAverage = avPayoffPrecise.multiply(BigDecimal.valueOf(numTimes));
+        BigDecimal multAvWithEvent = multipliedAverage.add(BigDecimal.valueOf(payoff));
+        numTimes++;
+        BigDecimal updatedAverage = multAvWithEvent.divide(BigDecimal.valueOf(numTimes), 100, RoundingMode.FLOOR);
+        avPayoffPrecise = updatedAverage;
+        avPayoff = updatedAverage.doubleValue();
+        if(payoff == 1.5 || payoff == 0.00001){//not optimal, but will do for now
+            numPlayerBlackjacks++;
+        }
+        playerBlackjackPercentage = (numPlayerBlackjacks * 100.0) / (numTimes * 1.0);
+    }
+
+
+
     public BasicDBObject getDBObject(){
         return new BasicDBObject("_id", this.hashCode())
                 .append("numTimes", numTimes)
                 .append("avPayoff", avPayoff)
-                .append("avPayoffPrecise", avPayoffPrecise.toString());
+                .append("avPayoffPrecise", avPayoffPrecise.toString())
+                .append("playerBlackjackPercentage", playerBlackjackPercentage)
+                .append("numPlayerBlackjacks", numPlayerBlackjacks);
     }
 
-    public static void main(String[] args) throws UnknownHostException {
-        //insertTestAP();
-        //getTestAP();
-    }
 
-    public static void insertTestAP() throws UnknownHostException {
-        ActionPayoff ap = new ActionPayoff();
-        ap.avPayoffPrecise = BigDecimal.ONE.divide(BigDecimal.valueOf(9), 100, RoundingMode.FLOOR);
-
-        MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCountinTest");
-        DBCollection collection = database.getCollection("SimulationTablesTest");
-
-        collection.insert(ap.getDBObject());
-    }
 
     public static ActionPayoff getActionPayoffFromObject(BasicDBObject actionPayoffObject){
         int nt = actionPayoffObject.getInt("numTimes");
         double ap = actionPayoffObject.getDouble("avPayoff");
         BigDecimal app = new BigDecimal(actionPayoffObject.getString("avPayoffPrecise"));
-        return new ActionPayoff(nt, ap, app);
+        ActionPayoff actionPayoff =  new ActionPayoff(nt, ap, app);
+
+        if(actionPayoffObject.containsKey("numPlayerBlackjacks")) {
+            int npbj = actionPayoffObject.getInt("numPlayerBlackjacks");
+            actionPayoff.numPlayerBlackjacks = npbj;
+        }
+        if(actionPayoffObject.containsKey("playerBlackjackPercentage")){
+            double pbjp = actionPayoffObject.getDouble("playerBlackjackPercentage");
+            actionPayoff.playerBlackjackPercentage = pbjp;
+        }
+        return actionPayoff;
 
     }
 
-    public static ActionPayoff getTestAP() throws  UnknownHostException{
-        MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCountinTest");
-        DBCollection collection = database.getCollection("SimulationTablesTest");
 
-        ArrayList<DBObject> all = (ArrayList<DBObject>) collection.find().toArray();
-        BasicDBObject apObject = (BasicDBObject) all.get(0);
-        int numTimes = apObject.getInt("numTimes");
-        double avPayoff = apObject.getDouble("avPayoff");
-        BigDecimal avPayoffPrecise = new BigDecimal(apObject.getString("avPayoffPrecise"));
-        mongoClient.close();
-        return new ActionPayoff(numTimes, avPayoff, avPayoffPrecise);
-    }
 }

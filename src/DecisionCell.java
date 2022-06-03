@@ -9,10 +9,7 @@ public class DecisionCell {
         countToMoveChoice = new HashMap<GranularCount, MoveChoices>();
     }
 
-    public int numGranCount(double countPrecision, int minC, int maxC){
-        double interval = (double) (maxC - minC);
-        return (int) (interval / countPrecision + 1.0);
-    }
+
 
     public BasicDBObject getDBObject(){
         BasicDBObject decisionCellObject = new BasicDBObject();
