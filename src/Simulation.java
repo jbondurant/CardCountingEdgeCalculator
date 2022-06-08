@@ -11,7 +11,8 @@ public class Simulation {
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
-        //TODO select option
+        //select option
+
         //op1
         //runMetaSimulation();
 
@@ -46,8 +47,8 @@ public class Simulation {
         HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
         CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
         double countGranularity = 1.0;
-        int minHitsPerDecisionCellCount = 250000;//move to at least 500
-        int minMetaDealer = 250000;
+        int minHitsPerDecisionCellCount = 500000;//move to at least 500
+        int minMetaDealer = 1000000;
         int minCountish = -0;//move perhaps to -5
         int maxCountish = 0;//move perhaps to 5
         SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCount, minMetaDealer, minCountish, maxCountish);
@@ -65,8 +66,8 @@ public class Simulation {
         HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(penPercent);
         CountMethod countMethod = CountMethod.getHiLoValue(deckPrecision);
         double countGranularity = 1.0;
-        int minHitsPerDecisionCellCount = 10000;//move to at least 500
-        int minMetaDealer = 15000;
+        int minHitsPerDecisionCellCount = 50000;//move to at least 500
+        int minMetaDealer = 100000;
         int minCountish = -5;//move perhaps to -5
         int maxCountish = 5 ;//move perhaps to 5
         SimulationParameters simulationParameters = new SimulationParameters(houseRules, countMethod, countGranularity, minHitsPerDecisionCellCount, minMetaDealer, minCountish, maxCountish);
@@ -104,7 +105,7 @@ public class Simulation {
         Simulation simulation = initializeSimulation();
         int numMinutes = 1;
         int numOneMinutes = 0;
-        for(int i=0; i<10; i++){
+        for(int i=0; i<3; i++){
             numOneMinutes++;
             simulation.runPayoffFinderSim(numMinutes);
             Thread.sleep(10 * 1000);
@@ -262,7 +263,7 @@ public class Simulation {
 
         HandSituation hs = new HandSituation(playerHE, dealerRevealedRank.getRankpoints());
         DecisionCell dc = simulationTable.actionMap.get(hs);
-        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);//TODO
+        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);
         EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
         if(mcs == null){
             int k=1;
@@ -393,9 +394,7 @@ public class Simulation {
                 if(!this.table.randomishPlayer.playerHasBlackjack()){
                     return -1.0;
                 }
-                //return 0.0;
-                //todo june 3 remove this
-                return 0.00001;
+                return 0.0;
             }
         }
 
@@ -627,7 +626,6 @@ public class Simulation {
         int minC = sp.minCountish;
         int maxC = sp.maxCountish;
         double countPrecision = sp.countGranularity;
-        //todo june 3 attempt
         this.table.givePlayer2RandomCardsAndRunCountMaybe(false);
         this.table.giveDealerRandomHandAndRunCountMaybe(false);
         this.table.removeRandomAmountCardsAndRunCountSmart(penPercent);

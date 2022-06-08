@@ -93,6 +93,8 @@ public class SimulationTable {
 
         System.out.println(simulationTable.name);
         System.out.println("about to remove table");
+        Thread.sleep(5000);
+
         collection.remove(query);
 
         Thread.sleep(2000);

@@ -28,7 +28,7 @@ public class MetaDealer {
             }
             MetaDealerResult mdr = dealerCountAndUpCardToResults.get(gcadup);
             if(!mdr.isCompleted(minMetaDealer)){
-                System.out.println("mdr not completed:\t" + minMetaDealer + " " + gcadup.granularCount.countToCellString() + " " + gcadup.dealerUpCardScore);
+                //System.out.println("mdr not completed:\t" + minMetaDealer + " " + gcadup.granularCount.countToCellString() + " " + gcadup.dealerUpCardScore);
                 return false;
             }
             numCompleted++;
@@ -78,6 +78,8 @@ public class MetaDealer {
 
         System.out.println(name);
         System.out.println("about to remove metaDealer");
+        Thread.sleep(5000);
+
         collection.remove(query);
 
         Thread.sleep(2000);

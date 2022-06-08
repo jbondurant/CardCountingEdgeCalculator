@@ -55,7 +55,7 @@ public class ActionPayoff {
         BigDecimal updatedAverage = multAvWithEvent.divide(BigDecimal.valueOf(numTimes), 100, RoundingMode.FLOOR);
         avPayoffPrecise = updatedAverage;
         avPayoff = updatedAverage.doubleValue();
-        if(payoff == 1.5 || payoff == 0.00001){//not optimal, but will do for now
+        if(payoff == 1.5){//not optimal, but will do for now
             numPlayerBlackjacks++;
         }
         playerBlackjackPercentage = (numPlayerBlackjacks * 100.0) / (numTimes * 1.0);
