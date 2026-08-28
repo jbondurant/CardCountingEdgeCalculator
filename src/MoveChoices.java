@@ -1,8 +1,6 @@
 import com.mongodb.BasicDBList;
 import com.mongodb.BasicDBObject;
-import com.mongodb.util.Hash;
 
-import javax.swing.*;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;

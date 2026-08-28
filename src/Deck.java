@@ -11,7 +11,6 @@ public class Deck implements CardSource{
                 cards.add(new Card(r, s));
             }
         }
-        int i=1;
     }
 
     public Card draw() {
