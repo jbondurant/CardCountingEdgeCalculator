@@ -94,10 +94,21 @@ public class GranularCount implements Comparable<GranularCount> {
         secondDecimal = sd;
     }
 
+    /**
+     * Split a count into whole units and two decimal digits.
+     *
+     * Going through the digits one at a time and truncating loses values that binary
+     * cannot hold exactly: 0.3 arrives as 0.2999999999999998, whose tenths digit
+     * truncates to 2 and whose hundredths digit truncates to 9. That silently splits one
+     * count bucket into two, and the decision table is keyed on these digits. Scale once
+     * and round instead.
+     */
     public GranularCount(double count){
-        units = (int) count;
-        firstDecimal = (int) ((count - units) * 10.0);
-        secondDecimal = (int) ((((count - units) * 10.0) - firstDecimal) * 10.0);
+        long hundredths = Math.round(Math.abs(count) * 100.0);
+        int sign = count < 0 ? -1 : 1;
+        units = sign * (int) (hundredths / 100);
+        firstDecimal = sign * (int) ((hundredths / 10) % 10);
+        secondDecimal = sign * (int) (hundredths % 10);
     }
 
     public static void main (String[] args){

@@ -13,6 +13,13 @@ public class CompositeCardSource implements  CardSource{
         startingSize = cards.size();
     }
 
+    /**
+     * Copy the shoe, keeping the size it was built at.
+     *
+     * startingSize is the denominator behind deckSize, and deckSize is the denominator
+     * of the true count. Rebuilding it from the cards that happen to be left made the
+     * true count silently change scale the first time a partly dealt shoe was copied.
+     */
     public CompositeCardSource deepCopy(){
         ArrayList<Card> cCopy = new ArrayList<>();
         for(Card c : this.cards){
@@ -20,7 +27,9 @@ public class CompositeCardSource implements  CardSource{
         }
         ArrayList<CardSource> csCopy = new ArrayList<>();
         csCopy.add(new CardSequence(cCopy));
-        return new CompositeCardSource(csCopy);
+        CompositeCardSource copy = new CompositeCardSource(csCopy);
+        copy.startingSize = this.startingSize;
+        return copy;
     }
 
     public static CompositeCardSource getMultiDeck(int numDecks){
