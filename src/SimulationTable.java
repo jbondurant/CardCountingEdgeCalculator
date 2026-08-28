@@ -28,17 +28,20 @@ public class SimulationTable {
         name = n;
     }
 
+    /**
+     * Record one observation.
+     *
+     * The first event for a situation used to create the cell and then return without
+     * inserting, so every (hand, up-card) pair silently threw away its first result.
+     */
     public void insertEvent(EventResult er){
         HandSituation hs = new HandSituation(er.playerHE, er.dealerRevealedCard.getRankpoints());
-        if(!actionMap.containsKey(hs)){
-            DecisionCell emptyDC = new DecisionCell();
-            actionMap.put(hs, emptyDC);
-        }
-        else {
-            DecisionCell dc = actionMap.get(hs);
-            dc.insertEvent(er);
+        DecisionCell dc = actionMap.get(hs);
+        if(dc == null){
+            dc = new DecisionCell();
             actionMap.put(hs, dc);
         }
+        dc.insertEvent(er);
     }
 
     public EnumSet<PlayerMove> getKnownMovesWithPayoffs(HandSituation playerHS, GranularCount gc){
