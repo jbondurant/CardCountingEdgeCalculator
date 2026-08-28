@@ -263,15 +263,27 @@ public class Simulation {
 
         HandSituation hs = new HandSituation(playerHE, dealerRevealedRank.getRankpoints());
         DecisionCell dc = simulationTable.actionMap.get(hs);
-        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);
-        EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
-        if(mcs == null){
-            int k=1;
+        if(dc == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but it "
+                    + "has no cell for " + hs.getStringFromEncoding()
+                    + " at true count " + granularCount.countToCellString());
         }
+        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);
+        if(mcs == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but "
+                    + hs.getStringFromEncoding() + " has nothing at true count "
+                    + granularCount.countToCellString());
+        }
+        EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
         for(PlayerMove lm : mcs.actionPayoffs.keySet()){
             legalMoves.add(lm);
         }
         PlayerMove pm = mcs.getActionWithBestPayoff(legalMoves);
+        if(pm == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but "
+                    + hs.getStringFromEncoding() + " has no measured move at true count "
+                    + granularCount.countToCellString());
+        }
 
         //System.out.println("-----");
         double payoff = doPlayerMoveSmartAndGetPayoff(pm, table.randomishPlayer.playerHands);
@@ -425,6 +437,14 @@ public class Simulation {
                 }
 
                 PlayerMove bestMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
+                if(bestMove == null){
+                    // Substituting Stand would quietly play a different strategy than the
+                    // one being measured, and still report the hand as though the table
+                    // had chosen the move.
+                    throw new UnsolvedCellException("the payoff run reads a finished table, "
+                            + "but " + playerHS.getStringFromEncoding()
+                            + " has no measured move at true count " + gc.countToCellString());
+                }
                 if(bestMove.equals(PlayerMove.Surrender)){
                     return -0.5;
                 }
@@ -687,6 +707,11 @@ public class Simulation {
 
 
         PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
+        if(bestOtherMove == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but the "
+                    + "split hand " + playerHS.getStringFromEncoding()
+                    + " has no measured move at true count " + gc.countToCellString());
+        }
         return doPlayerMoveSmartAndGetPayoff(bestOtherMove, handNode);
     }
 
@@ -715,7 +740,12 @@ public class Simulation {
             legalMoves.remove(PlayerMove.Double);
         }
         if(legalMoves.size() == 0){
-            return 0.0;//not optimal but ok should not matter with many simulations
+            // This used to return 0.0, on the reasoning that it would wash out over enough
+            // simulations. It does not: the 0.0 is recorded as an observation, so more
+            // simulations accumulate more of them rather than diluting them.
+            throw new UnsolvedCellException("no measured moves for "
+                    + playerHS.getStringFromEncoding() + " at true count "
+                    + gc.countToCellString() + ", reached after a split");
         }
         double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
         return nextMoveAveragePayoff;

@@ -57,13 +57,21 @@ public class SimulationTable {
         return knownMovesWithPayoffs;
     }
 
+    /**
+     * The measured payoff of the best legal move here. The caller records what comes back,
+     * so there is no honest answer when the cell has not been solved.
+     */
     public double getBestPlayerMovePayoff(HandSituation playerHS, GranularCount gc, EnumSet<PlayerMove> legalMoves){
         DecisionCell dc = actionMap.get(playerHS);
-        //System.out.println(gc.units);
-        if(!dc.countToMoveChoice.containsKey(gc)){
-            int k=1;
+        if(dc == null){
+            throw new UnsolvedCellException("no cell for " + playerHS.getStringFromEncoding()
+                    + ", needed at true count " + gc.countToCellString());
         }
-        return dc.getBestPlayerMovePayoff(gc, legalMoves);
+        try {
+            return dc.getBestPlayerMovePayoff(gc, legalMoves);
+        } catch (UnsolvedCellException e) {
+            throw new UnsolvedCellException(playerHS.getStringFromEncoding() + ": " + e.getMessage());
+        }
     }
 
     public static void saveTable(SimulationTable simulationTable) throws UnknownHostException, InterruptedException {

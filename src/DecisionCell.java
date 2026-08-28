@@ -38,6 +38,10 @@ public class DecisionCell {
 
     public double getBestPlayerMovePayoff(GranularCount gc, EnumSet<PlayerMove> legalMoves){
         MoveChoices mcs = countToMoveChoice.get(gc);
+        if(mcs == null){
+            throw new UnsolvedCellException("nothing measured at true count "
+                    + gc.countToCellString());
+        }
         return mcs.getPayoffOfActionWithBestPayoff(legalMoves);
     }
 
