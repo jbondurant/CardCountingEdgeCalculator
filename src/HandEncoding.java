@@ -93,7 +93,19 @@ public class HandEncoding {
         return hes;
     }
 
-    //TODO fix, current version is wrong
+    /**
+     * The order hands are solved in, so that every hand a hand can turn into is already
+     * known by the time it is played.
+     *
+     * Hard 21 down to 12 first, because a soft hand that hardens lands there. Then the
+     * soft hands. Then hard 11 down to 5, which have to come after the soft hands because
+     * a low hard total that draws an ace becomes one. Then the pairs, which can split into
+     * anything above, and A,A last.
+     *
+     * An earlier version put every hard total before every soft one, which broke on
+     * exactly that ace draw: hard 5 through 10 each reached a soft hand that had not been
+     * solved yet. HandOrderingTest checks every hit and split against this.
+     */
     public static ArrayList<HandEncoding> getOrderedEncodings(){
         ArrayList<HandEncoding> orderedEncodings = new ArrayList<>();
         for(int i=21; i>= 12; i--){
