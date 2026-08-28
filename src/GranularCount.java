@@ -107,9 +107,33 @@ public class GranularCount implements Comparable<GranularCount> {
         int g=1;
     }
 
+    /**
+     * Snap a raw true count onto the count grid, breaking ties toward zero.
+     *
+     * Two things are going on here.
+     *
+     * First, Math.round breaks ties toward positive infinity, so Math.round(1.5) is 2
+     * while Math.round(-1.5) is -1. Hi-Lo is a balanced count, so that hands every
+     * half-way count to the positive bucket and skews the histogram. The true count is
+     * one integer over another and most deck-counts are even, so exact .5 ties are about
+     * 9% of hands rather than a rare edge case.
+     *
+     * Second, of the tie rules that are symmetric about zero, which one to use is not
+     * arbitrary. The true count is densest near zero, so a bucket [k-0.5, k+0.5] holds
+     * more mass at its low edge than its high edge. Breaking ties away from zero pulls
+     * the dense low tie in and pushes the sparse high tie out, dragging each bucket's
+     * mean below its own label by about 0.11 and compressing the whole edge-vs-count
+     * curve. Breaking ties toward zero does the reverse and very nearly cancels that
+     * density asymmetry, leaving a residual of about 0.02.
+     *
+     * CountBiasReport prints the comparison, including half-to-even, which is symmetric
+     * but makes bucket populations alternate.
+     */
     public static double roundToGrain(double d, double grain) {
         double invG = 1.0 / grain;
-        return (Math.round(d * invG) / invG);
+        double scaled = d * invG;
+        double rounded = Math.signum(scaled) * Math.ceil(Math.abs(scaled) - 0.5);
+        return rounded / invG;
     }
 
 
