@@ -98,7 +98,7 @@ public class TrueCountRoundingTest {
     @Test
     public void zeroStaysZero() {
         GranularCount gc = new GranularCount(GranularCount.roundToGrain(0.0, 1.0));
-        assertEquals(0, gc.units);
+        assertEquals(0, gc.getUnits());
         assertEquals(0.0, gc.getDoubleFromCount(), 1e-9);
     }
 

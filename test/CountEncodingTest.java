@@ -16,9 +16,10 @@ public class CountEncodingTest {
     @Test
     public void countOfThreeTenthsRoundTripsAsThreeTenths() {
         GranularCount gc = new GranularCount(0.3);
-        assertEquals(0, gc.units);
-        assertEquals(3, gc.firstDecimal, "0.3 must have a tenths digit of 3");
-        assertEquals(0, gc.secondDecimal);
+        assertEquals(0, gc.getUnits());
+        assertEquals(3, gc.getFirstDecimal(), "0.3 must have a tenths digit of 3");
+        assertEquals(0, gc.getSecondDecimal());
+        assertEquals(30, gc.getHundredths());
     }
 
     /** The same digit loss, stated as a value error. */
@@ -55,9 +56,77 @@ public class CountEncodingTest {
     public void wholeCountsHaveNoDecimals() {
         for (int i = -5; i <= 5; i++) {
             GranularCount gc = new GranularCount((double) i);
-            assertEquals(i, gc.units);
-            assertEquals(0, gc.firstDecimal, "count " + i + " picked up a tenths digit");
-            assertEquals(0, gc.secondDecimal, "count " + i + " picked up a hundredths digit");
+            assertEquals(i, gc.getUnits());
+            assertEquals(0, gc.getFirstDecimal(), "count " + i + " picked up a tenths digit");
+            assertEquals(0, gc.getSecondDecimal(), "count " + i + " picked up a hundredths digit");
+        }
+    }
+
+    /**
+     * The stored key layout, pinned exactly.
+     *
+     * These strings are the keys cells live under in the database, so a change here
+     * orphans every table already saved. The negative cases carry the sign on each digit,
+     * which is what the previous code wrote.
+     */
+    @Test
+    public void storedKeyLayoutIsUnchanged() {
+        assertEquals("0&0&0", new GranularCount(0.0).getStringFromCount());
+        assertEquals("5&0&0", new GranularCount(5.0).getStringFromCount());
+        assertEquals("-5&0&0", new GranularCount(-5.0).getStringFromCount());
+        assertEquals("2&5&0", new GranularCount(2.5).getStringFromCount());
+        assertEquals("-2&-5&0", new GranularCount(-2.5).getStringFromCount());
+        assertEquals("0&0&-5", new GranularCount(-0.05).getStringFromCount());
+    }
+
+    /** Keys written by the previous code still read back to the value they meant. */
+    @Test
+    public void keysWrittenByTheOldCodeStillParse() {
+        assertEquals(-2.5, GranularCount.getCountFromString("-2&-5&0").getDoubleFromCount(), 1e-9);
+        assertEquals(5.0, GranularCount.getCountFromString("5&0&0").getDoubleFromCount(), 1e-9);
+        // Including the ones the old truncation bug produced: 0.3 was written as 0&2&9.
+        assertEquals(0.29, GranularCount.getCountFromString("0&2&9").getDoubleFromCount(), 1e-9);
+    }
+
+    /** Digits that disagree with each other used to be constructible and meaningless. */
+    @Test
+    public void overflowingDigitsCarryInsteadOfContradicting() {
+        GranularCount gc = new GranularCount(0, 47, 3);
+        assertEquals(4.73, gc.getDoubleFromCount(), 1e-9, "47 tenths and 3 hundredths is 4.73");
+        assertEquals(4, gc.getUnits());
+        assertEquals(7, gc.getFirstDecimal());
+        assertEquals(3, gc.getSecondDecimal());
+        assertEquals(new GranularCount(4.73), gc, "however it is built, 4.73 is one key");
+    }
+
+    /** Ordering follows the value, on both sides of zero. */
+    @Test
+    public void countsOrderByValue() {
+        assertTrue(new GranularCount(-2.5).compareTo(new GranularCount(-2.0)) < 0);
+        assertTrue(new GranularCount(-2.0).compareTo(new GranularCount(-1.5)) < 0);
+        assertTrue(new GranularCount(-0.5).compareTo(new GranularCount(0.0)) < 0);
+        assertTrue(new GranularCount(0.0).compareTo(new GranularCount(0.5)) < 0);
+        assertTrue(new GranularCount(2.0).compareTo(new GranularCount(2.5)) < 0);
+        assertEquals(0, new GranularCount(1.25).compareTo(new GranularCount(1.25)));
+    }
+
+    /** A negative fractional count renders as a number, not as two spliced digits. */
+    @Test
+    public void negativeFractionalCountsPrintReadably() {
+        assertEquals("-2.50", new GranularCount(-2.5).countToCellString());
+        assertEquals("2.50", new GranularCount(2.5).countToCellString());
+        assertEquals("-5.00", new GranularCount(-5.0).countToCellString());
+        assertEquals("0.00", new GranularCount(0.0).countToCellString());
+    }
+
+    /** The random count grid lands on the grain, including grains that drift in doubles. */
+    @Test
+    public void randomCountsLandOnTheGrid() {
+        for (int i = 0; i < 200; i++) {
+            GranularCount gc = GranularCount.getRandomCount(-5, 5, 0.1);
+            assertEquals(0, gc.getHundredths() % 10,
+                    gc + " is not a whole tenth");
+            assertTrue(gc.isCountInBoundaries(-5, 5), gc + " is outside [-5, 5]");
         }
     }
 
