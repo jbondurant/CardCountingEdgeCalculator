@@ -210,7 +210,8 @@ public class HandEncoding {
         for(int i=0; i<multiDeck.cards.size()-1; i++){
             Card c1 = multiDeck.cards.get(i);
             currCards.add(c1);
-            for(int j=i+1; j<multiDeck.cards.size()-1; j++){
+            // Was size()-1, which never paired anything with the final card.
+            for(int j=i+1; j<multiDeck.cards.size(); j++){
                 Card c2 = multiDeck.cards.get(j);
                 currCards.add(c2);
 

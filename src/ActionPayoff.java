@@ -17,7 +17,7 @@ public class ActionPayoff {
         avPayoff = 0;
         avPayoffPrecise = BigDecimal.ZERO;
         numPlayerBlackjacks = 0;
-        double playerBlackjackPercentage;
+        playerBlackjackPercentage = 0.0;
     }
 
     public ActionPayoff(int nt, double ap, BigDecimal app){

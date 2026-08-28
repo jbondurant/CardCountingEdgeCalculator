@@ -216,7 +216,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Hard");
         hardCountTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        hardCountTable.add("<tbody>");
         hardCountTable.addAll(startTableRow);
 
 
@@ -243,7 +245,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Soft");
         softTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        softTable.add("<tbody>");
         softTable.addAll(startTableRow);
 
 
@@ -271,7 +275,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Split");
         splitTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        splitTable.add("<tbody>");
         splitTable.addAll(startTableRow);
 
 

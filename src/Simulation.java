@@ -383,11 +383,6 @@ public class Simulation {
             return null;
         }
 
-        HandEncoding soft21 = new HandEncoding(true, false, 11);
-        if(playerHE.equals(soft21) && playerMove.equals(PlayerMove.Stand)){
-            int k = 1;
-        }
-
         double payoff = doPlayerMoveAndGetPayoff(playerMove, table.randomishPlayer.playerHands, outcomeFinder, metaDealer);
         EventResult eventResult = new EventResult(payoff, playerHE, dealerRevealedRank, playerMove, granularCount);
         return eventResult;
@@ -667,9 +662,6 @@ public class Simulation {
         HashSet initEncodedHands = HandEncoding.getStartingEncodings();
         HandEncoding soft21HE = new HandEncoding(true, false, 11);
         if(initEncodedHands.contains(he) || he.equals(soft21HE)){
-            if(soft21HE.equals(he)){
-                int k = 1;
-            }
             this.table.givePlayer3CardsThatFitHandEncodingAndCountMaybe(he, ah20ptr, ah21ptr, as21ptr, false);
         }
         else{

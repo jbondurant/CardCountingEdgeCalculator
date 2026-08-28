@@ -61,11 +61,22 @@ public class DecisionCell {
         return dc;
     }
 
+    /**
+     * The CSS class a rendered cell is coloured by, taken from the move at a true count
+     * of zero.
+     *
+     * Nothing guarantees a cell has a bucket at exactly zero. A finished table will, but
+     * printTables is worth running against a partly built one, and this used to
+     * dereference the missing bucket. An uncoloured cell is the honest rendering of a
+     * count that has not been reached yet.
+     */
     public String getCellColorTag(){
         GranularCount zeroCount = new GranularCount(0,0,0);
         MoveChoices mcs = countToMoveChoice.get(zeroCount);
-        String bestCompoundMove = mcs.getCompoundBestMove();
-        return bestCompoundMove;
+        if(mcs == null){
+            return "unmeasured";
+        }
+        return mcs.getCompoundBestMove();
     }
 
 
