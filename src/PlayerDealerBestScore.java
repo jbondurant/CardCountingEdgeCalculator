@@ -18,7 +18,13 @@ public class PlayerDealerBestScore {
 
     public static double getPlayerPayoff(HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealerResult mdr, int playerBestScore, double blackjackPayoff, boolean phbj, boolean dhbj){
         BigDecimal outcome = BigDecimal.ZERO;
-        //System.out.println("pbs:\t" + playerBestScore);
+        if(mdr == null){
+            // runSimulation fills the MetaDealer to completion before the table phase
+            // begins, so every (count, up-card) should be here. A missing one means it
+            // did not, and the weighted payoff below would be built on nothing.
+            throw new UnsolvedCellException("no dealer outcomes recorded for a player "
+                    + playerBestScore + "; the MetaDealer is not finished");
+        }
 
         BigDecimal o17 = BigDecimal.valueOf(Outcome.outcomePayoff(outcomeFinder.get(new PlayerDealerBestScore(playerBestScore, 17, phbj, dhbj)), blackjackPayoff)).multiply(BigDecimal.valueOf(mdr.num17));
         BigDecimal o18  = BigDecimal.valueOf(Outcome.outcomePayoff(outcomeFinder.get(new PlayerDealerBestScore(playerBestScore, 18, phbj, dhbj)), blackjackPayoff)).multiply(BigDecimal.valueOf(mdr.num18));
@@ -45,6 +51,10 @@ public class PlayerDealerBestScore {
         totalNum = totalNum.add(BigDecimal.valueOf(mdr.num21));
         totalNum = totalNum.add(BigDecimal.valueOf(mdr.numBust));
 
+        if(totalNum.signum() == 0){
+            throw new UnsolvedCellException("the dealer bucket for a player "
+                    + playerBestScore + " is empty; there is nothing to average");
+        }
         outcome = outcome.divide(totalNum, 100, RoundingMode.FLOOR);
         return outcome.doubleValue();
     }

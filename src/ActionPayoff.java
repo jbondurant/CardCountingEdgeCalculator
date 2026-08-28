@@ -34,6 +34,12 @@ public class ActionPayoff {
             avPayPrecSum = avPayPrecSum.add(multAvEvents);
             numTimesTotal += ap.numTimes;
         }
+        if(numTimesTotal == 0){
+            // Reporting 0.0 here would read as an edge of zero rather than as a run that
+            // recorded nothing, and that is the number a reader would take away.
+            throw new UnsolvedCellException("nothing was recorded, so there is no average "
+                    + "payoff to report");
+        }
         BigDecimal avPayPrec = avPayPrecSum.divide(BigDecimal.valueOf(numTimesTotal), 100, RoundingMode.FLOOR);
         return avPayPrec.doubleValue();
 
