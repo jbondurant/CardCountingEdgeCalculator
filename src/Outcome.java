@@ -20,7 +20,12 @@ public enum Outcome {
             return -1.0;
         }
         else{
-            return -1.0;
+            // VOID: the hand ended before the player made a decision -- a dealer natural,
+            // or a player one -- so it carries no information about that decision and must
+            // be dropped rather than scored. -1.0 was a fabricated loss; 0.0 would be no
+            // more real, since averaging a void hand in still pulls a cell toward zero.
+            throw new UnsolvedCellException("a void hand has no payoff; it ended before "
+                    + "the player acted and must be dropped rather than scored");
         }
 
     }
