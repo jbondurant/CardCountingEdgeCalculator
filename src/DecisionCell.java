@@ -45,10 +45,14 @@ public class DecisionCell {
         return mcs.getPayoffOfActionWithBestPayoff(legalMoves);
     }
 
-    //is there a problem where one of the keys is _id and the value is the hashcode.
-    //I think it will make my hashmap wonky, but not cause any problems for a small personal project like this
-
-    //TODO fix wrong
+    /**
+     * Read a cell back from the database.
+     *
+     * This carried "TODO fix wrong", and an older note worrying that an _id key would end
+     * up in the map. Neither applies: getDBObject writes only count keys, one per bucket,
+     * and PersistenceRoundTripTest checks that a cell serialises and deserialises to the
+     * same buckets.
+     */
     public static DecisionCell getDecisionCellFromObject(BasicDBObject decisionCellObject){
         HashMap<GranularCount, MoveChoices> ctmc = new HashMap<>();
         for(String s : decisionCellObject.keySet()){

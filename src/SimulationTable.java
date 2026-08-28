@@ -79,80 +79,73 @@ public class SimulationTable {
 
     public static void saveTable(SimulationTable simulationTable) throws UnknownHostException, InterruptedException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("SimulationTables");
+        try {
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("SimulationTables");
 
-        ObjectId nameID = new ObjectId(simulationTable.name);//?
+            ObjectId nameID = new ObjectId(simulationTable.name);//?
 
-        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-        BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
+            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+            BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
 
-        BasicDBObject actionMapObject = new BasicDBObject();
-        for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
-            for(HandSituation hs : simulationTable.actionMap.keySet()){
-                if(orderedHS.equals(hs)) {
-                    String keyAsString = hs.getStringFromEncoding();
-                    DecisionCell dc = simulationTable.actionMap.get(hs);
-                    BasicDBObject decisionCellObject = dc.getDBObject();
-                    actionMapObject.append(keyAsString, decisionCellObject);
+            BasicDBObject actionMapObject = new BasicDBObject();
+            for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
+                for(HandSituation hs : simulationTable.actionMap.keySet()){
+                    if(orderedHS.equals(hs)) {
+                        String keyAsString = hs.getStringFromEncoding();
+                        DecisionCell dc = simulationTable.actionMap.get(hs);
+                        BasicDBObject decisionCellObject = dc.getDBObject();
+                        actionMapObject.append(keyAsString, decisionCellObject);
+                    }
                 }
             }
-        }
 
-        BasicDBObject query = new BasicDBObject();
-        query.put("_id", nameID);
+            BasicDBObject query = new BasicDBObject();
+            query.put("_id", nameID);
 
-        System.out.println(simulationTable.name);
-        System.out.println("about to remove table");
-        Thread.sleep(5000);
+            tableObject.append("simulationParameterObject", simulationParameterObject)
+                    .append("actionMapObject", actionMapObject);
 
-        collection.remove(query);
-
-        Thread.sleep(2000);
-
-
-        tableObject.append("simulationParameterObject", simulationParameterObject)
-                .append("actionMapObject", actionMapObject);
-        //collection.update(query, tableObject);
-        try {
-            collection.insert(tableObject);
-            System.out.println("reinserted table part A");
+            // One upsert, so the stored table is replaced in a single write and is never
+            // absent. This used to remove the document and then insert a new one, which left
+            // a window where a table representing hours of simulation did not exist, and put
+            // the reinsert in a finally block: on success it wrote everything twice, and on
+            // failure it updated a document that had just been deleted, matching nothing.
+            collection.update(query, tableObject, true, false);
         } finally {
-            collection.update(query, tableObject);
-            System.out.println("reinserted table part B");
-
+            mongoClient.close();
         }
-
-
-
-
     }
 
 
     public static SimulationTable getTable(String name, SimulationTable emptySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("SimulationTables");
+        try {
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("SimulationTables");
 
-        BasicDBObject query = new BasicDBObject();
-        ObjectId nameID = new ObjectId(name);
-        query.put("_id", nameID);
-        BasicDBObject stObject = (BasicDBObject) collection.findOne(query);
-        if(stObject == null){
-            return emptySimTable;
+            BasicDBObject query = new BasicDBObject();
+            ObjectId nameID = new ObjectId(name);
+            query.put("_id", nameID);
+            BasicDBObject stObject = (BasicDBObject) collection.findOne(query);
+            if(stObject == null){
+                return emptySimTable;
+            }
+            BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
+            SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
+            HashMap<HandSituation, DecisionCell> am = new HashMap<>();
+            BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
+            for(String s : amObject.keySet()){
+                HandSituation hs = HandSituation.getEncodingFromString(s);
+                DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
+                am.put(hs, dc);
+            }
+
+
+            return new SimulationTable(sp, am, name);
+        } finally {
+            mongoClient.close();
         }
-        BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
-        SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
-        HashMap<HandSituation, DecisionCell> am = new HashMap<>();
-        BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
-        for(String s : amObject.keySet()){
-            HandSituation hs = HandSituation.getEncodingFromString(s);
-            DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
-            am.put(hs, dc);
-        }
-
-
-        return new SimulationTable(sp, am, name);
     }
 
 
