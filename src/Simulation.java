@@ -343,7 +343,10 @@ public class Simulation {
         //System.out.println(playerHE.getStringFromEncoding());
         boolean canDouble = table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canSplit = playerHE.canSplit;
-        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        // Surrender is a first action on the original two cards. setCards deals three of
+        // them for the hard 20, hard 21 and soft 21 targets, and those cannot surrender.
+        boolean canSurrender = (hr.canEarlySurrender || hr.canLateSurrender)
+                && table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canHit = true;
         HandEncoding hard21Encoding = new HandEncoding(false, false, 21);
         HandEncoding hard20Encoding = new HandEncoding(false, false, 20);
@@ -430,11 +433,9 @@ public class Simulation {
                 }
                 GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
                 EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
+                // A card has already been taken above, so surrender is gone.
                 legalMoves.add(PlayerMove.Hit);
                 legalMoves.add(PlayerMove.Stand);
-                if (hr.canEarlySurrender || hr.canLateSurrender) {
-                    legalMoves.add(PlayerMove.Surrender);
-                }
 
                 PlayerMove bestMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
                 if(bestMove == null){
@@ -445,10 +446,7 @@ public class Simulation {
                             + "but " + playerHS.getStringFromEncoding()
                             + " has no measured move at true count " + gc.countToCellString());
                 }
-                if(bestMove.equals(PlayerMove.Surrender)){
-                    return -0.5;
-                }
-                else if(bestMove.equals(PlayerMove.Stand)){
+                if(bestMove.equals(PlayerMove.Stand)){
                     table.dealerPlay(hitsOnSoft17);
                     Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
                     return Outcome.outcomePayoff(outcome, hr.blackjackPayout);
@@ -470,8 +468,11 @@ public class Simulation {
             Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
             return 2.0 * Outcome.outcomePayoff(outcome, hr.blackjackPayout);
         }
-
-
+        else if(firstMove.equals(PlayerMove.Surrender)){
+            // Forfeit half the bet and stop. Without this the move fell through to the
+            // split branch below and tried to split whatever the hand happened to be.
+            return -0.5;
+        }
         else {
             //Split
 
@@ -558,11 +559,9 @@ public class Simulation {
             }
             GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
             EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
+            // A card has already been taken above, so surrender is gone.
             legalMoves.add(PlayerMove.Hit);
             legalMoves.add(PlayerMove.Stand);
-            if(hr.canEarlySurrender || hr.canLateSurrender){
-                legalMoves.add(PlayerMove.Surrender);
-            }
             double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
             return nextMoveAveragePayoff;
         }
@@ -575,13 +574,16 @@ public class Simulation {
                 return -2.0;
             }
             GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
-            EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
-            legalMoves.add(PlayerMove.Stand);
-            if(hr.canEarlySurrender || hr.canLateSurrender){
-                legalMoves.add(PlayerMove.Surrender);
-            }
+            // A doubled hand takes exactly one card and then stands. Surrender is no
+            // longer on the table once the extra bet is down.
+            EnumSet<PlayerMove> legalMoves = EnumSet.of(PlayerMove.Stand);
             double nextMoveAveragePayoffDouble = 2.0 * getBestPlayerMovePayoff(playerHS, gc, legalMoves);
             return nextMoveAveragePayoffDouble;
+        }
+        else if(firstMove.equals(PlayerMove.Surrender)){
+            // Forfeit half the bet and stop. Without this the move fell through to the
+            // split branch below and tried to split whatever the hand happened to be.
+            return -0.5;
         }
         else{
             //Split
@@ -696,9 +698,8 @@ public class Simulation {
         if((!rank.equals(Rank.ACE)) || hr.canHitAfterSplittingAces){
             legalMoves.add(PlayerMove.Hit);
         }
-        if (hr.canEarlySurrender || hr.canLateSurrender) {
-            legalMoves.add(PlayerMove.Surrender);
-        }
+        // No surrender here: it is a first action on the original two cards, and this hand
+        // came out of a split. A few houses do allow it; this ruleset does not model that.
         if (hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.add(PlayerMove.Double);
         }
@@ -733,9 +734,9 @@ public class Simulation {
         if((rank.equals(Rank.ACE)) && (!hr.canHitAfterSplittingAces)) {
             legalMoves.remove(PlayerMove.Hit);
         }
-        if((!hr.canEarlySurrender) && (!hr.canLateSurrender)){
-            legalMoves.remove(PlayerMove.Surrender);
-        }
+        // Always removed, not just when the rules forbid it: this hand came out of a
+        // split, and surrender is a first action on the original two cards.
+        legalMoves.remove(PlayerMove.Surrender);
         if(!hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.remove(PlayerMove.Double);
         }
