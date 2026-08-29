@@ -1,8 +1,14 @@
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -127,6 +133,46 @@ public class EnumerationAndOutputTest {
                 PlayerMove.Stand, new GranularCount(0.0)));
 
         assertEquals("stand", dc.getCellColorTag());
+    }
+
+    /**
+     * Every colour a published table asks for has to be one the stylesheet defines.
+     *
+     * This is the check the tables never had. A CSS class selector is case sensitive, and
+     * PlayerMove constants are capitalised, so the tables shipped 720 cells asking for
+     * tg-Hit, tg-Stand and tg-DoubleHit against a stylesheet that only ever defined
+     * .tg-hit, .tg-stand and .tg-doublehit. Not one of them matched, and the only class
+     * that ever applied was tg-0pky, which is written out as a literal. The tables were
+     * published with no colour in them at all, which is silent in a way a wrong number is
+     * not: nothing renders as an error, the table just looks plain.
+     */
+    @Test
+    public void everyColourTheTablesAskForIsOneTheStylesheetDefines() throws IOException {
+        File dir = new File("stuffForHTML");
+        String stylesheet = new String(
+                Files.readAllBytes(new File(dir, "style.txt").toPath()),
+                StandardCharsets.UTF_8);
+
+        File[] tables = dir.listFiles((d, name) -> name.endsWith(".html"));
+        assertNotNull(tables, "no stuffForHTML directory to check");
+        assertTrue(tables.length > 0, "no generated tables to check");
+
+        Pattern asked = Pattern.compile("class=\"(tg-[A-Za-z0-9]+)\"");
+        int checked = 0;
+        for (File table : tables) {
+            String markup = new String(Files.readAllBytes(table.toPath()),
+                    StandardCharsets.UTF_8);
+            Matcher m = asked.matcher(markup);
+            while (m.find()) {
+                String cssClass = m.group(1);
+                assertTrue(stylesheet.contains("." + cssClass + "{"),
+                        table.getName() + " has a cell asking for " + cssClass
+                                + ", but the stylesheet defines no ." + cssClass
+                                + " rule, so that cell publishes with no colour");
+                checked++;
+            }
+        }
+        assertTrue(checked > 0, "found no coloured cells to check");
     }
 
     private static Rank rankWorth(int points) {
