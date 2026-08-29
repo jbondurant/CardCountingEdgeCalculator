@@ -37,15 +37,19 @@ public class PerRoundVersusPerHandReport {
 
     // ----------------------------------------------------------------- card handling
 
-    /** Total and softness after adding a card, demoting the ace if the hand would bust. */
-    private static int[] addCard(int total, int soft, int rank) {
-        int newTotal = total + (rank == 1 ? 11 : rank);
-        int newSoft = (soft == 1 || rank == 1) ? 1 : 0;
-        while (newTotal > 21 && newSoft == 1) {
-            newTotal -= 10;
-            newSoft = 0;
+    /**
+     * Total and softness after adding a card, counting an ace as 11 while the hand can
+     * afford it. Adding 11 and demoting used to clear the soft flag outright, which made
+     * A,A a hard 12 rather than a soft one; promoting once from hard points keeps a second
+     * ace honest.
+     */
+    static int[] addCard(int total, int soft, int rank) {
+        int hardTotal = (soft == 1 ? total - 10 : total) + (rank == 1 ? 1 : rank);
+        boolean holdsAce = soft == 1 || rank == 1;
+        if (holdsAce && hardTotal + 10 <= 21) {
+            return new int[]{hardTotal + 10, 1};
         }
-        return new int[]{newTotal, newSoft};
+        return new int[]{hardTotal, 0};
     }
 
     // ---------------------------------------------------------------------- dealer
