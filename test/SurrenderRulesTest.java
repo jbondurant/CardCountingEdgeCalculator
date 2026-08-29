@@ -1,3 +1,4 @@
+import com.mongodb.BasicDBObject;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -163,5 +164,148 @@ public class SurrenderRulesTest {
         HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
         assertFalse(hr.canEarlySurrender);
         assertFalse(hr.canLateSurrender);
+        assertFalse(hr.canSurrenderAfterSplit);
+        assertFalse(hr.offersSurrender());
+        assertFalse(hr.offersSurrenderAfterSplit());
+    }
+
+    // ------------------------------------------------- surrendering after a split
+
+    /**
+     * Surrendering after a split is a narrowing of surrender, so it cannot be on when
+     * surrender itself is off. A house that does not offer the move at all does not offer
+     * it on a split hand either, whatever the second flag happens to say.
+     */
+    @Test
+    public void surrenderAfterSplitCannotOutliveSurrenderItself() {
+        HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        hr.canSurrenderAfterSplit = true;
+
+        assertFalse(hr.offersSurrenderAfterSplit(),
+                "surrender is off, so there is nothing to carry into a split hand");
+
+        hr.canLateSurrender = true;
+        assertTrue(hr.offersSurrenderAfterSplit(),
+                "with surrender offered and the split rule on, a split hand may take it");
+    }
+
+    /** And offering surrender does not on its own carry it past a split. */
+    @Test
+    public void offeringSurrenderDoesNotImplyOfferingItAfterASplit() {
+        HouseRules hr = rulesWithSurrender();
+
+        assertTrue(hr.offersSurrender());
+        assertFalse(hr.offersSurrenderAfterSplit(),
+                "Montreal withdraws surrender once the hand is split");
+    }
+
+    /**
+     * A hand situation is keyed on the total, the up-card and whether the hand is a pair,
+     * but not on how it was reached. So the bucket for a hard 14 is shared between a 10,4
+     * dealt straight up and an eight that was split and drew a six. The first of those may
+     * surrender and the second may not, and the two are indistinguishable once they are in
+     * the table, so a surrender measured there must not be inherited.
+     */
+    @Test
+    public void aSplitHandDoesNotInheritASurrenderMeasuredForTheSameTotal() {
+        HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        Simulation sim = seatedAfterSplit(hr);
+        measureHardFourteenVsTen(sim, -0.9);
+
+        assertEquals(-0.9, sim.playBestNotSplit(sim.table.randomishPlayer.playerHands), 1e-9,
+                "the split hand has to stand for -0.9 rather than take a surrender it is"
+                        + " not allowed, even though -0.5 is in the bucket");
+    }
+
+    /** With the rule on, the same hand may take it, and it is priced at half the bet. */
+    @Test
+    public void aSplitHandMaySurrenderWhereTheHouseAllowsIt() {
+        HouseRules hr = rulesWithSurrender();
+        hr.canSurrenderAfterSplit = true;
+        Simulation sim = seatedAfterSplit(hr);
+        measureHardFourteenVsTen(sim, -0.9);
+
+        assertEquals(-0.5, sim.playBestNotSplit(sim.table.randomishPlayer.playerHands), 1e-9,
+                "standing is worth -0.9, so a split hand that may surrender should");
+    }
+
+    /**
+     * The payoff run builds its legal moves from the rules rather than from what was
+     * measured, so it needs the same gate. Standing on a hard 14 settles at a whole bet
+     * won, lost or pushed, so it can never be mistaken for a surrender.
+     */
+    @Test
+    public void thePayoffRunAlsoRefusesSurrenderOnASplitHand() {
+        HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        Simulation sim = seatedAfterSplit(hr);
+        measureHardFourteenVsTen(sim, -0.9);
+
+        assertNotEquals(-0.5,
+                sim.playBestSmartNotSplit(sim.table.randomishPlayer.playerHands),
+                "the payoff run must play the split hand out, not surrender it");
+    }
+
+    /** And takes it where the house allows it. */
+    @Test
+    public void thePayoffRunSurrendersASplitHandWhereTheHouseAllowsIt() {
+        HouseRules hr = rulesWithSurrender();
+        hr.canSurrenderAfterSplit = true;
+        Simulation sim = seatedAfterSplit(hr);
+        measureHardFourteenVsTen(sim, -0.9);
+
+        assertEquals(-0.5,
+                sim.playBestSmartNotSplit(sim.table.randomishPlayer.playerHands), 1e-9,
+                "every measured move is worse than half the bet, so it should surrender");
+    }
+
+    // --------------------------------------------------------------- storing the rule
+
+    /** The rule has to survive being written out and read back. */
+    @Test
+    public void theRuleSurvivesTheRoundTrip() {
+        HouseRules hr = rulesWithSurrender();
+        hr.canSurrenderAfterSplit = true;
+
+        HouseRules back = HouseRules.getHouseRulesFromObject(hr.getDBOject());
+        assertTrue(back.canSurrenderAfterSplit);
+        assertTrue(back.offersSurrenderAfterSplit());
+    }
+
+    /**
+     * A ruleset stored before this field existed has to keep loading. It was written by
+     * code that could not surrender after a split, so false is the true reading of it and
+     * not merely a safe one.
+     */
+    @Test
+    public void aRulesetStoredBeforeTheRuleExistedReadsAsNotAllowing() {
+        HouseRules hr = rulesWithSurrender();
+        hr.canSurrenderAfterSplit = true;
+
+        BasicDBObject stored = hr.getDBOject();
+        stored.remove("canSurrenderAfterSplit");
+
+        HouseRules back = assertDoesNotThrow(() -> HouseRules.getHouseRulesFromObject(stored),
+                "an older stored ruleset must still load");
+        assertFalse(back.canSurrenderAfterSplit);
+    }
+
+    // ------------------------------------------------------------------- the fixtures
+
+    /**
+     * A player sitting on a hard 14 that came out of a split, against a dealer ten: an
+     * eight that was split off a pair and then drew a six. Not a pair itself, so it is
+     * indistinguishable in the table from a 10,4 dealt straight up.
+     */
+    private static Simulation seatedAfterSplit(HouseRules hr) {
+        return seated(hr, Rank.TEN, Rank.EIGHT, Rank.SIX);
+    }
+
+    /** Fill the hard 14 against a ten bucket with a stand and a surrender at count zero. */
+    private static void measureHardFourteenVsTen(Simulation sim, double standPayoff) {
+        HandEncoding fourteen = new HandEncoding(false, false, 14);
+        sim.simulationTable.insertEvent(new EventResult(
+                standPayoff, fourteen, Rank.TEN, PlayerMove.Stand, new GranularCount(0.0)));
+        sim.simulationTable.insertEvent(new EventResult(
+                -0.5, fourteen, Rank.TEN, PlayerMove.Surrender, new GranularCount(0.0)));
     }
 }

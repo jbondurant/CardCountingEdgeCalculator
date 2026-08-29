@@ -345,7 +345,7 @@ public class Simulation {
         boolean canSplit = playerHE.canSplit;
         // Surrender is a first action on the original two cards. setCards deals three of
         // them for the hard 20, hard 21 and soft 21 targets, and those cannot surrender.
-        boolean canSurrender = (hr.canEarlySurrender || hr.canLateSurrender)
+        boolean canSurrender = hr.offersSurrender()
                 && table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canHit = true;
         HandEncoding hard21Encoding = new HandEncoding(false, false, 21);
@@ -690,20 +690,23 @@ public class Simulation {
         if((!rank.equals(Rank.ACE)) || hr.canHitAfterSplittingAces){
             legalMoves.add(PlayerMove.Hit);
         }
-        // No surrender here: it is a first action on the original two cards, and this hand
-        // came out of a split. A few houses do allow it; this ruleset does not model that.
         if (hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.add(PlayerMove.Double);
         }
         legalMoves.remove(PlayerMove.Split);
-
-
 
         PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
         if(bestOtherMove == null){
             throw new UnsolvedCellException("the payoff run reads a finished table, but the "
                     + "split hand " + playerHS.getStringFromEncoding()
                     + " has no measured move at true count " + gc.countToCellString());
+        }
+        // Surrender is weighed after that check rather than before it, because its value
+        // is fixed by the rules at -0.5 instead of measured. Adding it first would let a
+        // cell with nothing in it answer -0.5 and never report that it was never solved.
+        if(hr.offersSurrenderAfterSplit()){
+            legalMoves.add(PlayerMove.Surrender);
+            bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
         }
         return doPlayerMoveSmartAndGetPayoff(bestOtherMove, handNode);
     }
@@ -726,8 +729,10 @@ public class Simulation {
         if((rank.equals(Rank.ACE)) && (!hr.canHitAfterSplittingAces)) {
             legalMoves.remove(PlayerMove.Hit);
         }
-        // Always removed, not just when the rules forbid it: this hand came out of a
-        // split, and surrender is a first action on the original two cards.
+        // Removed unconditionally first. This set is the moves measured for the hand
+        // situation, which is shared with the same total reached without splitting, so a
+        // surrender measured there would otherwise be inherited by a hand that cannot
+        // take it.
         legalMoves.remove(PlayerMove.Surrender);
         if(!hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.remove(PlayerMove.Double);
@@ -739,6 +744,12 @@ public class Simulation {
             throw new UnsolvedCellException("no measured moves for "
                     + playerHS.getStringFromEncoding() + " at true count "
                     + gc.countToCellString() + ", reached after a split");
+        }
+        // And put back only where the house allows it, after the check that something was
+        // measured at all. Surrender is priced by rule rather than measured, so it would
+        // otherwise satisfy that check on its own.
+        if(hr.offersSurrenderAfterSplit()){
+            legalMoves.add(PlayerMove.Surrender);
         }
         double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
         return nextMoveAveragePayoff;

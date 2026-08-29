@@ -29,6 +29,15 @@ public class HouseRules {
 
     public boolean canEarlySurrender;
     public boolean canLateSurrender;
+    /**
+     * Whether a hand that came out of a split may still surrender.
+     *
+     * Separate from the two flags above because it is a separate rule: a house that offers
+     * surrender at all almost always withdraws it once you split, and Montreal is one of
+     * them. It is meaningless on its own, so read it through offersSurrenderAfterSplit
+     * rather than directly.
+     */
+    public boolean canSurrenderAfterSplit;
     public boolean player21AlwaysWins; //even against dealer blackjack
     public boolean hasDoubleDownRescue;
     //bonusAfterSplit
@@ -61,10 +70,30 @@ public class HouseRules {
 
         hr.canEarlySurrender = false;
         hr.canLateSurrender = false;
+        hr.canSurrenderAfterSplit = false;
         hr.player21AlwaysWins = false;
         hr.hasDoubleDownRescue = false;
 
         return hr;
+    }
+
+    /**
+     * Whether surrender is offered at all. Early and late surrender differ in when the
+     * option is taken, not in whether it exists, so every place that only needs to know
+     * "is surrender on the table" asks this rather than repeating the disjunction.
+     */
+    public boolean offersSurrender(){
+        return canEarlySurrender || canLateSurrender;
+    }
+
+    /**
+     * Whether a hand reached through a split may surrender.
+     *
+     * A conjunction rather than a single flag: surrendering after a split is a narrowing
+     * of surrender, so it cannot be on when surrender itself is off.
+     */
+    public boolean offersSurrenderAfterSplit(){
+        return offersSurrender() && canSurrenderAfterSplit;
     }
 
     public BasicDBObject getDBOject(){
@@ -101,6 +130,7 @@ public class HouseRules {
                 .append("ranksWithFreeBetAfterSplit", rwfbasObject)
                 .append("canEarlySurrender", canEarlySurrender)
                 .append("canLateSurrender", canLateSurrender)
+                .append("canSurrenderAfterSplit", canSurrenderAfterSplit)
                 .append("player21AlwaysWins", player21AlwaysWins)
                 .append("hasDoubleDownRescue", hasDoubleDownRescue);
         return houseRulesObject;
@@ -133,6 +163,10 @@ public class HouseRules {
 
         hr.canEarlySurrender = (boolean) houseRulesObject.get("canEarlySurrender");
         hr.canLateSurrender = (boolean) houseRulesObject.get("canLateSurrender");
+        // Rulesets stored before this field existed were written by code that could not
+        // surrender after a split, so a missing value reads as false rather than throwing.
+        Object surrenderAfterSplit = houseRulesObject.get("canSurrenderAfterSplit");
+        hr.canSurrenderAfterSplit = surrenderAfterSplit != null && (boolean) surrenderAfterSplit;
         hr.player21AlwaysWins = (boolean) houseRulesObject.get("player21AlwaysWins");
         hr.hasDoubleDownRescue = (boolean) houseRulesObject.get("hasDoubleDownRescue");
 
