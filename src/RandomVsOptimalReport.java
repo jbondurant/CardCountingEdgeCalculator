@@ -73,6 +73,11 @@ public class RandomVsOptimalReport {
         }
     }
 
+    /** The finished-hand distribution for an up-card: 17, 18, 19, 20, 21, bust. */
+    double[] dealerDistributionFor(int upCard) {
+        return dealerDistribution[upCard];
+    }
+
     // ------------------------------------------------------------------- the dealer
 
     /** Probabilities of the dealer finishing on 17, 18, 19, 20, 21, or busting. */
@@ -325,7 +330,7 @@ public class RandomVsOptimalReport {
 
     // ------------------------------------------------------------------- reporting
 
-    private static final class Row {
+    static final class Row {
         String hand;
         int upCard;
         String bestByOptimal;
@@ -346,7 +351,7 @@ public class RandomVsOptimalReport {
         }
     }
 
-    private Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
+    Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
         currentDealer = dealerDistribution[upCard];
         resetMemo();
 
