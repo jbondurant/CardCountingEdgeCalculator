@@ -220,3 +220,19 @@ against a ten comes out as hit −0.5398 against stand −0.5404, matching the s
 infinite-deck H17 values to four decimals. Every per-round split decision matches
 published basic strategy, including the non-obvious 4,4 against a 5 and a 6 with
 double after split.
+
+The sharpest check is surrender, because it is a threshold rather than a ranking: a
+hand is worth surrendering exactly when its best move is worth less than −0.5. So
+every cell is a separate pass or fail against a published chart, and a model that is
+slightly wrong anywhere shows up as a missing or an extra one.
+
+```
+java SurrenderIndexReport
+```
+
+finds seven — 16 against a 9, a ten and an ace, 15 against a ten and an ace, 17
+against an ace, and 8,8 against an ace — which is the published H17 late-surrender
+chart exactly, with nothing missing and nothing spare. Five of the seven sit within
+0.025 of the line, so landing all seven and no eighth is a narrow target. It also
+prints the dealer's finishing distribution for every up-card, which is the input all
+of these numbers rest on.
