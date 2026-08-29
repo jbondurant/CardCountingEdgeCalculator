@@ -75,7 +75,8 @@ a winning one, and the naive method throws that away. Cost: **0.80 of a bet**, e
 time you are dealt it.
 
 Across the whole table, **98 of 340** hands get a different recommendation. Let the
-random player also hit a 20 and it is **157 of 340** — nearly half the strategy table.
+random player hit anything at all, up to and including a 21, and it is **154 of 340**
+— nearly half the strategy table.
 
 ### The control case
 
@@ -157,11 +158,11 @@ the split.
 | | value |
 |---|---|
 | Best without splitting | **−0.3810** |
-| Split, both hands (per round) | −0.6666 |
-| Split, divided by hands (per hand) | −0.3333 |
+| Split, both hands (per round) | −0.6662 |
+| Split, divided by hands (per hand) | −0.3331 |
 
-Per hand, −0.3333 beats −0.3810, so split. Per round you lose two thirds of a bet
-instead of a third. **Cost: 0.2856 a round.**
+Per hand, −0.3331 beats −0.3810, so split. Per round you lose two thirds of a bet
+instead of a third. **Cost: 0.2852 a round.**
 
 **9,9 against a dealer 6** — per-hand says stand, and it should not:
 
@@ -218,4 +219,4 @@ Both solvers reproduce published figures where published figures exist. Hard 16
 against a ten comes out as hit −0.5398 against stand −0.5404, matching the standard
 infinite-deck H17 values to four decimals. Every per-round split decision matches
 published basic strategy, including the non-obvious 4,4 against a 5 and a 6 with
-double after split. The dealer bust rates match the H17 table for all ten up-cards.
+double after split.
