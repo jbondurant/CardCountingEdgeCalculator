@@ -134,7 +134,7 @@ public class RandomVsOptimalReport {
 
     // -------------------------------------------------------------------- the player
 
-    private static final class Hand {
+    static final class Hand {
         final int total;
         final boolean soft;
         Hand(int total, boolean soft) {
@@ -143,15 +143,24 @@ public class RandomVsOptimalReport {
         }
     }
 
-    /** Add a card, demoting the ace from 11 to 1 if the hand would otherwise bust. */
-    private static Hand addCard(int total, boolean soft, int rank) {
-        int t = total + (rank == 1 ? 11 : rank);
-        boolean s = soft || rank == 1;
-        while (t > 21 && s) {
-            t -= 10;
-            s = false;
+    /**
+     * Add a card, counting an ace as 11 whenever the hand can still afford it.
+     *
+     * Working in hard points and promoting once at the end, rather than adding 11 and
+     * demoting, is what keeps a second ace honest. A hand never holds two aces at 11, so
+     * "soft" means exactly one of them is, and adding an ace to a soft hand leaves it
+     * soft: A,A is soft 12, not hard 12, and A,6,A is soft 18. Demoting used to clear the
+     * flag outright, which turned every multi-ace hand hard. That mattered most against a
+     * dealer ace, where multi-ace hands are commonest, and it let the dealer stand on a
+     * soft 17 it was required to hit.
+     */
+    static Hand addCard(int total, boolean soft, int rank) {
+        int hardTotal = (soft ? total - 10 : total) + (rank == 1 ? 1 : rank);
+        boolean holdsAce = soft || rank == 1;
+        if (holdsAce && hardTotal + 10 <= 21) {
+            return new Hand(hardTotal + 10, true);
         }
-        return new Hand(t, s);
+        return new Hand(hardTotal, false);
     }
 
     /** Value of standing on this total against the current up-card. */
