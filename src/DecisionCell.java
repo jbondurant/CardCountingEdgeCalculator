@@ -80,7 +80,11 @@ public class DecisionCell {
         if(mcs == null){
             return "unmeasured";
         }
-        return mcs.getCompoundBestMove();
+        // Lower case because a CSS class selector is case sensitive. PlayerMove constants
+        // are capitalised, so every cell used to be emitted as class="tg-Hit" against a
+        // stylesheet that only ever defined .tg-hit, and not one of the move colours
+        // matched. Only tg-0pky, which is written out as a literal, ever applied.
+        return mcs.getCompoundBestMove().toLowerCase(Locale.ROOT);
     }
 
 

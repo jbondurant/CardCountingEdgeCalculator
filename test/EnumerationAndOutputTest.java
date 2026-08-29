@@ -126,7 +126,7 @@ public class EnumerationAndOutputTest {
                 -0.2, new HandEncoding(false, false, 16), Rank.TEN,
                 PlayerMove.Stand, new GranularCount(0.0)));
 
-        assertEquals("Stand", dc.getCellColorTag());
+        assertEquals("stand", dc.getCellColorTag());
     }
 
     private static Rank rankWorth(int points) {
