@@ -17,7 +17,7 @@ public class ActionPayoff {
         avPayoff = 0;
         avPayoffPrecise = BigDecimal.ZERO;
         numPlayerBlackjacks = 0;
-        double playerBlackjackPercentage;
+        playerBlackjackPercentage = 0.0;
     }
 
     public ActionPayoff(int nt, double ap, BigDecimal app){
@@ -33,6 +33,12 @@ public class ActionPayoff {
             BigDecimal multAvEvents = ap.avPayoffPrecise.multiply(BigDecimal.valueOf(ap.numTimes));
             avPayPrecSum = avPayPrecSum.add(multAvEvents);
             numTimesTotal += ap.numTimes;
+        }
+        if(numTimesTotal == 0){
+            // Reporting 0.0 here would read as an edge of zero rather than as a run that
+            // recorded nothing, and that is the number a reader would take away.
+            throw new UnsolvedCellException("nothing was recorded, so there is no average "
+                    + "payoff to report");
         }
         BigDecimal avPayPrec = avPayPrecSum.divide(BigDecimal.valueOf(numTimesTotal), 100, RoundingMode.FLOOR);
         return avPayPrec.doubleValue();

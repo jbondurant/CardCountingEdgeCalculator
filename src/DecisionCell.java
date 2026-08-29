@@ -38,13 +38,21 @@ public class DecisionCell {
 
     public double getBestPlayerMovePayoff(GranularCount gc, EnumSet<PlayerMove> legalMoves){
         MoveChoices mcs = countToMoveChoice.get(gc);
+        if(mcs == null){
+            throw new UnsolvedCellException("nothing measured at true count "
+                    + gc.countToCellString());
+        }
         return mcs.getPayoffOfActionWithBestPayoff(legalMoves);
     }
 
-    //is there a problem where one of the keys is _id and the value is the hashcode.
-    //I think it will make my hashmap wonky, but not cause any problems for a small personal project like this
-
-    //TODO fix wrong
+    /**
+     * Read a cell back from the database.
+     *
+     * This carried "TODO fix wrong", and an older note worrying that an _id key would end
+     * up in the map. Neither applies: getDBObject writes only count keys, one per bucket,
+     * and PersistenceRoundTripTest checks that a cell serialises and deserialises to the
+     * same buckets.
+     */
     public static DecisionCell getDecisionCellFromObject(BasicDBObject decisionCellObject){
         HashMap<GranularCount, MoveChoices> ctmc = new HashMap<>();
         for(String s : decisionCellObject.keySet()){
@@ -57,11 +65,22 @@ public class DecisionCell {
         return dc;
     }
 
+    /**
+     * The CSS class a rendered cell is coloured by, taken from the move at a true count
+     * of zero.
+     *
+     * Nothing guarantees a cell has a bucket at exactly zero. A finished table will, but
+     * printTables is worth running against a partly built one, and this used to
+     * dereference the missing bucket. An uncoloured cell is the honest rendering of a
+     * count that has not been reached yet.
+     */
     public String getCellColorTag(){
         GranularCount zeroCount = new GranularCount(0,0,0);
         MoveChoices mcs = countToMoveChoice.get(zeroCount);
-        String bestCompoundMove = mcs.getCompoundBestMove();
-        return bestCompoundMove;
+        if(mcs == null){
+            return "unmeasured";
+        }
+        return mcs.getCompoundBestMove();
     }
 
 

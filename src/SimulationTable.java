@@ -28,17 +28,20 @@ public class SimulationTable {
         name = n;
     }
 
+    /**
+     * Record one observation.
+     *
+     * The first event for a situation used to create the cell and then return without
+     * inserting, so every (hand, up-card) pair silently threw away its first result.
+     */
     public void insertEvent(EventResult er){
         HandSituation hs = new HandSituation(er.playerHE, er.dealerRevealedCard.getRankpoints());
-        if(!actionMap.containsKey(hs)){
-            DecisionCell emptyDC = new DecisionCell();
-            actionMap.put(hs, emptyDC);
-        }
-        else {
-            DecisionCell dc = actionMap.get(hs);
-            dc.insertEvent(er);
+        DecisionCell dc = actionMap.get(hs);
+        if(dc == null){
+            dc = new DecisionCell();
             actionMap.put(hs, dc);
         }
+        dc.insertEvent(er);
     }
 
     public EnumSet<PlayerMove> getKnownMovesWithPayoffs(HandSituation playerHS, GranularCount gc){
@@ -57,91 +60,92 @@ public class SimulationTable {
         return knownMovesWithPayoffs;
     }
 
+    /**
+     * The measured payoff of the best legal move here. The caller records what comes back,
+     * so there is no honest answer when the cell has not been solved.
+     */
     public double getBestPlayerMovePayoff(HandSituation playerHS, GranularCount gc, EnumSet<PlayerMove> legalMoves){
         DecisionCell dc = actionMap.get(playerHS);
-        //System.out.println(gc.units);
-        if(!dc.countToMoveChoice.containsKey(gc)){
-            int k=1;
+        if(dc == null){
+            throw new UnsolvedCellException("no cell for " + playerHS.getStringFromEncoding()
+                    + ", needed at true count " + gc.countToCellString());
         }
-        return dc.getBestPlayerMovePayoff(gc, legalMoves);
+        try {
+            return dc.getBestPlayerMovePayoff(gc, legalMoves);
+        } catch (UnsolvedCellException e) {
+            throw new UnsolvedCellException(playerHS.getStringFromEncoding() + ": " + e.getMessage());
+        }
     }
 
     public static void saveTable(SimulationTable simulationTable) throws UnknownHostException, InterruptedException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("SimulationTables");
+        try {
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("SimulationTables");
 
-        ObjectId nameID = new ObjectId(simulationTable.name);//?
+            ObjectId nameID = new ObjectId(simulationTable.name);//?
 
-        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-        BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
+            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+            BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
 
-        BasicDBObject actionMapObject = new BasicDBObject();
-        for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
-            for(HandSituation hs : simulationTable.actionMap.keySet()){
-                if(orderedHS.equals(hs)) {
-                    String keyAsString = hs.getStringFromEncoding();
-                    DecisionCell dc = simulationTable.actionMap.get(hs);
-                    BasicDBObject decisionCellObject = dc.getDBObject();
-                    actionMapObject.append(keyAsString, decisionCellObject);
+            BasicDBObject actionMapObject = new BasicDBObject();
+            for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
+                for(HandSituation hs : simulationTable.actionMap.keySet()){
+                    if(orderedHS.equals(hs)) {
+                        String keyAsString = hs.getStringFromEncoding();
+                        DecisionCell dc = simulationTable.actionMap.get(hs);
+                        BasicDBObject decisionCellObject = dc.getDBObject();
+                        actionMapObject.append(keyAsString, decisionCellObject);
+                    }
                 }
             }
-        }
 
-        BasicDBObject query = new BasicDBObject();
-        query.put("_id", nameID);
+            BasicDBObject query = new BasicDBObject();
+            query.put("_id", nameID);
 
-        System.out.println(simulationTable.name);
-        System.out.println("about to remove table");
-        Thread.sleep(5000);
+            tableObject.append("simulationParameterObject", simulationParameterObject)
+                    .append("actionMapObject", actionMapObject);
 
-        collection.remove(query);
-
-        Thread.sleep(2000);
-
-
-        tableObject.append("simulationParameterObject", simulationParameterObject)
-                .append("actionMapObject", actionMapObject);
-        //collection.update(query, tableObject);
-        try {
-            collection.insert(tableObject);
-            System.out.println("reinserted table part A");
+            // One upsert, so the stored table is replaced in a single write and is never
+            // absent. This used to remove the document and then insert a new one, which left
+            // a window where a table representing hours of simulation did not exist, and put
+            // the reinsert in a finally block: on success it wrote everything twice, and on
+            // failure it updated a document that had just been deleted, matching nothing.
+            collection.update(query, tableObject, true, false);
         } finally {
-            collection.update(query, tableObject);
-            System.out.println("reinserted table part B");
-
+            mongoClient.close();
         }
-
-
-
-
     }
 
 
     public static SimulationTable getTable(String name, SimulationTable emptySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("SimulationTables");
+        try {
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("SimulationTables");
 
-        BasicDBObject query = new BasicDBObject();
-        ObjectId nameID = new ObjectId(name);
-        query.put("_id", nameID);
-        BasicDBObject stObject = (BasicDBObject) collection.findOne(query);
-        if(stObject == null){
-            return emptySimTable;
+            BasicDBObject query = new BasicDBObject();
+            ObjectId nameID = new ObjectId(name);
+            query.put("_id", nameID);
+            BasicDBObject stObject = (BasicDBObject) collection.findOne(query);
+            if(stObject == null){
+                return emptySimTable;
+            }
+            BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
+            SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
+            HashMap<HandSituation, DecisionCell> am = new HashMap<>();
+            BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
+            for(String s : amObject.keySet()){
+                HandSituation hs = HandSituation.getEncodingFromString(s);
+                DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
+                am.put(hs, dc);
+            }
+
+
+            return new SimulationTable(sp, am, name);
+        } finally {
+            mongoClient.close();
         }
-        BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
-        SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
-        HashMap<HandSituation, DecisionCell> am = new HashMap<>();
-        BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
-        for(String s : amObject.keySet()){
-            HandSituation hs = HandSituation.getEncodingFromString(s);
-            DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
-            am.put(hs, dc);
-        }
-
-
-        return new SimulationTable(sp, am, name);
     }
 
 
@@ -205,7 +209,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Hard");
         hardCountTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        hardCountTable.add("<tbody>");
         hardCountTable.addAll(startTableRow);
 
 
@@ -232,7 +238,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Soft");
         softTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        softTable.add("<tbody>");
         softTable.addAll(startTableRow);
 
 
@@ -260,7 +268,9 @@ public class SimulationTable {
         ArrayList<String> styles = printStylesAndHead();
         ArrayList<String> startTableRow = printStartTableRow("Split");
         splitTable.addAll(styles);
-        styles.add("<tbody>");
+        // Was appended to `styles` after that list had already been copied, so the tag
+        // never reached the generated file.
+        splitTable.add("<tbody>");
         splitTable.addAll(startTableRow);
 
 

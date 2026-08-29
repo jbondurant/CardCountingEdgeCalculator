@@ -58,42 +58,31 @@ public class MetaDealer {
 
     public void saveToDB() throws UnknownHostException, InterruptedException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("MetaDealers");
-
-        ObjectId nameID = new ObjectId(name);
-        BasicDBObject mdObject = new BasicDBObject("_id", nameID);
-
-        BasicDBObject dctrObject = new BasicDBObject();
-        for(GranularCountAndDealerUpCard gcadup : dealerCountAndUpCardToResults.keySet()){
-            String keyAsString = gcadup.getString();
-            MetaDealerResult mdr = dealerCountAndUpCardToResults.get(gcadup);
-            String valueAsString = mdr.getString();
-            dctrObject.append(keyAsString, valueAsString);
-        }
-
-
-        BasicDBObject query = new BasicDBObject();
-        query.put("_id", nameID);
-
-        System.out.println(name);
-        System.out.println("about to remove metaDealer");
-        Thread.sleep(5000);
-
-        collection.remove(query);
-
-        Thread.sleep(2000);
-
-
-        mdObject.append("dctrObject", dctrObject);
-        //collection.update(query, tableObject);
         try {
-            collection.insert(mdObject);
-            System.out.println("reinserted metaDealer part A");
-        } finally {
-            collection.update(query, mdObject);
-            System.out.println("reinserted metaDealer part B");
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("MetaDealers");
 
+            ObjectId nameID = new ObjectId(name);
+            BasicDBObject mdObject = new BasicDBObject("_id", nameID);
+
+            BasicDBObject dctrObject = new BasicDBObject();
+            for(GranularCountAndDealerUpCard gcadup : dealerCountAndUpCardToResults.keySet()){
+                String keyAsString = gcadup.getString();
+                MetaDealerResult mdr = dealerCountAndUpCardToResults.get(gcadup);
+                String valueAsString = mdr.getString();
+                dctrObject.append(keyAsString, valueAsString);
+            }
+
+
+            BasicDBObject query = new BasicDBObject();
+            query.put("_id", nameID);
+
+            mdObject.append("dctrObject", dctrObject);
+            // A single upsert; see SimulationTable.saveTable for why this is not a remove
+            // followed by an insert.
+            collection.update(query, mdObject, true, false);
+        } finally {
+            mongoClient.close();
         }
     }
 
@@ -101,33 +90,36 @@ public class MetaDealer {
         MetaDealer emptyMetaDealer = new MetaDealer(name);
 
        MongoClient mongoClient = new MongoClient();
-       DB database = mongoClient.getDB("CardCounting");
-       DBCollection collection = database.getCollection("MetaDealers");
+       try {
+           DB database = mongoClient.getDB("CardCounting");
+           DBCollection collection = database.getCollection("MetaDealers");
 
-       BasicDBObject query = new BasicDBObject();
-       ObjectId nameID = new ObjectId(name);
-       query.put("_id", nameID);
-       BasicDBObject mdObject = (BasicDBObject) collection.findOne(query);
-       if(mdObject == null){
-           return emptyMetaDealer;
+           BasicDBObject query = new BasicDBObject();
+           ObjectId nameID = new ObjectId(name);
+           query.put("_id", nameID);
+           BasicDBObject mdObject = (BasicDBObject) collection.findOne(query);
+           if(mdObject == null){
+               return emptyMetaDealer;
+           }
+
+           BasicDBObject dctrObject = (BasicDBObject) mdObject.get("dctrObject");
+           HashMap<GranularCountAndDealerUpCard, MetaDealerResult> dctr = new HashMap<>();
+
+
+           for(String s : dctrObject.keySet()){
+               GranularCountAndDealerUpCard gcadup = GranularCountAndDealerUpCard.getFromString(s);
+               String mdrString = (String) dctrObject.get(s);
+               MetaDealerResult mdr = MetaDealerResult.getMetaDealerResultFromString(mdrString);
+               dctr.put(gcadup, mdr);
+           }
+
+           MetaDealer md = new MetaDealer(name);
+           md.dealerCountAndUpCardToResults = dctr;
+
+           return md;
+       } finally {
+           mongoClient.close();
        }
-
-       BasicDBObject dctrObject = (BasicDBObject) mdObject.get("dctrObject");
-       HashMap<GranularCountAndDealerUpCard, MetaDealerResult> dctr = new HashMap<>();
-
-
-       for(String s : dctrObject.keySet()){
-           GranularCountAndDealerUpCard gcadup = GranularCountAndDealerUpCard.getFromString(s);
-           String mdrString = (String) dctrObject.get(s);
-           MetaDealerResult mdr = MetaDealerResult.getMetaDealerResultFromString(mdrString);
-           dctr.put(gcadup, mdr);
-       }
-
-       MetaDealer md = new MetaDealer(name);
-       md.dealerCountAndUpCardToResults = dctr;
-
-       return md;
-
    }
 
 }

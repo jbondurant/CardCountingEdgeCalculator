@@ -18,7 +18,13 @@ public class PlayerDealerBestScore {
 
     public static double getPlayerPayoff(HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealerResult mdr, int playerBestScore, double blackjackPayoff, boolean phbj, boolean dhbj){
         BigDecimal outcome = BigDecimal.ZERO;
-        //System.out.println("pbs:\t" + playerBestScore);
+        if(mdr == null){
+            // runSimulation fills the MetaDealer to completion before the table phase
+            // begins, so every (count, up-card) should be here. A missing one means it
+            // did not, and the weighted payoff below would be built on nothing.
+            throw new UnsolvedCellException("no dealer outcomes recorded for a player "
+                    + playerBestScore + "; the MetaDealer is not finished");
+        }
 
         BigDecimal o17 = BigDecimal.valueOf(Outcome.outcomePayoff(outcomeFinder.get(new PlayerDealerBestScore(playerBestScore, 17, phbj, dhbj)), blackjackPayoff)).multiply(BigDecimal.valueOf(mdr.num17));
         BigDecimal o18  = BigDecimal.valueOf(Outcome.outcomePayoff(outcomeFinder.get(new PlayerDealerBestScore(playerBestScore, 18, phbj, dhbj)), blackjackPayoff)).multiply(BigDecimal.valueOf(mdr.num18));
@@ -45,6 +51,10 @@ public class PlayerDealerBestScore {
         totalNum = totalNum.add(BigDecimal.valueOf(mdr.num21));
         totalNum = totalNum.add(BigDecimal.valueOf(mdr.numBust));
 
+        if(totalNum.signum() == 0){
+            throw new UnsolvedCellException("the dealer bucket for a player "
+                    + playerBestScore + " is empty; there is nothing to average");
+        }
         outcome = outcome.divide(totalNum, 100, RoundingMode.FLOOR);
         return outcome.doubleValue();
     }
@@ -113,6 +123,16 @@ public class PlayerDealerBestScore {
         boolean player21AlwaysWins = hr.player21AlwaysWins;
         boolean dealerPeeksBlackjack = hr.dealerPeeksBlackjack;
 
+        // Both of these resolve before the player makes a decision, so neither carries any
+        // information about whether hitting or standing was better. VOID marks that: the
+        // hand does not count, and is dropped rather than scored.
+        //
+        // Neither is reachable in the table run. runSingleEvent discards a dealer natural
+        // upstream, and a player natural cannot arise, because setCards deals a soft-21
+        // target as three cards while playerHasBlackjack() requires exactly two.
+        //
+        // That three-card dealing is also what keeps a natural's 3:2 out of the soft-21
+        // cell, so hitting a soft 14 into a 21 does not inherit a bonus it has not earned.
         if(dealerHasBlackjack && dealerPeeksBlackjack){
             return Outcome.VOID;
         }
@@ -193,9 +213,6 @@ public class PlayerDealerBestScore {
     HashMap<PlayerDealerBestScore, Outcome>  pdToOutcome = new HashMap<>();
         for(int i=1; i<40; i++){
             for(int j=17; j<40; j++) {
-                if(i==20){
-                    int k = 1;
-                }
                 PlayerDealerBestScore pdbs = new PlayerDealerBestScore(i,j, false, false);
                 Outcome outcome = playerOutcomeVsDealerForTable(hr, i, j, false, false);
                 pdToOutcome.put(pdbs, outcome);

@@ -263,15 +263,27 @@ public class Simulation {
 
         HandSituation hs = new HandSituation(playerHE, dealerRevealedRank.getRankpoints());
         DecisionCell dc = simulationTable.actionMap.get(hs);
-        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);
-        EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
-        if(mcs == null){
-            int k=1;
+        if(dc == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but it "
+                    + "has no cell for " + hs.getStringFromEncoding()
+                    + " at true count " + granularCount.countToCellString());
         }
+        MoveChoices mcs = dc.countToMoveChoice.get(granularCount);
+        if(mcs == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but "
+                    + hs.getStringFromEncoding() + " has nothing at true count "
+                    + granularCount.countToCellString());
+        }
+        EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
         for(PlayerMove lm : mcs.actionPayoffs.keySet()){
             legalMoves.add(lm);
         }
         PlayerMove pm = mcs.getActionWithBestPayoff(legalMoves);
+        if(pm == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but "
+                    + hs.getStringFromEncoding() + " has no measured move at true count "
+                    + granularCount.countToCellString());
+        }
 
         //System.out.println("-----");
         double payoff = doPlayerMoveSmartAndGetPayoff(pm, table.randomishPlayer.playerHands);
@@ -331,7 +343,10 @@ public class Simulation {
         //System.out.println(playerHE.getStringFromEncoding());
         boolean canDouble = table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canSplit = playerHE.canSplit;
-        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        // Surrender is a first action on the original two cards. setCards deals three of
+        // them for the hard 20, hard 21 and soft 21 targets, and those cannot surrender.
+        boolean canSurrender = (hr.canEarlySurrender || hr.canLateSurrender)
+                && table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canHit = true;
         HandEncoding hard21Encoding = new HandEncoding(false, false, 21);
         HandEncoding hard20Encoding = new HandEncoding(false, false, 20);
@@ -366,11 +381,6 @@ public class Simulation {
 
         if(table.dealer.dealerHasBlackjack() && hr.dealerPeeksBlackjack){
             return null;
-        }
-
-        HandEncoding soft21 = new HandEncoding(true, false, 11);
-        if(playerHE.equals(soft21) && playerMove.equals(PlayerMove.Stand)){
-            int k = 1;
         }
 
         double payoff = doPlayerMoveAndGetPayoff(playerMove, table.randomishPlayer.playerHands, outcomeFinder, metaDealer);
@@ -418,17 +428,20 @@ public class Simulation {
                 }
                 GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
                 EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
+                // A card has already been taken above, so surrender is gone.
                 legalMoves.add(PlayerMove.Hit);
                 legalMoves.add(PlayerMove.Stand);
-                if (hr.canEarlySurrender || hr.canLateSurrender) {
-                    legalMoves.add(PlayerMove.Surrender);
-                }
 
                 PlayerMove bestMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
-                if(bestMove.equals(PlayerMove.Surrender)){
-                    return -0.5;
+                if(bestMove == null){
+                    // Substituting Stand would quietly play a different strategy than the
+                    // one being measured, and still report the hand as though the table
+                    // had chosen the move.
+                    throw new UnsolvedCellException("the payoff run reads a finished table, "
+                            + "but " + playerHS.getStringFromEncoding()
+                            + " has no measured move at true count " + gc.countToCellString());
                 }
-                else if(bestMove.equals(PlayerMove.Stand)){
+                if(bestMove.equals(PlayerMove.Stand)){
                     table.dealerPlay(hitsOnSoft17);
                     Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
                     return Outcome.outcomePayoff(outcome, hr.blackjackPayout);
@@ -450,8 +463,11 @@ public class Simulation {
             Outcome outcome = PlayerDealerBestScore.playerOutcomeVsDealerOld(table.randomishPlayer, handNode, this.table.dealer, hr, true);
             return 2.0 * Outcome.outcomePayoff(outcome, hr.blackjackPayout);
         }
-
-
+        else if(firstMove.equals(PlayerMove.Surrender)){
+            // Forfeit half the bet and stop. Without this the move fell through to the
+            // split branch below and tried to split whatever the hand happened to be.
+            return -0.5;
+        }
         else {
             //Split
 
@@ -538,11 +554,9 @@ public class Simulation {
             }
             GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
             EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
+            // A card has already been taken above, so surrender is gone.
             legalMoves.add(PlayerMove.Hit);
             legalMoves.add(PlayerMove.Stand);
-            if(hr.canEarlySurrender || hr.canLateSurrender){
-                legalMoves.add(PlayerMove.Surrender);
-            }
             double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
             return nextMoveAveragePayoff;
         }
@@ -555,13 +569,16 @@ public class Simulation {
                 return -2.0;
             }
             GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
-            EnumSet<PlayerMove> legalMoves = EnumSet.noneOf(PlayerMove.class);
-            legalMoves.add(PlayerMove.Stand);
-            if(hr.canEarlySurrender || hr.canLateSurrender){
-                legalMoves.add(PlayerMove.Surrender);
-            }
+            // A doubled hand takes exactly one card and then stands. Surrender is no
+            // longer on the table once the extra bet is down.
+            EnumSet<PlayerMove> legalMoves = EnumSet.of(PlayerMove.Stand);
             double nextMoveAveragePayoffDouble = 2.0 * getBestPlayerMovePayoff(playerHS, gc, legalMoves);
             return nextMoveAveragePayoffDouble;
+        }
+        else if(firstMove.equals(PlayerMove.Surrender)){
+            // Forfeit half the bet and stop. Without this the move fell through to the
+            // split branch below and tried to split whatever the hand happened to be.
+            return -0.5;
         }
         else{
             //Split
@@ -645,9 +662,6 @@ public class Simulation {
         HashSet initEncodedHands = HandEncoding.getStartingEncodings();
         HandEncoding soft21HE = new HandEncoding(true, false, 11);
         if(initEncodedHands.contains(he) || he.equals(soft21HE)){
-            if(soft21HE.equals(he)){
-                int k = 1;
-            }
             this.table.givePlayer3CardsThatFitHandEncodingAndCountMaybe(he, ah20ptr, ah21ptr, as21ptr, false);
         }
         else{
@@ -676,9 +690,8 @@ public class Simulation {
         if((!rank.equals(Rank.ACE)) || hr.canHitAfterSplittingAces){
             legalMoves.add(PlayerMove.Hit);
         }
-        if (hr.canEarlySurrender || hr.canLateSurrender) {
-            legalMoves.add(PlayerMove.Surrender);
-        }
+        // No surrender here: it is a first action on the original two cards, and this hand
+        // came out of a split. A few houses do allow it; this ruleset does not model that.
         if (hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.add(PlayerMove.Double);
         }
@@ -687,6 +700,11 @@ public class Simulation {
 
 
         PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
+        if(bestOtherMove == null){
+            throw new UnsolvedCellException("the payoff run reads a finished table, but the "
+                    + "split hand " + playerHS.getStringFromEncoding()
+                    + " has no measured move at true count " + gc.countToCellString());
+        }
         return doPlayerMoveSmartAndGetPayoff(bestOtherMove, handNode);
     }
 
@@ -708,14 +726,19 @@ public class Simulation {
         if((rank.equals(Rank.ACE)) && (!hr.canHitAfterSplittingAces)) {
             legalMoves.remove(PlayerMove.Hit);
         }
-        if((!hr.canEarlySurrender) && (!hr.canLateSurrender)){
-            legalMoves.remove(PlayerMove.Surrender);
-        }
+        // Always removed, not just when the rules forbid it: this hand came out of a
+        // split, and surrender is a first action on the original two cards.
+        legalMoves.remove(PlayerMove.Surrender);
         if(!hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.remove(PlayerMove.Double);
         }
         if(legalMoves.size() == 0){
-            return 0.0;//not optimal but ok should not matter with many simulations
+            // This used to return 0.0, on the reasoning that it would wash out over enough
+            // simulations. It does not: the 0.0 is recorded as an observation, so more
+            // simulations accumulate more of them rather than diluting them.
+            throw new UnsolvedCellException("no measured moves for "
+                    + playerHS.getStringFromEncoding() + " at true count "
+                    + gc.countToCellString() + ", reached after a split");
         }
         double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
         return nextMoveAveragePayoff;

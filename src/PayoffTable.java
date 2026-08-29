@@ -68,60 +68,61 @@ public class PayoffTable {
 
     public static void saveTable(PayoffTable payoffTable) throws UnknownHostException, InterruptedException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("PayoffTables");
-
-        ObjectId nameID = new ObjectId(payoffTable.name);
-        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-
-        BasicDBList countPayoffsList = new BasicDBList();
-        for(int i=0; i< payoffTable.countPayoffs.length; i++){
-            CountPayoff cp = payoffTable.countPayoffs[i];
-            BasicDBObject cpObject = cp.getDBObject();
-            countPayoffsList.add(cpObject);
-        }
-
-        BasicDBObject query = new BasicDBObject();
-        query.put("_id", nameID);
-
-        System.out.println(payoffTable.name);
-        collection.remove(query);
-
-        Thread.sleep(2000);
-        tableObject.append("numberCells", payoffTable.numberCells)
-            .append("countPayoffsList", countPayoffsList);
         try {
-            collection.insert(tableObject);
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("PayoffTables");
+
+            ObjectId nameID = new ObjectId(payoffTable.name);
+            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+
+            BasicDBList countPayoffsList = new BasicDBList();
+            for(int i=0; i< payoffTable.countPayoffs.length; i++){
+                CountPayoff cp = payoffTable.countPayoffs[i];
+                BasicDBObject cpObject = cp.getDBObject();
+                countPayoffsList.add(cpObject);
+            }
+
+            BasicDBObject query = new BasicDBObject();
+            query.put("_id", nameID);
+
+            tableObject.append("numberCells", payoffTable.numberCells)
+                .append("countPayoffsList", countPayoffsList);
+            // A single upsert; see SimulationTable.saveTable for why this is not a remove
+            // followed by an insert.
+            collection.update(query, tableObject, true, false);
         } finally {
-            collection.update(query, tableObject);
+            mongoClient.close();
         }
     }
 
     public static PayoffTable getTable(String name, PayoffTable emptyPaySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
-        DB database = mongoClient.getDB("CardCounting");
-        DBCollection collection = database.getCollection("PayoffTables");
+        try {
+            DB database = mongoClient.getDB("CardCounting");
+            DBCollection collection = database.getCollection("PayoffTables");
 
-        BasicDBObject query = new BasicDBObject();
-        ObjectId nameID = new ObjectId(name);
-        query.put("_id", nameID);
-        BasicDBObject ptObject = (BasicDBObject) collection.findOne(query);
-        if(ptObject == null){
-            return emptyPaySimTable;
+            BasicDBObject query = new BasicDBObject();
+            ObjectId nameID = new ObjectId(name);
+            query.put("_id", nameID);
+            BasicDBObject ptObject = (BasicDBObject) collection.findOne(query);
+            if(ptObject == null){
+                return emptyPaySimTable;
+            }
+            String n = ptObject.getString("name");
+            int numberCells = ptObject.getInt("numberCells");
+            BasicDBList cpList = (BasicDBList) ptObject.get("countPayoffsList");
+            CountPayoff[] allCP = new CountPayoff[numberCells];
+            int i=0;
+            for(Object o : cpList){
+                CountPayoff cp = CountPayoff.getFromObject((BasicDBObject) o);
+                allCP[i] = cp;
+                i++;
+            }
+            PayoffTable pt = new PayoffTable(allCP, name, numberCells);
+            return pt;
+        } finally {
+            mongoClient.close();
         }
-        String n = ptObject.getString("name");
-        int numberCells = ptObject.getInt("numberCells");
-        BasicDBList cpList = (BasicDBList) ptObject.get("countPayoffsList");
-        CountPayoff[] allCP = new CountPayoff[numberCells];
-        int i=0;
-        for(Object o : cpList){
-            CountPayoff cp = CountPayoff.getFromObject((BasicDBObject) o);
-            allCP[i] = cp;
-            i++;
-        }
-        PayoffTable pt = new PayoffTable(allCP, name, numberCells);
-        return pt;
-
     }
 
 
