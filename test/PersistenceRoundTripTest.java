@@ -17,7 +17,7 @@ public class PersistenceRoundTripTest {
     @Test
     public void anActionPayoffSurvivesTheRoundTrip() {
         ActionPayoff ap = new ActionPayoff();
-        ap.insertEventSmart(1.5);
+        ap.insertEventSmart(1.5, true);   // a paid natural, so the blackjack count is not zero
         ap.insertEventSmart(-1.0);
         ap.insertEventSmart(0.0);
 
