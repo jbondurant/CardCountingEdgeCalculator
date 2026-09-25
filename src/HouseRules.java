@@ -48,7 +48,9 @@ public class HouseRules {
         hr.maxNumCardsAfterSplittingAces = 1;
         hr.dealerPeeksBlackjack = true;
 
-        hr.blackjackOnSplitPairs = true;
+        // Casino de Montreal's blackjack page: "There is no blackjack on split pairs." A
+        // split ace that draws a ten, or a split ten that draws an ace, is an ordinary 21.
+        hr.blackjackOnSplitPairs = false;
         hr.possibleSideBets = EnumSet.of(PlayerSideBetMove.Insurance);
         hr.notSplitCardsThatCanBeDoubled = Rank.getSetAllRanks();
 
