@@ -30,9 +30,15 @@ import java.util.List;
  * allowed, no surrender, resplitting to the ruleset's limit of four hands (two for aces).
  * These are the Montreal casino rules the rest of the project uses, with an infinite deck
  * standing in for the casino's eight-deck shoe: each rank is as likely on every card as
- * on the first, whatever has already been dealt. No natural is ever evaluated, so the
- * blackjack payout does not enter: the dealer has already peeked, none of the starting
- * hands is a natural, and a split ace that draws a ten is scored as an ordinary 21.
+ * on the first, whatever has already been dealt.
+ *
+ * The blackjack payout enters in one place only. The dealer has already peeked and none
+ * of the starting hands is a natural, but a split pair can still make ace and ten, and
+ * the ruleset's blackjackOnSplitPairs says what that hand is. With the flag on, a split
+ * ace that draws a ten, or a split ten that draws an ace, is a blackjack paid at the
+ * table's blackjack odds. With it off the hand is an ordinary 21, as in most casinos and
+ * at Casino de Montreal, and the payout does not enter at all.
+ *
  * Everything here is a closed-form expectation, so there is no sampling error to report.
  *
  * Run: java RandomVsOptimalReport [maxTotalTheRandomPlayerWillHit]
@@ -62,8 +68,12 @@ public class RandomVsOptimalReport {
      */
     private int hitLimit;
 
-    /** Split limits come from the ruleset; HouseRules counts splits, so 3 means four hands. */
-    private final HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(75);
+    /**
+     * The split limits, and what a split ace and ten is and pays, come from the ruleset.
+     * HouseRules counts splits, so 3 means four hands. Soft 17 and double after split
+     * are the constants above, and the dealer always peeks.
+     */
+    private final HouseRules houseRules;
 
     private final double[][] dealerDistribution = new double[12][];
     private final double[][][] playMemo = new double[2][23][2];
@@ -76,7 +86,12 @@ public class RandomVsOptimalReport {
     }
 
     public RandomVsOptimalReport(int hitLimit) {
+        this(hitLimit, HouseRules.getMtlCasino25MinBlackjackParams(75));
+    }
+
+    RandomVsOptimalReport(int hitLimit, HouseRules houseRules) {
         this.hitLimit = hitLimit;
+        this.houseRules = houseRules;
         for (int up = 2; up <= 11; up++) {
             dealerDistribution[up] = dealerDistributionForUpCard(up == 11 ? 1 : up);
         }
@@ -262,8 +277,37 @@ public class RandomVsOptimalReport {
         return sum / options.size();
     }
 
+    /**
+     * A split pair and the card it draws make ace and ten: a split ace drawing a ten, or
+     * a split ten drawing an ace. No other pair can.
+     */
+    private static boolean makesAceAndTen(int pairRank, int drawn) {
+        return (pairRank == 1 && drawn == 10) || (pairRank == 10 && drawn == 1);
+    }
+
+    /**
+     * What a split ace and ten is worth when the ruleset says it is a blackjack.
+     *
+     * Casinos with this rule pay it at the table's own blackjack odds, and it beats a
+     * dealer who draws to 21 where an ordinary 21 would push. It would lose to a dealer
+     * natural, but this dealer has already peeked and has none, so it wins the payout
+     * against everything the dealer can still make. A natural leaves no decision, so
+     * random and optimal continuation agree on it.
+     *
+     * The flag names split pairs, so split aces and split tens both qualify, resplit
+     * hands included. Casinos differ on this -- some count split aces only -- but the
+     * ruleset has one flag, and splitting tens stays wrong under the rule, so the tens
+     * part moves the price of a split and not the choice.
+     */
+    private double valueOfSplitNatural() {
+        return houseRules.blackjackPayout;
+    }
+
     /** One split hand, played out without splitting again. */
     private double valueOfOneSplitHand(int pairRank, int drawn, boolean optimal) {
+        if (houseRules.blackjackOnSplitPairs && makesAceAndTen(pairRank, drawn)) {
+            return valueOfSplitNatural();
+        }
         if (pairRank == 1) {
             // Split aces take exactly one card and then stand. There is no later decision,
             // so random and optimal continuation agree here.
@@ -347,7 +391,9 @@ public class RandomVsOptimalReport {
         String chosenMoveNote;
     }
 
-    private void resetMemo() {
+    /** Point the solver at one up-card, 2 to 11 with 11 an ace, and forget the last one. */
+    private void faceUpCard(int upCard) {
+        currentDealer = dealerDistribution[upCard];
         for (int m = 0; m < 2; m++) {
             for (int t = 0; t < 23; t++) {
                 playMemoSet[m][t][0] = false;
@@ -356,9 +402,20 @@ public class RandomVsOptimalReport {
         }
     }
 
+    /** What standing on a total is worth against an up-card. */
+    double valueOfStandingAgainst(int total, int upCard) {
+        faceUpCard(upCard);
+        return standValue(total);
+    }
+
+    /** What splitting a pair is worth against an up-card, resplits included. */
+    double valueOfSplittingAgainst(int pairRank, int upCard, boolean optimal) {
+        faceUpCard(upCard);
+        return valueOfSplitting(pairRank, optimal);
+    }
+
     Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
-        currentDealer = dealerDistribution[upCard];
-        resetMemo();
+        faceUpCard(upCard);
 
         List<String> names = new ArrayList<>();
         List<Double> optimalValues = new ArrayList<>();
@@ -425,6 +482,25 @@ public class RandomVsOptimalReport {
         return up == 11 ? "A" : String.valueOf(up);
     }
 
+    /** A payout as odds: 1.5 is 3:2 and 1.2 is 6:5. */
+    private static String asOdds(double payout) {
+        for (int to = 1; to <= 20; to++) {
+            double of = payout * to;
+            if (Math.abs(of - Math.rint(of)) < 1e-9) {
+                return (long) Math.rint(of) + ":" + to;
+            }
+        }
+        return payout + " to 1";
+    }
+
+    /** The printed rule line for the one place the blackjack payout can enter. */
+    String splitNaturalLine() {
+        return houseRules.blackjackOnSplitPairs
+                ? "A split ace and ten is a blackjack paid " + asOdds(houseRules.blackjackPayout)
+                        + ", the only blackjack these figures include."
+                : "A split ace and ten is an ordinary 21, so no blackjack enters these figures.";
+    }
+
     public void run() {
         List<Row> all = new ArrayList<>();
 
@@ -447,6 +523,7 @@ public class RandomVsOptimalReport {
         }
 
         System.out.println("Infinite deck, H17, dealer peeks, DAS, no surrender, resplit to 4.");
+        System.out.println(splitNaturalLine());
         System.out.println("Random player hits any total up to " + hitLimit + ".");
         System.out.println("All figures are exact expectations, in units of the original bet.");
         System.out.println();
