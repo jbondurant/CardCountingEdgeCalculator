@@ -173,17 +173,47 @@ public class Simulation {
         return null;
     }
 
+    /**
+     * The fingerprint of the strategy the payoff run is about to play, refusing when the
+     * table is not finished.
+     *
+     * A payoff run measures the edge of a strategy, so it needs one to measure. On a
+     * partly built table it used to start anyway and stop at the first unmeasured cell it
+     * happened to reach; and if it reached none, it measured a strategy that the next
+     * strategy run would go on to change.
+     */
+    public String fingerprintOfFinishedStrategy(){
+        SimulationParameters sp = simulationTable.simulationParameters;
+        HandSituation unfinished = handSituationToPlayV3(sp.minHitsPerDecisionCellCount,
+                sp.minCountish, sp.maxCountish, sp.countGranularity);
+        if(unfinished != null){
+            throw new IllegalStateException("the payoff run plays the strategy in "
+                    + StoredState.describeTable(name) + ", but that table is not finished: "
+                    + unfinished.getStringFromEncoding() + " still needs "
+                    + sp.minHitsPerDecisionCellCount + " hands on some move at every count "
+                    + "from " + sp.minCountish + " to " + sp.maxCountish
+                    + ". Finish it with runMetaSimulation first.");
+        }
+        return simulationTable.getStrategyFingerprint();
+    }
+
     public void runPayoffFinderSim(int numMinutes) throws UnknownHostException, InterruptedException {
         Date start = new Date();
         Date end = new Date(start.getTime() + numMinutes * 60 * 1000);
-        simulationTable = SimulationTable.getTable(name, this.simulationTable);
+        // Checked before it replaces this.simulationTable, whose parameters are the code's.
+        SimulationTable stored = SimulationTable.getTable(name, this.simulationTable);
+        stored.resumeUnder(this.simulationTable.simulationParameters);
+        simulationTable = stored;
         SimulationParameters sp = simulationTable.simulationParameters;
         int minC = sp.minCountish;
         int maxC = sp.maxCountish;
         double countPrecision = sp.countGranularity;
+        String semanticsKey = sp.getSemanticsKey();
+        String strategyFingerprint = fingerprintOfFinishedStrategy();
 
         PayoffTable emptyPayoffTable = new PayoffTable(minC, maxC, countPrecision, name);
         PayoffTable payoffTable = PayoffTable.getTable(name, emptyPayoffTable);
+        payoffTable.resumeUnder(semanticsKey, strategyFingerprint);
 
         while((new Date()).before(end)){
             EventResult eventResult = runSingleSmartEvent(minC, maxC, countPrecision);
@@ -195,7 +225,7 @@ public class Simulation {
             payoffTable.insertEventSmart(eventResult);
         }
         System.out.println("Average payoff:\t" + payoffTable.getAveragePayoff());
-        PayoffTable.saveTable(payoffTable);
+        PayoffTable.saveTable(payoffTable, semanticsKey, strategyFingerprint);
     }
 
 
@@ -205,8 +235,12 @@ public class Simulation {
         Date end = new Date(start.getTime() + numMinutes * 60 * 1000);
         double oddsBestMove = 0.5;
         double oddsSecondBestMove = 0.3;
-        simulationTable = SimulationTable.getTable(name, this.simulationTable);
+        // Checked before it replaces this.simulationTable, whose parameters are the code's.
+        SimulationTable stored = SimulationTable.getTable(name, this.simulationTable);
+        stored.resumeUnder(this.simulationTable.simulationParameters);
+        simulationTable = stored;
         SimulationParameters sp = simulationTable.simulationParameters;
+        String semanticsKey = sp.getSemanticsKey();
 
         HashMap<PlayerDealerBestScore, Outcome> outcomeFinder = PlayerDealerBestScore.initializeOutcomeFinderForTable(simulationTable.simulationParameters.houseRules);
 
@@ -217,13 +251,14 @@ public class Simulation {
         int minMetaDealer = sp.minMetaDealer;
         boolean dealerPeeksForBlackjack = sp.houseRules.dealerPeeksBlackjack;
         MetaDealer md = MetaDealer.getMetaDealer(name);
+        md.resumeUnder(semanticsKey);
         while((!md.isCompleted(minMetaDealer, minC, maxC, countPrecision)) && (new Date()).before(end)){
             MetaDealerEventResult mdEventResult = runSingleMetaDealerEvent();
             GranularCount mdEventGC = mdEventResult.granularCount;
             mdEventGC.forceCountIntoBoundaries(minC, maxC);
             md.insertEvent(mdEventResult, dealerPeeksForBlackjack);
         }
-        md.saveToDB();
+        md.saveToDB(semanticsKey);
 
 
         int mhpdcc = sp.minHitsPerDecisionCellCount;
