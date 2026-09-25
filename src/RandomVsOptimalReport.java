@@ -50,6 +50,12 @@ public class RandomVsOptimalReport {
      * Defaults to 19, meaning the random player is spared the obviously absurd move of
      * hitting a 20. That is deliberately generous: it makes the gap that survives an
      * honest one rather than an artifact of a strawman.
+     *
+     * It binds the random player and no one else. The optimal player is the yardstick
+     * the random one is measured against, so it may hit any total short of 21 whatever
+     * this is set to. Capping both used to move the yardstick with the argument: at 17
+     * the optimal player could not hit a soft 18, and standing on it against a 9 came
+     * out as right.
      */
     private int hitLimit;
 
@@ -189,7 +195,8 @@ public class RandomVsOptimalReport {
         }
         double stand = standValue(total);
         double value;
-        if (total > hitLimit) {
+        // The limit is the random player's. The optimal one decides for itself below 21.
+        if (optimal ? total >= 21 : total > hitLimit) {
             value = stand;
         } else {
             double hit = 0.0;
@@ -232,7 +239,7 @@ public class RandomVsOptimalReport {
     private double valueOfFreshHand(int total, boolean soft, boolean optimal, boolean mayDouble) {
         List<Double> options = new ArrayList<>();
         options.add(standValue(total));
-        if (total <= hitLimit) {
+        if (optimal ? total < 21 : total <= hitLimit) {
             options.add(valueOfHitting(total, soft, optimal));
         }
         if (mayDouble) {
@@ -264,7 +271,7 @@ public class RandomVsOptimalReport {
         return valueOfFreshHand(h.total, h.soft, optimal, DOUBLE_AFTER_SPLIT);
     }
 
-    /** How many moves other than splitting this hand has, matching valueOfFreshHand. */
+    /** The random player's moves here other than splitting, matching valueOfFreshHand. */
     private int countMovesBesidesSplitting(int pairRank, int drawn) {
         if (pairRank == 1) {
             return 1;                       // split aces take one card and stand
@@ -325,7 +332,7 @@ public class RandomVsOptimalReport {
 
     // ------------------------------------------------------------------- reporting
 
-    private static final class Row {
+    static final class Row {
         String hand;
         int upCard;
         String bestByOptimal;
@@ -346,7 +353,7 @@ public class RandomVsOptimalReport {
         }
     }
 
-    private Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
+    Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
         currentDealer = dealerDistribution[upCard];
         resetMemo();
 
@@ -358,10 +365,14 @@ public class RandomVsOptimalReport {
         optimalValues.add(standValue(total));
         randomValues.add(standValue(total));
 
-        if (total <= hitLimit) {
+        // Hitting is always on the optimal side's list. When the random player will not
+        // take it, its random price is minus infinity, so random play can never pick it.
+        if (total < 21) {
             names.add("Hit");
             optimalValues.add(valueOfHitting(total, soft, true));
-            randomValues.add(valueOfHitting(total, soft, false));
+            randomValues.add(total <= hitLimit
+                    ? valueOfHitting(total, soft, false)
+                    : Double.NEGATIVE_INFINITY);
         }
 
         names.add("Double");
@@ -385,8 +396,14 @@ public class RandomVsOptimalReport {
         row.valueOfRightMove = optimalValues.get(bestOptimal);
         row.valueOfChosenMove = optimalValues.get(bestRandom);
         row.cost = row.valueOfRightMove - row.valueOfChosenMove;
-        // How far random continuation undersells the move that is actually best.
-        row.undervaluation = optimalValues.get(bestOptimal) - randomValues.get(bestOptimal);
+        // How far random continuation undersells the move that is actually best. If that
+        // move is a hit the random player will not take, random continuation never prices
+        // it, and there is no figure to give; NaN keeps the row out of that table rather
+        // than letting it top the table at infinity.
+        double randomPrice = randomValues.get(bestOptimal);
+        row.undervaluation = randomPrice == Double.NEGATIVE_INFINITY
+                ? Double.NaN
+                : optimalValues.get(bestOptimal) - randomPrice;
         row.chosenMoveNote = names.get(bestOptimal);
         return row;
     }
@@ -453,7 +470,12 @@ public class RandomVsOptimalReport {
         System.out.println();
         System.out.println("How badly random continuation underprices the move that is actually best:");
         System.out.println();
-        List<Row> byUndervaluation = new ArrayList<>(all);
+        List<Row> byUndervaluation = new ArrayList<>();
+        for (Row r : all) {
+            if (!Double.isNaN(r.undervaluation)) {
+                byUndervaluation.add(r);
+            }
+        }
         byUndervaluation.sort(Comparator.comparingDouble((Row r) -> -r.undervaluation));
         System.out.printf("%-8s %4s   %-6s %11s%n", "hand", "vs", "move", "underpriced");
         for (int i = 0; i < 8; i++) {
