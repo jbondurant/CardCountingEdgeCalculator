@@ -7,12 +7,17 @@
 .tg .tg-0pky{border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-hit{background-color:#fd6864;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-stand{background-color:#fcff2f;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-double{background-color:#67b7ff;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-doublehit{background-color:#3166ff;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-doublestand{background-color:#9698ed;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-doublesplit{background-color:#c0c0c0;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-split{background-color:#62c96f;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-splithit{background-color:#b7fd9a;text-align:left;vertical-align:top}
 .tg .tg-splitstand{background-color:#7aff9d;border-color:inherit;text-align:left;vertical-align:top}
 .tg .tg-splitdouble{background-color:#34fa97;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-surrender{background-color:#d98cff;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-surrenderhit{background-color:#b95cff;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-surrenderstand{background-color:#efc6ff;border-color:inherit;text-align:left;vertical-align:top}
 
 </style>
 <table class="tg">
