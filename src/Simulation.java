@@ -30,8 +30,24 @@ public class Simulation {
         return s;
     }
 
+    /**
+     * The _id a table is stored under: the name's characters in hex, padded with "a" to
+     * the 24 hex digits of an ObjectId.
+     *
+     * Nothing shortened a longer name, so anything over 12 characters came out over 24
+     * digits and new ObjectId threw from inside the first load, before anything was
+     * simulated, with a message about hexadecimal that did not mention the name. It is
+     * refused here instead. The encoding of the names that fit is unchanged, so the tables
+     * already stored under them still resolve.
+     */
     public static String fixName(String ogName){
         String hexName = ogName.chars().mapToObj(c -> Integer.toHexString(c)).collect(Collectors.joining());
+        if(hexName.length() > 24){
+            throw new IllegalArgumentException("the table name \"" + ogName + "\" is too long "
+                    + "to store: its _id is the name in hex, which comes to "
+                    + hexName.length() + " digits, and an ObjectId holds 24. That is 12 "
+                    + "plain ASCII characters; pick a shorter name.");
+        }
         String hexName24 = hexName;
         while(hexName24.length() < 24){
             hexName24 += "a";

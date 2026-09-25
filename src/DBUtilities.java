@@ -51,7 +51,10 @@ public class DBUtilities {
         BasicDBObject iSetVal = (BasicDBObject) iSetObject.get(key);
         BasicDBList iSetList = (BasicDBList) iSetVal.get("allInts");
         for(Object o : iSetList){
-            allInts.add(Integer.valueOf((String) o));
+            // getObjectFromIntSet writes Integers, and they come back as numbers. This used
+            // to cast each one to String, which throws on the first element, so a ruleset
+            // naming any free-double score saved normally and then never loaded again.
+            allInts.add(((Number) o).intValue());
         }
         return allInts;
     }
