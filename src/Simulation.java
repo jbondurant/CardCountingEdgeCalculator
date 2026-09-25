@@ -647,7 +647,7 @@ public class Simulation {
         MetaDealerResult mdr = metaDealer.dealerCountAndUpCardToResults.get(gcadup);
         HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
         int playerBestScore = playerHE.getBestScore();
-        boolean playerHasBlackjack = table.randomishPlayer.playerHasBlackjack();
+        boolean playerHasBlackjack = table.randomishPlayer.handIsPaidAsBlackjack(handNode, hr);
         boolean dealerHasBlackjack = false;
         return PlayerDealerBestScore.getPlayerPayoff(outcomeFinder, mdr, playerBestScore, hr.blackjackPayout, playerHasBlackjack, dealerHasBlackjack);
     }

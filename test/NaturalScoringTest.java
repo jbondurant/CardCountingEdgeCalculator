@@ -13,9 +13,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * The payoff path reports real money, so a natural pays 3:2 there.
  *
  * The table path is asked which move was better, and a hand that ended before the player
- * chose anything cannot answer that. A dealer natural and a player natural both resolve
- * without a decision, so both are VOID: the hand does not count, and is meant to be
- * dropped rather than scored.
+ * chose anything cannot answer that. A dealer natural resolves without a decision, so it
+ * is VOID: the hand does not count, and is meant to be dropped rather than scored. The
+ * table path never deals a player natural. The only blackjack it can hold is a hand out
+ * of a split that drew to an ace and a ten where the house pays blackjack on split pairs,
+ * and that is scored as the blackjack it is.
  *
  * That leaves a question VOID does not answer. The soft-21 cell has to hold some value,
  * because hitting a soft 14 can land on soft 21 and the lookup has to return something --
@@ -94,12 +96,18 @@ public class NaturalScoringTest {
                 hr, 20, 21, false, true));
     }
 
-    /** A player natural ended the hand before the player acted too. */
+    /**
+     * A player blackjack in the table path is a split hand paid as one, and it is scored
+     * as a blackjack. It used to be VOID on the grounds that the table path could never
+     * reach one, which stopped being true once the house rule on split pairs was read.
+     */
     @Test
-    public void tableTreatsAPlayerNaturalAsVoid() {
+    public void tableScoresAPlayerBlackjackAsOne() {
         HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
-        assertEquals(Outcome.VOID, PlayerDealerBestScore.playerOutcomeVsDealerForTable(
+        assertEquals(Outcome.WINBLACKJACK, PlayerDealerBestScore.playerOutcomeVsDealerForTable(
                 hr, 21, 20, true, false));
+        assertEquals(Outcome.WINBLACKJACK, PlayerDealerBestScore.playerOutcomeVsDealerForTable(
+                hr, 21, 21, true, false), "a blackjack beats a dealer's drawn 21");
     }
 
     /**
@@ -108,8 +116,8 @@ public class NaturalScoringTest {
      * outcomePayoff used to map VOID to -1.0, which is a fabricated loss. Returning 0.0
      * instead would be gentler but no more real: averaging a void hand in as zero still
      * pulls a cell's mean toward zero. There is no right number, so asking for one is the
-     * error. Nothing reaches this in practice -- both VOID cases are unreachable in the
-     * table run -- which is exactly why a wrong answer here would have gone unnoticed.
+     * error. Nothing reaches this in practice -- the table run discards a dealer natural
+     * before scoring -- which is exactly why a wrong answer here would have gone unnoticed.
      */
     @Test
     public void aVoidHandCannotBeScored() {

@@ -16,6 +16,24 @@ public class HouseRules {
     public int maxNumCardsAfterSplittingAces;
     public boolean dealerPeeksBlackjack;
 
+    /**
+     * Whether a hand out of a split that draws to two cards making 21 is paid as a
+     * blackjack. That is a split ace drawing a ten or a split ten drawing an ace.
+     *
+     * False is the common rule: it is an ordinary 21. It wins even money, pushes a dealer
+     * 21 of three or more cards, and loses to a dealer natural.
+     *
+     * True pays it as a blackjack: blackjackPayout, whatever that is at this table, so 6:5
+     * on a 6:5 table. It beats a dealer 21 of three or more cards instead of pushing it.
+     * It still loses to a dealer natural, since only a dealt natural pushes one. That can
+     * only happen where the dealer does not peek; a peeked natural ends the round before
+     * anyone can split.
+     *
+     * True covers every split pair that can make one, aces or tens, first split or
+     * resplit. Houses that offer the rule do not all agree on that: some pay it on split
+     * aces only, and one online game on split tens only. This field cannot describe either.
+     * RandomishPlayer.handIsPaidAsBlackjack is where it is applied.
+     */
     public boolean blackjackOnSplitPairs;
     public EnumSet<PlayerSideBetMove> possibleSideBets;
     public EnumSet<Rank> notSplitCardsThatCanBeDoubled;
