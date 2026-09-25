@@ -5,10 +5,20 @@ implementation details and are not. Both are the kind of thing where the wrong
 version still runs, still produces numbers, and the numbers are quietly wrong.
 
 Every figure below comes from a solver in `src/`, not from a spreadsheet. They are
-exact expectations under the Montreal casino rules — eight decks, dealer hits soft 17
-and peeks for blackjack, blackjack pays 3:2, double after split, resplit to four hands
-— computed in closed form rather than sampled, so there is no margin of error to
-quote. Re-run them and you get the same numbers.
+exact expectations under the Montreal casino rules — dealer hits soft 17 and peeks for
+blackjack, blackjack pays 3:2, double after split, resplit to four hands — computed in
+closed form rather than sampled, so there is no margin of error to quote. Re-run them
+and you get the same numbers.
+
+One place they part from the casino is the shoe. The casino deals from eight decks;
+both solvers draw from an infinite deck instead, where each rank is as likely on every
+card as on the first, whatever has already been dealt. That is the usual stand-in for
+a big shoe, and it is what keeps the solvers short: with no memory of what has been
+dealt, the value of playing on depends only on the total and whether it is soft. In a
+real shoe the cards on the table are gone from it, so the odds on the next card shift
+a little with each one. Against 416 cards a handful of them moves things only
+slightly, but it does move them, and the figures below are infinite-deck figures, not
+eight-deck ones.
 
 ```
 java RandomVsOptimalReport          # part one

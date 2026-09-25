@@ -26,9 +26,13 @@ import java.util.List;
  *
  * and reports where the two disagree about which move is best, and what that costs.
  *
- * Model: infinite deck, dealer hits soft 17 and peeks for blackjack, blackjack pays 3:2,
- * double after split allowed, no surrender, resplitting to the ruleset's limit of four
- * hands (two for aces). These are the Montreal casino rules the rest of the project uses.
+ * Model: infinite deck, dealer hits soft 17 and peeks for blackjack, double after split
+ * allowed, no surrender, resplitting to the ruleset's limit of four hands (two for aces).
+ * These are the Montreal casino rules the rest of the project uses, with an infinite deck
+ * standing in for the casino's eight-deck shoe: each rank is as likely on every card as
+ * on the first, whatever has already been dealt. No natural is ever evaluated, so the
+ * blackjack payout does not enter: the dealer has already peeked, none of the starting
+ * hands is a natural, and a split ace that draws a ten is scored as an ordinary 21.
  * Everything here is a closed-form expectation, so there is no sampling error to report.
  *
  * Run: java RandomVsOptimalReport [maxTotalTheRandomPlayerWillHit]
@@ -42,7 +46,6 @@ public class RandomVsOptimalReport {
 
     private static final boolean DEALER_HITS_SOFT_17 = true;
     private static final boolean DOUBLE_AFTER_SPLIT = true;
-    private static final double BLACKJACK_PAYOUT = 1.5;
 
     /**
      * How high a total the random player is willing to hit.
@@ -443,7 +446,7 @@ public class RandomVsOptimalReport {
             }
         }
 
-        System.out.println("Infinite deck, H17, dealer peeks, 3:2, DAS, no surrender, resplit to 4.");
+        System.out.println("Infinite deck, H17, dealer peeks, DAS, no surrender, resplit to 4.");
         System.out.println("Random player hits any total up to " + hitLimit + ".");
         System.out.println("All figures are exact expectations, in units of the original bet.");
         System.out.println();
