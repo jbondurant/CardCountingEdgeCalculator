@@ -55,6 +55,11 @@ public class Table {
         int minDeckSize = (int) ((1 - maxPenDoublePercent) * ogSizeDouble);
         int maxCardsRemoved = gameDeck.cards.size() - minDeckSize;
 
+        // The chosen cards were each taken as the first card of their rank from the top,
+        // so the cards above where they were found are all other ranks. Burning from that
+        // order leaves the player drawing from a top that is short of the ranks just
+        // dealt. A missed count reshuffles below, but the first attempt needs it too.
+        gameDeck.shuffle();
         CompositeCardSource currDeckCopy = gameDeck.deepCopy();
         int runningCountCopy = runningCount;
         while(true) {
