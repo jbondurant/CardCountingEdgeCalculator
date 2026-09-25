@@ -1,7 +1,15 @@
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * zero already was.
  */
 public class StrategyCellLabelTest {
+
+    private static final Pattern CELL =
+            Pattern.compile("<td class=\"(tg-[A-Za-z0-9]+)\">(.*?)</td>");
+    private static final Pattern INTERVAL =
+            Pattern.compile("\\[(-?\\d+\\.\\d\\d), (-?\\d+\\.\\d\\d)\\] do ([A-Za-z]+)");
 
     // ------------------------------------------------------------------- one cell
 
@@ -133,6 +146,70 @@ public class StrategyCellLabelTest {
                 "every empty cell should render empty and marked unmeasured");
     }
 
+    // ------------------------------------------------------- the committed tables
+
+    /**
+     * Every cell the published tables colour by a move also says which move, at which
+     * counts. A coloured cell with no text tells a reader nothing unless they already
+     * know the colour key.
+     */
+    @Test
+    public void everyMoveCellOfEveryCommittedTableHasALabel() throws IOException {
+        int checked = 0;
+        for (File table : committedTables()) {
+            Matcher m = CELL.matcher(read(table));
+            int blank = 0;
+            while (m.find()) {
+                if (m.group(1).equals("tg-0pky")) {
+                    continue;
+                }
+                checked++;
+                if (m.group(2).isEmpty()) {
+                    blank++;
+                }
+            }
+            assertEquals(0, blank, table.getName() + " has " + blank
+                    + " move cells with a colour and no text");
+        }
+        assertTrue(checked > 0, "found no move cells to check");
+    }
+
+    /**
+     * The colour of a cell is the move at a true count of zero, and so is the interval of
+     * its label that covers zero. They are two renderings of one measurement, so in a
+     * committed table they have to agree. The testTable1 labels were filled in on the
+     * strength of this: a cell with one bucket, at zero, says to do what its colour says.
+     */
+    @Test
+    public void theLabelOfEveryCommittedCellAgreesWithItsColour() throws IOException {
+        for (File table : committedTables()) {
+            Matcher m = CELL.matcher(read(table));
+            while (m.find()) {
+                String cssClass = m.group(1);
+                String label = m.group(2);
+                if (cssClass.equals("tg-0pky") || label.isEmpty()) {
+                    continue;
+                }
+                String moveAtZero = null;
+                for (String line : label.split("<br>")) {
+                    Matcher interval = INTERVAL.matcher(line);
+                    assertTrue(interval.matches(),
+                            table.getName() + " has a label line that is not an interval: " + line);
+                    double from = Double.parseDouble(interval.group(1));
+                    double to = Double.parseDouble(interval.group(2));
+                    if (from <= 0.0 && 0.0 <= to) {
+                        moveAtZero = interval.group(3);
+                    }
+                }
+                assertNotNull(moveAtZero, table.getName() + " has a " + cssClass
+                        + " cell whose label says nothing about a count of zero: " + label);
+                assertEquals(cssClass, "tg-" + moveAtZero.toLowerCase(Locale.ROOT),
+                        table.getName() + " has a cell coloured " + cssClass
+                                + " whose label says to " + moveAtZero + " at a count of zero");
+            }
+        }
+    }
+
     // --------------------------------------------------------------------- helpers
 
     private static void record(DecisionCell dc, double count, PlayerMove move, double payoff) {
@@ -157,5 +234,17 @@ public class StrategyCellLabelTest {
             }
         }
         throw new IllegalArgumentException("no rank worth " + points);
+    }
+
+    private static File[] committedTables() {
+        File[] tables = new File("stuffForHTML").listFiles((d, name) -> name.endsWith(".html"));
+        assertNotNull(tables, "no stuffForHTML directory to check");
+        assertTrue(tables.length > 0, "no generated tables to check");
+        Arrays.sort(tables);
+        return tables;
+    }
+
+    private static String read(File f) throws IOException {
+        return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
     }
 }
