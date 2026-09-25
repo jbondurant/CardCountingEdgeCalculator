@@ -116,6 +116,9 @@ public class Simulation {
 
 
     public Simulation(SimulationTable st, String n){
+        // Refused here because nothing later would notice: a rule the engine does not play
+        // does not fail, it just produces tables for a different game.
+        st.simulationParameters.houseRules.requirePlayable();
         simulationTable = st;
         table = new Table(st.simulationParameters.houseRules.numDecks, st.simulationParameters.countMethod);
         name = n;

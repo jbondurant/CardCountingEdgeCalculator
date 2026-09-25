@@ -1,8 +1,10 @@
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.List;
 
 public class HouseRules {
     public int numDecks;
@@ -65,6 +67,92 @@ public class HouseRules {
         hr.hasDoubleDownRescue = false;
 
         return hr;
+    }
+
+    /**
+     * The configured rules the engine does not play, one line each saying why, or an empty
+     * list when it plays all of them.
+     *
+     * These fields can describe more games than the engine was written to deal. Some are
+     * never read, and a few are read only in part, which is worse, because setting one
+     * changes something and so looks like it worked. Either way a run would go ahead and
+     * produce tables that look like any others while describing a game nobody configured,
+     * so the Simulation constructor refuses them instead.
+     *
+     * blackjackOnSplitPairs is left out on purpose. The engine pays a split ace and ten as
+     * an ordinary 21 while the Montreal rules say it is a blackjack, and which of the two is
+     * right about Montreal is an open question rather than something to settle by refusing
+     * to run. possibleSideBets is left out because declining a side bet is always a legal
+     * way to play the main game.
+     */
+    public List<String> unplayableRules(){
+        List<String> unplayable = new ArrayList<>();
+        if(!dealerPeeksBlackjack){
+            unplayable.add("dealerPeeksBlackjack is false: no-peek is not modelled, since the "
+                    + "MetaDealer drops every dealer natural either way and so the table run "
+                    + "never prices one");
+        }
+        if(canEarlySurrender){
+            unplayable.add("canEarlySurrender is true: surrender is modelled as late surrender "
+                    + "only, after a dealer natural has been settled");
+        }
+        if(hasDoubleDownRescue){
+            unplayable.add("hasDoubleDownRescue is true: a doubled hand takes one card and "
+                    + "stands, with no rescue");
+        }
+        if(canSwap){
+            unplayable.add("canSwap is true: the engine plays one hand and has no swap");
+        }
+        if(pushOnDealerHard22){
+            unplayable.add("pushOnDealerHard22 is true: it cannot be priced, since the outcome "
+                    + "code pushes only a player 21 against a dealer 22 and MetaDealerResult "
+                    + "counts a 22 in the same bin as every other bust");
+        }
+        if(player21AlwaysWins){
+            unplayable.add("player21AlwaysWins is true: the peek settles a dealer natural "
+                    + "before the player can make a 21");
+        }
+        if(numHandsDealt != 1){
+            unplayable.add("numHandsDealt is " + numHandsDealt
+                    + ": the engine deals one hand a round");
+        }
+        if(!notSplitCardsThatCanBeDoubled.equals(EnumSet.allOf(Rank.class))){
+            unplayable.add("notSplitCardsThatCanBeDoubled leaves out "
+                    + EnumSet.complementOf(notSplitCardsThatCanBeDoubled)
+                    + ": the engine lets every two-card hand double");
+        }
+        if(!scoreOfHardHandsPairsThatCanBeFreeDoubled.isEmpty()){
+            unplayable.add("scoreOfHardHandsPairsThatCanBeFreeDoubled is "
+                    + scoreOfHardHandsPairsThatCanBeFreeDoubled
+                    + ": the engine has no free doubles");
+        }
+        if(!ranksWithFreeBetAfterSplit.isEmpty()){
+            unplayable.add("ranksWithFreeBetAfterSplit is " + ranksWithFreeBetAfterSplit
+                    + ": the engine has no free splits");
+        }
+        // Every card is worth at least one, so an ace and twenty-one more cards is a bust.
+        // A limit of 21 cards after the split can never bind; anything lower is a limit.
+        if(!canHitAfterSplittingAces && maxNumCardsAfterSplittingAces != 1){
+            unplayable.add("maxNumCardsAfterSplittingAces is " + maxNumCardsAfterSplittingAces
+                    + " while canHitAfterSplittingAces is false: split aces that cannot "
+                    + "hit take exactly one card each");
+        }
+        if(canHitAfterSplittingAces && maxNumCardsAfterSplittingAces < 21){
+            unplayable.add("maxNumCardsAfterSplittingAces is " + maxNumCardsAfterSplittingAces
+                    + " while canHitAfterSplittingAces is true: split aces that can hit "
+                    + "are hit with no card limit");
+        }
+        return unplayable;
+    }
+
+    /** Throws, naming every rule unplayableRules lists, unless it lists none. */
+    public void requirePlayable(){
+        List<String> unplayable = unplayableRules();
+        if(!unplayable.isEmpty()){
+            throw new IllegalArgumentException("the engine does not play these house rules, "
+                    + "so a run would describe a different game: "
+                    + String.join("; ", unplayable));
+        }
     }
 
     public BasicDBObject getDBOject(){
