@@ -716,7 +716,13 @@ public class Simulation {
         }
         legalMoves.remove(PlayerMove.Split);
 
-
+        // With one legal move there is no choice to read from the table, so play it.
+        // Asking anyway went wrong for split aces, which may only stand: a split ace that
+        // draws another ace is A,A again, and a finished A,A cell need not have measured
+        // standing at every count, since standing is rarely the best way to play A,A.
+        if(legalMoves.size() == 1){
+            return doPlayerMoveSmartAndGetPayoff(legalMoves.iterator().next(), handNode);
+        }
 
         PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
         if(bestOtherMove == null){

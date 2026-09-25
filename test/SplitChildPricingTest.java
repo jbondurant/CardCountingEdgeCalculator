@@ -7,7 +7,7 @@ import java.util.HashMap;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * What a hand that came out of a split is worth.
+ * What a hand that came out of a split is worth, and which move it plays.
  *
  * The table run prices each split hand from the measured moves in that hand's own cell.
  * That is sound for an ordinary child, whose cell was solved before the pair was
@@ -23,9 +23,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * a hand that stands as its first move is. The other legal moves still come from what has
  * been measured.
  *
- * Every test here sits against a 6 at a true count of zero, where the dealer ends on 17
- * fourteen times in a hundred, 18 thirteen times, 19 thirteen, 20 twelve, 21 six, and
- * busts the other forty-two.
+ * The payoff run chooses moves rather than pricing them. When a split hand has exactly
+ * one legal move there is nothing for the table to choose, so it plays that move.
+ *
+ * Every test here sits against a 6 at a true count of zero. For the table run the dealer
+ * there ends on 17 fourteen times in a hundred, 18 thirteen times, 19 thirteen, 20
+ * twelve, 21 six, and busts the other forty-two; the payoff run deals the dealer's cards
+ * instead.
  */
 public class SplitChildPricingTest {
 
@@ -236,5 +240,35 @@ public class SplitChildPricingTest {
 
         assertEquals(2 * STAND_ON_18, payoff, 1e-9,
                 "standing on 18 is worth " + STAND_ON_18 + ", better than the -0.6 hit");
+    }
+
+    /**
+     * The payoff run on a finished table whose A,A cell, at the count a split lands on,
+     * measured splitting and hitting but never standing. A split ace that draws another
+     * ace can only stand, so there is nothing to look up; it used to ask the A,A cell
+     * which of {Stand} was best, find nothing, and stop the run.
+     *
+     * The dealer turns a ten under the 6 and draws another ten, so both hands win.
+     */
+    @Test
+    public void thePayoffRunPlaysASplitHandsOnlyLegalMoveWithoutALookup() {
+        HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        SimulationTable table = emptyTable(hr);
+        HandEncoding aces = new HandEncoding(true, true, 2);
+        record(table, aces, PlayerMove.Split, 0.3);
+        record(table, aces, PlayerMove.Hit, 0.1);
+        record(table, new HandEncoding(true, false, 11), PlayerMove.Stand, STAND_ON_21);
+
+        Simulation sim = seated(table, Rank.ACE, Rank.ACE);
+        sim.table.dealer.hiddenCard.add(new Card(Rank.TEN, Suit.HEARTS));
+        stackTheShoe(sim, Rank.ACE, Rank.TEN, Rank.TEN);
+
+        double payoff = sim.doPlayerMoveSmartAndGetPayoff(
+                PlayerMove.Split, sim.table.randomishPlayer.playerHands);
+
+        assertEquals(ZERO, trueCountNow(sim),
+                "the two split cards were meant to leave the count at zero");
+        assertEquals(2.0, payoff, 1e-9,
+                "both hands stand and the dealer busts on 26, so both win");
     }
 }
