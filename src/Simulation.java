@@ -342,7 +342,12 @@ public class Simulation {
 
         //System.out.println(playerHE.getStringFromEncoding());
         boolean canDouble = table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
-        boolean canSplit = playerHE.canSplit;
+        // A pair can be split only if the rules allow at least one split of its rank. The
+        // limit checks inside the split are for resplits: with a limit of 0 they found the
+        // dealt pair already over it, dealt nothing, and returned the pair's best other
+        // move, which was then recorded as the payoff of Split.
+        Rank pairRank = table.randomishPlayer.playerHands.playerHand.handCards.get(0).rank;
+        boolean canSplit = playerHE.canSplit && hr.allowsSplitting(pairRank);
         // Surrender is a first action on the original two cards. setCards deals three of
         // them for the hard 20, hard 21 and soft 21 targets, and those cannot surrender.
         boolean canSurrender = (hr.canEarlySurrender || hr.canLateSurrender)

@@ -67,6 +67,20 @@ public class HouseRules {
         return hr;
     }
 
+    /**
+     * Whether a pair of this rank may be split at all.
+     *
+     * Each limit counts how many times one hand may be split, so a limit of 0 means the
+     * pair is played as it was dealt. The move dispatchers compare the limits against the
+     * number of hands already in play, which is how they stop a resplit; whether the
+     * dealt pair can be split in the first place has to be decided before a move is
+     * chosen, and that is this.
+     */
+    public boolean allowsSplitting(Rank rank){
+        int limit = rank.equals(Rank.ACE) ? numSplitsAces : numSplitsNotAces;
+        return limit > 0;
+    }
+
     public BasicDBObject getDBOject(){
 
         BasicDBObject rtcbddasObject = new BasicDBObject("_id", this.ranksThatCanBeDoubledDownAfterSplit.hashCode());
