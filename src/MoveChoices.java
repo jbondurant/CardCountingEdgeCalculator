@@ -34,8 +34,11 @@ public class MoveChoices {
         //
         // Double and Surrender are gone once the hand has a third card, which leaves Hit
         // and Stand. Split is gone on a pair at the resplit limit. That is still two
-        // cards, so doubling may be allowed, but the hand came out of a split and
-        // surrendering never is.
+        // cards, so doubling may be allowed, but the hand came out of a split, and
+        // surrendering is left out because most houses withdraw it there. The label is
+        // drawn without the rules, so under a house that allows it
+        // (HouseRules.canSurrenderAfterSplit) this fallback can name a move that the
+        // split hand would in fact surrender instead of.
         EnumSet<PlayerMove> fallbackMoves;
         if(pm1.equals(PlayerMove.Double) || pm1.equals(PlayerMove.Surrender)){
             fallbackMoves = EnumSet.of(PlayerMove.Hit, PlayerMove.Stand);

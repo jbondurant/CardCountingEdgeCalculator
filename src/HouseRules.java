@@ -49,6 +49,14 @@ public class HouseRules {
 
     public boolean canEarlySurrender;
     public boolean canLateSurrender;
+    /**
+     * Whether a hand that came out of a split may still surrender.
+     *
+     * Separate from the two flags above because it is a separate rule: a house that offers
+     * surrender at all almost always withdraws it once you split. It is meaningless on its
+     * own, so read it through offersSurrenderAfterSplit rather than directly.
+     */
+    public boolean canSurrenderAfterSplit;
     public boolean player21AlwaysWins; //even against dealer blackjack
     public boolean hasDoubleDownRescue;
     //bonusAfterSplit
@@ -83,6 +91,7 @@ public class HouseRules {
 
         hr.canEarlySurrender = false;
         hr.canLateSurrender = false;
+        hr.canSurrenderAfterSplit = false;
         hr.player21AlwaysWins = false;
         hr.hasDoubleDownRescue = false;
 
@@ -101,8 +110,10 @@ public class HouseRules {
      *
      * blackjackOnSplitPairs is not refused because the engine plays either value: a split
      * ace and ten is paid as a blackjack or as an ordinary 21, as the flag says, in
-     * RandomishPlayer.handIsPaidAsBlackjack. possibleSideBets is left out because declining
-     * a side bet is always a legal way to play the main game.
+     * RandomishPlayer.handIsPaidAsBlackjack. canSurrenderAfterSplit is not refused either:
+     * both split paths in Simulation read it, through offersSurrenderAfterSplit.
+     * possibleSideBets is left out because declining a side bet is always a legal way to
+     * play the main game.
      */
     public List<String> unplayableRules(){
         List<String> unplayable = new ArrayList<>();
@@ -188,6 +199,25 @@ public class HouseRules {
         return limit > 0;
     }
 
+    /**
+     * Whether surrender is offered at all. Early and late surrender differ in when the
+     * option is taken, not in whether it exists, so every place that only needs to know
+     * "is surrender on the table" asks this rather than repeating the disjunction.
+     */
+    public boolean offersSurrender(){
+        return canEarlySurrender || canLateSurrender;
+    }
+
+    /**
+     * Whether a hand reached through a split may surrender.
+     *
+     * A conjunction rather than a single flag: surrendering after a split is a narrowing
+     * of surrender, so it cannot be on when surrender itself is off.
+     */
+    public boolean offersSurrenderAfterSplit(){
+        return offersSurrender() && canSurrenderAfterSplit;
+    }
+
     public BasicDBObject getDBOject(){
 
         BasicDBObject rtcbddasObject = new BasicDBObject("_id", this.ranksThatCanBeDoubledDownAfterSplit.hashCode());
@@ -224,6 +254,14 @@ public class HouseRules {
                 .append("canLateSurrender", canLateSurrender)
                 .append("player21AlwaysWins", player21AlwaysWins)
                 .append("hasDoubleDownRescue", hasDoubleDownRescue);
+        // Written only when it is on. Every stored key is built from this document, and a
+        // table stored before the field existed was built by code that could not surrender
+        // after a split, so it means false. Writing false as well would change the key of
+        // every ruleset without the rule, the Montreal one included, and a table built
+        // under exactly these rules would be refused as though it came from other ones.
+        if(canSurrenderAfterSplit){
+            houseRulesObject.append("canSurrenderAfterSplit", true);
+        }
         return houseRulesObject;
     }
 
@@ -254,6 +292,10 @@ public class HouseRules {
 
         hr.canEarlySurrender = (boolean) houseRulesObject.get("canEarlySurrender");
         hr.canLateSurrender = (boolean) houseRulesObject.get("canLateSurrender");
+        // Absent from a ruleset stored before the field existed, and from any ruleset
+        // without the rule since (see getDBOject), and false is the true reading of both.
+        Object surrenderAfterSplit = houseRulesObject.get("canSurrenderAfterSplit");
+        hr.canSurrenderAfterSplit = surrenderAfterSplit != null && (boolean) surrenderAfterSplit;
         hr.player21AlwaysWins = (boolean) houseRulesObject.get("player21AlwaysWins");
         hr.hasDoubleDownRescue = (boolean) houseRulesObject.get("hasDoubleDownRescue");
 
