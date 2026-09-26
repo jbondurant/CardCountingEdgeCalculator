@@ -212,13 +212,9 @@ public class Simulation {
 
         int mhpdcc = sp.minHitsPerDecisionCellCount;
 
-        CompositeCardSource multiDeckExample = this.table.gameDeck.deepCopy();
-        HashMap<HandEncoding, ArrayList<DoubleRanks>> hetdr = HandEncoding.handEncodingToDoubleRanks(multiDeckExample);
-        ArrayList<TripleRanks> ah20ptr = HandEncoding.allPossibleTripleRanksForHard20(multiDeckExample);
-        ArrayList<TripleRanks> ah21ptr = HandEncoding.allPossibleTripleRanksForHard21(multiDeckExample);
-        ArrayList<TripleRanks> as21ptr = HandEncoding.allPossibleTripleRanksForSoft21(multiDeckExample);
+        Holdings holdings = enumerateHoldings();
         while(this.handSituationToPlayV3(mhpdcc, minC, maxC, countPrecision) != null && (new Date()).before(end)){
-            EventResult eventResult = runSingleEvent(hetdr, ah20ptr, ah21ptr, as21ptr, outcomeFinder, md, oddsBestMove, oddsSecondBestMove);
+            EventResult eventResult = runSingleEvent(holdings.twoCard, holdings.hard20, holdings.hard21, holdings.soft21, outcomeFinder, md, oddsBestMove, oddsSecondBestMove);
             if(eventResult == null){
                 continue;
             }
@@ -248,6 +244,47 @@ public class Simulation {
             }*/
         }
         SimulationTable.saveTable(simulationTable);
+    }
+
+    /**
+     * The ranks the table run deals a player from, one list per hand it can ask for.
+     *
+     * Hard 20, hard 21 and soft 21 have three-card lists of their own, because two cards
+     * cannot make them except as a pair of tens or a natural. Every other hand is dealt as
+     * two cards, from twoCard.
+     */
+    public static class Holdings {
+        public final HashMap<HandEncoding, ArrayList<DoubleRanks>> twoCard;
+        public final ArrayList<TripleRanks> hard20;
+        public final ArrayList<TripleRanks> hard21;
+        public final ArrayList<TripleRanks> soft21;
+
+        public Holdings(HashMap<HandEncoding, ArrayList<DoubleRanks>> twoCard, ArrayList<TripleRanks> hard20, ArrayList<TripleRanks> hard21, ArrayList<TripleRanks> soft21){
+            this.twoCard = twoCard;
+            this.hard20 = hard20;
+            this.hard21 = hard21;
+            this.soft21 = soft21;
+        }
+    }
+
+    /**
+     * Enumerate the holdings over a fresh, undealt shoe.
+     *
+     * setCards deals a hand by picking one entry of its list at random, so the list has to
+     * hold every way a full shoe makes that hand, once for each way, for 10-6 and 9-7 to
+     * come up as often as a real shoe deals them. This used to enumerate over a copy of
+     * this.table's shoe, but by the time the table run starts that shoe has been dealt
+     * from: the MetaDealer phase and every table hand replace this.table and deal into it.
+     * So the enumeration gets a shoe of its own, whatever this.table holds.
+     */
+    public Holdings enumerateHoldings(){
+        int numDecks = simulationTable.simulationParameters.houseRules.numDecks;
+        CompositeCardSource fullShoe = CompositeCardSource.getMultiDeck(numDecks);
+        return new Holdings(
+                HandEncoding.handEncodingToDoubleRanks(fullShoe),
+                HandEncoding.allPossibleTripleRanksForHard20(fullShoe),
+                HandEncoding.allPossibleTripleRanksForHard21(fullShoe),
+                HandEncoding.allPossibleTripleRanksForSoft21(fullShoe));
     }
 
     public EventResult runSingleSmartEvent(int minC, int maxC, double countPrecision) {
