@@ -26,9 +26,19 @@ import java.util.List;
  *
  * and reports where the two disagree about which move is best, and what that costs.
  *
- * Model: infinite deck, dealer hits soft 17 and peeks for blackjack, blackjack pays 3:2,
- * double after split allowed, no surrender, resplitting to the ruleset's limit of four
- * hands (two for aces). These are the Montreal casino rules the rest of the project uses.
+ * Model: infinite deck, dealer hits soft 17 and peeks for blackjack, double after split
+ * allowed, no surrender, resplitting to the ruleset's limit of four hands (two for aces).
+ * These are the Montreal casino rules the rest of the project uses, with an infinite deck
+ * standing in for the casino's eight-deck shoe: each rank is as likely on every card as
+ * on the first, whatever has already been dealt.
+ *
+ * The blackjack payout enters in one place only. The dealer has already peeked and none
+ * of the starting hands is a natural, but a split pair can still make ace and ten, and
+ * the ruleset's blackjackOnSplitPairs says what that hand is. With the flag on, a split
+ * ace that draws a ten, or a split ten that draws an ace, is a blackjack paid at the
+ * table's blackjack odds. With it off the hand is an ordinary 21, as in most casinos and
+ * at Casino de Montreal, and the payout does not enter at all.
+ *
  * Everything here is a closed-form expectation, so there is no sampling error to report.
  *
  * Run: java RandomVsOptimalReport [maxTotalTheRandomPlayerWillHit]
@@ -42,7 +52,6 @@ public class RandomVsOptimalReport {
 
     private static final boolean DEALER_HITS_SOFT_17 = true;
     private static final boolean DOUBLE_AFTER_SPLIT = true;
-    private static final double BLACKJACK_PAYOUT = 1.5;
 
     /**
      * How high a total the random player is willing to hit.
@@ -50,11 +59,21 @@ public class RandomVsOptimalReport {
      * Defaults to 19, meaning the random player is spared the obviously absurd move of
      * hitting a 20. That is deliberately generous: it makes the gap that survives an
      * honest one rather than an artifact of a strawman.
+     *
+     * It binds the random player and no one else. The optimal player is the yardstick
+     * the random one is measured against, so it may hit any total short of 21 whatever
+     * this is set to. Capping both used to move the yardstick with the argument: at 17
+     * the optimal player could not hit a soft 18, and standing on it against a 9 came
+     * out as right.
      */
     private int hitLimit;
 
-    /** Split limits come from the ruleset; HouseRules counts splits, so 3 means four hands. */
-    private final HouseRules houseRules = HouseRules.getMtlCasino25MinBlackjackParams(75);
+    /**
+     * The split limits, and what a split ace and ten is and pays, come from the ruleset.
+     * HouseRules counts splits, so 3 means four hands. Soft 17 and double after split
+     * are the constants above, and the dealer always peeks.
+     */
+    private final HouseRules houseRules;
 
     private final double[][] dealerDistribution = new double[12][];
     private final double[][][] playMemo = new double[2][23][2];
@@ -67,7 +86,12 @@ public class RandomVsOptimalReport {
     }
 
     public RandomVsOptimalReport(int hitLimit) {
+        this(hitLimit, HouseRules.getMtlCasino25MinBlackjackParams(75));
+    }
+
+    RandomVsOptimalReport(int hitLimit, HouseRules houseRules) {
         this.hitLimit = hitLimit;
+        this.houseRules = houseRules;
         for (int up = 2; up <= 11; up++) {
             dealerDistribution[up] = dealerDistributionForUpCard(up == 11 ? 1 : up);
         }
@@ -189,7 +213,8 @@ public class RandomVsOptimalReport {
         }
         double stand = standValue(total);
         double value;
-        if (total > hitLimit) {
+        // The limit is the random player's. The optimal one decides for itself below 21.
+        if (optimal ? total >= 21 : total > hitLimit) {
             value = stand;
         } else {
             double hit = 0.0;
@@ -232,7 +257,7 @@ public class RandomVsOptimalReport {
     private double valueOfFreshHand(int total, boolean soft, boolean optimal, boolean mayDouble) {
         List<Double> options = new ArrayList<>();
         options.add(standValue(total));
-        if (total <= hitLimit) {
+        if (optimal ? total < 21 : total <= hitLimit) {
             options.add(valueOfHitting(total, soft, optimal));
         }
         if (mayDouble) {
@@ -252,8 +277,37 @@ public class RandomVsOptimalReport {
         return sum / options.size();
     }
 
+    /**
+     * A split pair and the card it draws make ace and ten: a split ace drawing a ten, or
+     * a split ten drawing an ace. No other pair can.
+     */
+    private static boolean makesAceAndTen(int pairRank, int drawn) {
+        return (pairRank == 1 && drawn == 10) || (pairRank == 10 && drawn == 1);
+    }
+
+    /**
+     * What a split ace and ten is worth when the ruleset says it is a blackjack.
+     *
+     * Casinos with this rule pay it at the table's own blackjack odds, and it beats a
+     * dealer who draws to 21 where an ordinary 21 would push. It would lose to a dealer
+     * natural, but this dealer has already peeked and has none, so it wins the payout
+     * against everything the dealer can still make. A natural leaves no decision, so
+     * random and optimal continuation agree on it.
+     *
+     * The flag names split pairs, so split aces and split tens both qualify, resplit
+     * hands included. Casinos differ on this -- some count split aces only -- but the
+     * ruleset has one flag, and splitting tens stays wrong under the rule, so the tens
+     * part moves the price of a split and not the choice.
+     */
+    private double valueOfSplitNatural() {
+        return houseRules.blackjackPayout;
+    }
+
     /** One split hand, played out without splitting again. */
     private double valueOfOneSplitHand(int pairRank, int drawn, boolean optimal) {
+        if (houseRules.blackjackOnSplitPairs && makesAceAndTen(pairRank, drawn)) {
+            return valueOfSplitNatural();
+        }
         if (pairRank == 1) {
             // Split aces take exactly one card and then stand. There is no later decision,
             // so random and optimal continuation agree here.
@@ -264,7 +318,7 @@ public class RandomVsOptimalReport {
         return valueOfFreshHand(h.total, h.soft, optimal, DOUBLE_AFTER_SPLIT);
     }
 
-    /** How many moves other than splitting this hand has, matching valueOfFreshHand. */
+    /** The random player's moves here other than splitting, matching valueOfFreshHand. */
     private int countMovesBesidesSplitting(int pairRank, int drawn) {
         if (pairRank == 1) {
             return 1;                       // split aces take one card and stand
@@ -325,7 +379,7 @@ public class RandomVsOptimalReport {
 
     // ------------------------------------------------------------------- reporting
 
-    private static final class Row {
+    static final class Row {
         String hand;
         int upCard;
         String bestByOptimal;
@@ -337,7 +391,9 @@ public class RandomVsOptimalReport {
         String chosenMoveNote;
     }
 
-    private void resetMemo() {
+    /** Point the solver at one up-card, 2 to 11 with 11 an ace, and forget the last one. */
+    private void faceUpCard(int upCard) {
+        currentDealer = dealerDistribution[upCard];
         for (int m = 0; m < 2; m++) {
             for (int t = 0; t < 23; t++) {
                 playMemoSet[m][t][0] = false;
@@ -346,9 +402,20 @@ public class RandomVsOptimalReport {
         }
     }
 
-    private Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
-        currentDealer = dealerDistribution[upCard];
-        resetMemo();
+    /** What standing on a total is worth against an up-card. */
+    double valueOfStandingAgainst(int total, int upCard) {
+        faceUpCard(upCard);
+        return standValue(total);
+    }
+
+    /** What splitting a pair is worth against an up-card, resplits included. */
+    double valueOfSplittingAgainst(int pairRank, int upCard, boolean optimal) {
+        faceUpCard(upCard);
+        return valueOfSplitting(pairRank, optimal);
+    }
+
+    Row evaluate(String label, int total, boolean soft, Integer pairRank, int upCard) {
+        faceUpCard(upCard);
 
         List<String> names = new ArrayList<>();
         List<Double> optimalValues = new ArrayList<>();
@@ -358,10 +425,14 @@ public class RandomVsOptimalReport {
         optimalValues.add(standValue(total));
         randomValues.add(standValue(total));
 
-        if (total <= hitLimit) {
+        // Hitting is always on the optimal side's list. When the random player will not
+        // take it, its random price is minus infinity, so random play can never pick it.
+        if (total < 21) {
             names.add("Hit");
             optimalValues.add(valueOfHitting(total, soft, true));
-            randomValues.add(valueOfHitting(total, soft, false));
+            randomValues.add(total <= hitLimit
+                    ? valueOfHitting(total, soft, false)
+                    : Double.NEGATIVE_INFINITY);
         }
 
         names.add("Double");
@@ -385,8 +456,14 @@ public class RandomVsOptimalReport {
         row.valueOfRightMove = optimalValues.get(bestOptimal);
         row.valueOfChosenMove = optimalValues.get(bestRandom);
         row.cost = row.valueOfRightMove - row.valueOfChosenMove;
-        // How far random continuation undersells the move that is actually best.
-        row.undervaluation = optimalValues.get(bestOptimal) - randomValues.get(bestOptimal);
+        // How far random continuation undersells the move that is actually best. If that
+        // move is a hit the random player will not take, random continuation never prices
+        // it, and there is no figure to give; NaN keeps the row out of that table rather
+        // than letting it top the table at infinity.
+        double randomPrice = randomValues.get(bestOptimal);
+        row.undervaluation = randomPrice == Double.NEGATIVE_INFINITY
+                ? Double.NaN
+                : optimalValues.get(bestOptimal) - randomPrice;
         row.chosenMoveNote = names.get(bestOptimal);
         return row;
     }
@@ -403,6 +480,25 @@ public class RandomVsOptimalReport {
 
     private static String upCardName(int up) {
         return up == 11 ? "A" : String.valueOf(up);
+    }
+
+    /** A payout as odds: 1.5 is 3:2 and 1.2 is 6:5. */
+    private static String asOdds(double payout) {
+        for (int to = 1; to <= 20; to++) {
+            double of = payout * to;
+            if (Math.abs(of - Math.rint(of)) < 1e-9) {
+                return (long) Math.rint(of) + ":" + to;
+            }
+        }
+        return payout + " to 1";
+    }
+
+    /** The printed rule line for the one place the blackjack payout can enter. */
+    String splitNaturalLine() {
+        return houseRules.blackjackOnSplitPairs
+                ? "A split ace and ten is a blackjack paid " + asOdds(houseRules.blackjackPayout)
+                        + ", the only blackjack these figures include."
+                : "A split ace and ten is an ordinary 21, so no blackjack enters these figures.";
     }
 
     public void run() {
@@ -426,7 +522,8 @@ public class RandomVsOptimalReport {
             }
         }
 
-        System.out.println("Infinite deck, H17, dealer peeks, 3:2, DAS, no surrender, resplit to 4.");
+        System.out.println("Infinite deck, H17, dealer peeks, DAS, no surrender, resplit to 4.");
+        System.out.println(splitNaturalLine());
         System.out.println("Random player hits any total up to " + hitLimit + ".");
         System.out.println("All figures are exact expectations, in units of the original bet.");
         System.out.println();
@@ -453,7 +550,12 @@ public class RandomVsOptimalReport {
         System.out.println();
         System.out.println("How badly random continuation underprices the move that is actually best:");
         System.out.println();
-        List<Row> byUndervaluation = new ArrayList<>(all);
+        List<Row> byUndervaluation = new ArrayList<>();
+        for (Row r : all) {
+            if (!Double.isNaN(r.undervaluation)) {
+                byUndervaluation.add(r);
+            }
+        }
         byUndervaluation.sort(Comparator.comparingDouble((Row r) -> -r.undervaluation));
         System.out.printf("%-8s %4s   %-6s %11s%n", "hand", "vs", "move", "underpriced");
         for (int i = 0; i < 8; i++) {
