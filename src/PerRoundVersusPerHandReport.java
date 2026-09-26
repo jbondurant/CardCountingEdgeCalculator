@@ -15,10 +15,17 @@
  * This prints every pair against every up-card where the two measures disagree about
  * whether to split, and what following the per-hand answer would cost per round.
  *
- * Model: infinite deck, dealer hits soft 17 and peeks, blackjack pays 3:2, double after
- * split allowed, resplitting to the limit in HouseRules -- four hands for a pair, two for
- * aces. The per-hand figure divides the round by the expected number of hands, which is
- * itself a moving target, and that is part of the point.
+ * Model: infinite deck, dealer hits soft 17 and peeks, double after split allowed,
+ * resplitting to the limit in HouseRules -- four hands for a pair, two for aces. The
+ * per-hand figure divides the round by the expected number of hands, which is itself a
+ * moving target, and that is part of the point.
+ *
+ * The blackjack payout enters in one place only. The dealer has already peeked and a
+ * pair is never a natural, but a split pair can still make ace and ten, and the
+ * ruleset's blackjackOnSplitPairs says what that hand is. With the flag on, a split ace
+ * that draws a ten, or a split ten that draws an ace, is a blackjack paid at the table's
+ * blackjack odds. With it off the hand is an ordinary 21, as in most casinos and at
+ * Casino de Montreal, and the payout does not enter at all.
  *
  * Run: java PerRoundVersusPerHandReport
  */
@@ -31,9 +38,24 @@ public class PerRoundVersusPerHandReport {
     private static final boolean DEALER_HITS_SOFT_17 = true;
     private static final boolean DOUBLE_AFTER_SPLIT = true;
 
+    /**
+     * The split limits, and what a split ace and ten is and pays, come from the ruleset.
+     * HouseRules counts splits, so 3 means four hands. Soft 17 and double after split
+     * are the constants above, and the dealer always peeks.
+     */
+    private final HouseRules hr;
+
     private double[] dealerOutcomes;
     private double[][] playMemo;
     private double[][][] dealerMemo;
+
+    public PerRoundVersusPerHandReport() {
+        this(HouseRules.getMtlCasino25MinBlackjackParams(75));
+    }
+
+    PerRoundVersusPerHandReport(HouseRules hr) {
+        this.hr = hr;
+    }
 
     // ----------------------------------------------------------------- card handling
 
@@ -164,8 +186,26 @@ public class PerRoundVersusPerHandReport {
         return mayDouble ? Math.max(best, doubleValue(total, soft)) : best;
     }
 
-    /** One split hand: the pair rank plus its card, played out without splitting again. */
+    /**
+     * A split pair and the card it draws make ace and ten: a split ace drawing a ten, or
+     * a split ten drawing an ace. No other pair can.
+     */
+    private static boolean makesAceAndTen(int pairRank, int drawn) {
+        return (pairRank == 1 && drawn == 10) || (pairRank == 10 && drawn == 1);
+    }
+
+    /**
+     * One split hand: the pair rank plus its card, played out without splitting again.
+     *
+     * Where the ruleset makes a split ace and ten a blackjack, it is paid at the table's
+     * blackjack odds and beats a dealer who draws to 21. It would lose to a dealer
+     * natural, but this dealer has already peeked and has none, so it is worth the payout
+     * outright. The flag names split pairs, so split aces and split tens both qualify.
+     */
     private double splitHandValue(int pairRank, int drawn) {
+        if (hr.blackjackOnSplitPairs && makesAceAndTen(pairRank, drawn)) {
+            return hr.blackjackPayout;
+        }
         if (pairRank == 1) {
             // Split aces take exactly one card and then stand.
             int[] hand = addCard(11, 1, drawn);
@@ -245,6 +285,18 @@ public class PerRoundVersusPerHandReport {
         return 1 + (pairRank == 1 ? hr.numSplitsAces : hr.numSplitsNotAces);
     }
 
+    /** What splitting a pair is worth per round against an up-card, 2 to 11 with 11 an ace. */
+    double valueOfSplittingAgainst(int pairRank, int upCard) {
+        faceUpCard(upCard == 11 ? 1 : upCard);
+        return splitRoundValue(pairRank, maxHandsFor(pairRank, hr));
+    }
+
+    /** What the pair is worth played as it stands, doubling allowed, against an up-card. */
+    double valueOfNotSplittingAgainst(int pairRank, int upCard) {
+        faceUpCard(upCard == 11 ? 1 : upCard);
+        return bestWithoutSplitting(pairRank == 1 ? 12 : pairRank * 2, pairRank == 1 ? 1 : 0, true);
+    }
+
     // --------------------------------------------------------------------- report
 
     private static String pairName(int rank) {
@@ -255,16 +307,35 @@ public class PerRoundVersusPerHandReport {
         return upCard == 11 ? "A" : String.valueOf(upCard);
     }
 
+    /** A payout as odds: 1.5 is 3:2 and 1.2 is 6:5. */
+    private static String asOdds(double payout) {
+        for (int to = 1; to <= 20; to++) {
+            double of = payout * to;
+            if (Math.abs(of - Math.rint(of)) < 1e-9) {
+                return (long) Math.rint(of) + ":" + to;
+            }
+        }
+        return payout + " to 1";
+    }
+
+    /** The printed rule line for the one place the blackjack payout can enter. */
+    String splitNaturalLine() {
+        return hr.blackjackOnSplitPairs
+                ? "A split ace and ten is a blackjack paid " + asOdds(hr.blackjackPayout)
+                        + ", the only blackjack these figures include."
+                : "A split ace and ten is an ordinary 21, so no blackjack enters these figures.";
+    }
+
     public static void main(String[] args) {
         new PerRoundVersusPerHandReport().run();
     }
 
     public void run() {
-        HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
         System.out.println("Every pair where scoring per hand and scoring per round disagree.");
         System.out.println("Infinite deck, H17, dealer peeks, DAS, resplitting to "
                 + (1 + hr.numSplitsNotAces) + " hands (" + (1 + hr.numSplitsAces)
                 + " for aces).");
+        System.out.println(splitNaturalLine());
         System.out.println("Units of the original bet. Exact expectations, not sampled.");
         System.out.println();
         System.out.printf("%-6s %-3s %10s %10s %6s %10s   %-9s %-9s %9s%n",
