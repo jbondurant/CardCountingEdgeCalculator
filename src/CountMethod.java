@@ -8,9 +8,26 @@ public class CountMethod {
     public EnumMap<Rank, Integer> rankToCount;
     public int deckEstimationPrecision;
 
+    /**
+     * The precision has to be 1.
+     *
+     * getNumDecksRoundedUp divides the cards left by precision times deck size, and the
+     * true count divides by whatever comes back as though it were a number of decks. At 1
+     * it is. At 2 it is a number of two-deck blocks, so 300 cards left reads as 3 where the
+     * true count needs 6 and every count roughly doubles. At 0 the division by zero rounds
+     * up to Integer.MAX_VALUE and every count reads as zero, which is not the "running
+     * count only" the old comment here hoped for. Only 1 has ever been used, and a stored
+     * count method comes back through this constructor, so a table built at anything else
+     * is refused rather than read.
+     */
     public CountMethod(EnumMap<Rank, Integer> rtc, int dep){
+        if(dep != 1){
+            throw new IllegalArgumentException("deckEstimationPrecision must be 1, got " + dep
+                    + ": getNumDecksRoundedUp counts blocks of that many decks rather than"
+                    + " decks, so any other value rescales every true count");
+        }
         rankToCount = rtc;
-        deckEstimationPrecision = dep; //vs running count only;
+        deckEstimationPrecision = dep;
     }
 
     public static CountMethod getHiLoValue(int deckPrecision){

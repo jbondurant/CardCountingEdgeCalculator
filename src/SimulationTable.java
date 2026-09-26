@@ -1,4 +1,5 @@
 import com.mongodb.*;
+import org.bson.BasicBSONEncoder;
 import org.bson.types.ObjectId;
 
 
@@ -85,26 +86,10 @@ public class SimulationTable {
 
             ObjectId nameID = new ObjectId(simulationTable.name);//?
 
-            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-            BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
-
-            BasicDBObject actionMapObject = new BasicDBObject();
-            for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
-                for(HandSituation hs : simulationTable.actionMap.keySet()){
-                    if(orderedHS.equals(hs)) {
-                        String keyAsString = hs.getStringFromEncoding();
-                        DecisionCell dc = simulationTable.actionMap.get(hs);
-                        BasicDBObject decisionCellObject = dc.getDBObject();
-                        actionMapObject.append(keyAsString, decisionCellObject);
-                    }
-                }
-            }
+            BasicDBObject tableObject = simulationTable.getDBObject();
 
             BasicDBObject query = new BasicDBObject();
             query.put("_id", nameID);
-
-            tableObject.append("simulationParameterObject", simulationParameterObject)
-                    .append("actionMapObject", actionMapObject);
 
             // One upsert, so the stored table is replaced in a single write and is never
             // absent. This used to remove the document and then insert a new one, which left
@@ -117,6 +102,66 @@ public class SimulationTable {
         }
     }
 
+
+    /** The document saveTable writes: the parameters and every cell, as one. */
+    public BasicDBObject getDBObject(){
+        ObjectId nameID = new ObjectId(name);
+
+        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+        BasicDBObject simulationParameterObject = simulationParameters.getDBObject();
+
+        BasicDBObject actionMapObject = new BasicDBObject();
+        for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
+            for(HandSituation hs : actionMap.keySet()){
+                if(orderedHS.equals(hs)) {
+                    String keyAsString = hs.getStringFromEncoding();
+                    DecisionCell dc = actionMap.get(hs);
+                    BasicDBObject decisionCellObject = dc.getDBObject();
+                    actionMapObject.append(keyAsString, decisionCellObject);
+                }
+            }
+        }
+
+        tableObject.append("simulationParameterObject", simulationParameterObject)
+                .append("actionMapObject", actionMapObject);
+        return tableObject;
+    }
+
+    /**
+     * The most bytes saveTable could write for a finished table at these parameters.
+     *
+     * Every situation gets a cell at every bucket, holding every move the house rules
+     * could let it record there, each with its average written out to the full hundred
+     * decimal places insertEvent keeps. The three-card hands, hard 20, hard 21 and soft
+     * 21, get every move a two-card hand gets, which is more than the run offers them, so
+     * this comes out a little larger than any real table. That is the side to err on for
+     * a limit. The document is the one getDBObject builds for saveTable, and the driver's
+     * own encoder measures it, so the figure follows any change to what a cell stores.
+     */
+    static int largestEncodedSize(SimulationParameters sp, List<GranularCount> buckets){
+        // An average of a third never terminates, so insertEvent writes it out to its full
+        // scale with a sign in front, which is the longest string a cell holds.
+        ActionPayoff widest = new ActionPayoff();
+        widest.insertEventSmart(-1.0);
+        widest.insertEventSmart(0.0);
+        widest.insertEventSmart(0.0);
+
+        HouseRules hr = sp.houseRules;
+        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        SimulationTable table = new SimulationTable(sp, "000000000000000000000000");
+        for(HandSituation hs : HandSituation.getOrderedSituations()){
+            MoveChoices mc = new MoveChoices();
+            for(PlayerMove pm : PlayerMove.getLegalMoves(true, hs.playerHE.canSplit, canSurrender, true)){
+                mc.actionPayoffs.put(pm, widest);
+            }
+            DecisionCell dc = new DecisionCell();
+            for(GranularCount gc : buckets){
+                dc.countToMoveChoice.put(gc, mc);
+            }
+            table.actionMap.put(hs, dc);
+        }
+        return new BasicBSONEncoder().encode(table.getDBObject()).length;
+    }
 
     public static SimulationTable getTable(String name, SimulationTable emptySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
