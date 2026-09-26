@@ -24,7 +24,9 @@ import java.util.Random;
  * every key written by the previous code reads back to the same value.
  *
  * A count is held to two decimal places. Grains of 1, 0.5, 0.25 and 0.1 are exact;
- * anything finer than 0.01, or not a whole number of hundredths, is rounded to fit.
+ * anything finer than 0.01, or not a whole number of hundredths, is rounded to fit. That
+ * is only true of this class: SimulationParameters refuses such a grain, along with any
+ * grid the table run could not finish or save.
  */
 public class GranularCount implements Comparable<GranularCount> {
 

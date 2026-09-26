@@ -1,4 +1,5 @@
 import com.mongodb.*;
+import org.bson.BasicBSONEncoder;
 import org.bson.types.ObjectId;
 
 
@@ -136,6 +137,42 @@ public class SimulationTable {
     }
 
 
+    /**
+     * The most bytes saveTable could write for a finished table at these parameters.
+     *
+     * Every situation gets a cell at every bucket, holding every move the house rules
+     * could let it record there, each with its average written out to the full hundred
+     * decimal places insertEvent keeps. The three-card hands, hard 20, hard 21 and soft
+     * 21, get every move a two-card hand gets, which is more than the run offers them, so
+     * this comes out a little larger than any real table. That is the side to err on for
+     * a limit. The document is the one getDBObject builds for saveTable, and the driver's
+     * own encoder measures it, so the figure follows any change to what a cell stores.
+     */
+    static int largestEncodedSize(SimulationParameters sp, List<GranularCount> buckets){
+        // An average of a third never terminates, so insertEvent writes it out to its full
+        // scale with a sign in front, which is the longest string a cell holds.
+        ActionPayoff widest = new ActionPayoff();
+        widest.insertEventSmart(-1.0);
+        widest.insertEventSmart(0.0);
+        widest.insertEventSmart(0.0);
+
+        HouseRules hr = sp.houseRules;
+        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        SimulationTable table = new SimulationTable(sp, "000000000000000000000000");
+        for(HandSituation hs : HandSituation.getOrderedSituations()){
+            MoveChoices mc = new MoveChoices();
+            for(PlayerMove pm : PlayerMove.getLegalMoves(true, hs.playerHE.canSplit, canSurrender, true)){
+                mc.actionPayoffs.put(pm, widest);
+            }
+            DecisionCell dc = new DecisionCell();
+            for(GranularCount gc : buckets){
+                dc.countToMoveChoice.put(gc, mc);
+            }
+            table.actionMap.put(hs, dc);
+        }
+        return new BasicBSONEncoder().encode(table.getDBObject()).length;
+    }
+
     public static SimulationTable getTable(String name, SimulationTable emptySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
         try {
@@ -252,6 +289,23 @@ public class SimulationTable {
         return startTableRow;
     }
 
+    /**
+     * One cell of a rendered table.
+     *
+     * The table fills in dependency order, hard 21 first, so while a run is going most
+     * situations have no cell yet. Each builder used to call through whatever the lookup
+     * returned, and the first missing situation stopped the render with a
+     * NullPointerException. A situation not reached yet is rendered the way a cell with
+     * nothing at count zero already is: empty, and marked unmeasured.
+     */
+    String getCellLine(HandSituation hs){
+        DecisionCell dc = actionMap.get(hs);
+        if(dc == null){
+            dc = new DecisionCell();
+        }
+        return "<td class=\"tg-" + dc.getCellColorTag() + "\">" + dc.createStringCell() + "</td>";
+    }
+
     public void printAllTables() throws IOException{
         printHardCountTable();
         printSoftTable();;
@@ -302,10 +356,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 hardCountTable.add(line);
             }
             hardCountTable.add("</tr>");
@@ -332,10 +383,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(true, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 softTable.add(line);
             }
             softTable.add("</tr>");
@@ -362,10 +410,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, true, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 splitTable.add(line);
             }
             splitTable.add("</tr>");
@@ -376,10 +421,7 @@ public class SimulationTable {
         for(int j=2; j<=11; j++){
             HandEncoding he = new HandEncoding(true, true, 2);
             HandSituation hs = new HandSituation(he, j);
-            DecisionCell dc = actionMap.get(hs);
-            String cellContent = dc.createStringCell();
-            String cellColorTag = dc.getCellColorTag();
-            String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+            String line = getCellLine(hs);
             splitTable.add(line);
         }
         splitTable.add("</tr>");

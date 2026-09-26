@@ -55,7 +55,7 @@ public class PayoffTable {
 
         for(CountPayoff cp : countPayoffs){
             if(cp.granularCount.equals(gc)){
-                cp.actionPayoff.insertEventSmart(payoff);
+                cp.actionPayoff.insertEventSmart(payoff, er.paidNatural);
             }
         }
     }
