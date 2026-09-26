@@ -88,6 +88,19 @@ public class DecisionCell {
     }
 
 
+    /**
+     * The text of a rendered cell: the count intervals over which one move is best, lowest
+     * count first, one per line.
+     *
+     * An interval is closed when the move changes, and the last one is closed after the
+     * loop. That closing used to happen inside the loop, which starts at the second bucket,
+     * so a cell with exactly one bucket never wrote anything. Every cell of a table run at
+     * a single count is such a cell, and testTable1 was run at count 0 only, so its
+     * published tables were coloured but had no text in any move cell.
+     *
+     * A cell with no buckets has nothing to say yet. It gets an empty label rather than an
+     * exception, for the same reason getCellColorTag calls it unmeasured.
+     */
     public String createStringCell(){
         ArrayList<String> allLines = new ArrayList<>();
         HashSet<GranularCount> allCounts = new HashSet<>();
@@ -97,6 +110,9 @@ public class DecisionCell {
         ArrayList<GranularCount> allCountsList = new ArrayList<>();
         allCountsList.addAll(allCounts);
         Collections.sort(allCountsList);
+        if(allCountsList.isEmpty()){
+            return "";
+        }
 
         GranularCount startIntervalCount = allCountsList.get(0);
         MoveChoices mcs = countToMoveChoice.get(startIntervalCount);
@@ -116,13 +132,10 @@ public class DecisionCell {
                 startIntervalCount = currCount;
                 lastMove = currMove;
             }
-            if(i == allCountsList.size() - 1){
-                GranularCount endIntervalCount = allCountsList.get(i);
-                String countInterval = "[" + startIntervalCount.countToCellString() + ", " + endIntervalCount.countToCellString() + "]";
-                String line = countInterval + " do " + lastMove;
-                allLines.add(line);
-            }
         }
+        GranularCount endIntervalCount = allCountsList.get(allCountsList.size() - 1);
+        String countInterval = "[" + startIntervalCount.countToCellString() + ", " + endIntervalCount.countToCellString() + "]";
+        allLines.add(countInterval + " do " + lastMove);
 
         String cellString = "";
         for(int i=0; i<allLines.size(); i++){

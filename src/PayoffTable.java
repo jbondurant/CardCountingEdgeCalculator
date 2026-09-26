@@ -10,6 +10,11 @@ public class PayoffTable {
     public CountPayoff[] countPayoffs;
     public String name;
     public int numberCells;
+    /**
+     * What the stored document said about the code, the rules and the strategy its hands
+     * were played under, or null for a payoff table that has never been stored.
+     */
+    StoredState storedState;
 
     public PayoffTable(CountPayoff[] cps, String n, int nc){
         countPayoffs = cps;
@@ -50,7 +55,7 @@ public class PayoffTable {
 
         for(CountPayoff cp : countPayoffs){
             if(cp.granularCount.equals(gc)){
-                cp.actionPayoff.insertEventSmart(payoff);
+                cp.actionPayoff.insertEventSmart(payoff, er.paidNatural);
             }
         }
     }
@@ -66,33 +71,45 @@ public class PayoffTable {
         }
     }
 
-    public static void saveTable(PayoffTable payoffTable) throws UnknownHostException, InterruptedException {
+    public static void saveTable(PayoffTable payoffTable, String semanticsKey, String strategyFingerprint) throws UnknownHostException, InterruptedException {
         MongoClient mongoClient = new MongoClient();
         try {
             DB database = mongoClient.getDB("CardCounting");
             DBCollection collection = database.getCollection("PayoffTables");
 
-            ObjectId nameID = new ObjectId(payoffTable.name);
-            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-
-            BasicDBList countPayoffsList = new BasicDBList();
-            for(int i=0; i< payoffTable.countPayoffs.length; i++){
-                CountPayoff cp = payoffTable.countPayoffs[i];
-                BasicDBObject cpObject = cp.getDBObject();
-                countPayoffsList.add(cpObject);
-            }
+            BasicDBObject tableObject = payoffTable.getDBObject(semanticsKey, strategyFingerprint);
 
             BasicDBObject query = new BasicDBObject();
-            query.put("_id", nameID);
+            query.put("_id", tableObject.get("_id"));
 
-            tableObject.append("numberCells", payoffTable.numberCells)
-                .append("countPayoffsList", countPayoffsList);
             // A single upsert; see SimulationTable.saveTable for why this is not a remove
             // followed by an insert.
             collection.update(query, tableObject, true, false);
         } finally {
             mongoClient.close();
         }
+    }
+
+    /**
+     * The document saveTable writes. Besides the key of the parameters, it records the
+     * fingerprint of the strategy the hands were played with, because the average is only
+     * the edge of one strategy if every hand in it was played by that strategy.
+     */
+    public BasicDBObject getDBObject(String semanticsKey, String strategyFingerprint){
+        ObjectId nameID = new ObjectId(name);
+        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+
+        BasicDBList countPayoffsList = new BasicDBList();
+        for(int i=0; i< countPayoffs.length; i++){
+            CountPayoff cp = countPayoffs[i];
+            BasicDBObject cpObject = cp.getDBObject();
+            countPayoffsList.add(cpObject);
+        }
+
+        tableObject.append("numberCells", numberCells)
+            .append("countPayoffsList", countPayoffsList);
+        StoredState.stamp(tableObject, semanticsKey, strategyFingerprint);
+        return tableObject;
     }
 
     public static PayoffTable getTable(String name, PayoffTable emptyPaySimTable) throws UnknownHostException {
@@ -108,21 +125,43 @@ public class PayoffTable {
             if(ptObject == null){
                 return emptyPaySimTable;
             }
-            String n = ptObject.getString("name");
-            int numberCells = ptObject.getInt("numberCells");
-            BasicDBList cpList = (BasicDBList) ptObject.get("countPayoffsList");
-            CountPayoff[] allCP = new CountPayoff[numberCells];
-            int i=0;
-            for(Object o : cpList){
-                CountPayoff cp = CountPayoff.getFromObject((BasicDBObject) o);
-                allCP[i] = cp;
-                i++;
-            }
-            PayoffTable pt = new PayoffTable(allCP, name, numberCells);
-            return pt;
+            return fromDBObject(ptObject, name);
         } finally {
             mongoClient.close();
         }
+    }
+
+    /** Read a stored payoff table back, along with what its document says about how it was played. */
+    public static PayoffTable fromDBObject(BasicDBObject ptObject, String name){
+        int numberCells = ptObject.getInt("numberCells");
+        BasicDBList cpList = (BasicDBList) ptObject.get("countPayoffsList");
+        CountPayoff[] allCP = new CountPayoff[numberCells];
+        int i=0;
+        for(Object o : cpList){
+            CountPayoff cp = CountPayoff.getFromObject((BasicDBObject) o);
+            allCP[i] = cp;
+            i++;
+        }
+        PayoffTable pt = new PayoffTable(allCP, name, numberCells);
+        pt.storedState = StoredState.readFrom(ptObject);
+        return pt;
+    }
+
+    /**
+     * Refuse to add to a stored payoff table unless its hands were played by the same code,
+     * under the same parameters, with the same strategy.
+     *
+     * getTable used to return whatever was stored under the name, so every payoff run ever
+     * saved went into one average: the printed edge, N and blackjack rate mixed strategies
+     * and code versions, and a table stored over a narrower count range silently dropped
+     * every hand outside it.
+     */
+    public void resumeUnder(String semanticsKey, String strategyFingerprint){
+        if(storedState == null){
+            return;
+        }
+        storedState.refuseToResumeUnlessMeaning(semanticsKey, "PayoffTables", name);
+        storedState.refuseToResumeUnlessPlayedWith(strategyFingerprint, name);
     }
 
 

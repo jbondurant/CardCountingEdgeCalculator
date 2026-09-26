@@ -1,4 +1,5 @@
 import com.mongodb.*;
+import org.bson.BasicBSONEncoder;
 import org.bson.types.ObjectId;
 
 
@@ -8,12 +9,20 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class SimulationTable {
     SimulationParameters simulationParameters;
     HashMap<HandSituation, DecisionCell> actionMap;
     String name;
+    /**
+     * What the stored document said about the code and the rules it was built under, or
+     * null for a table that has never been stored.
+     */
+    StoredState storedState;
 
 
     public SimulationTable(SimulationParameters sp, String n){
@@ -83,28 +92,10 @@ public class SimulationTable {
             DB database = mongoClient.getDB("CardCounting");
             DBCollection collection = database.getCollection("SimulationTables");
 
-            ObjectId nameID = new ObjectId(simulationTable.name);//?
-
-            BasicDBObject tableObject = new BasicDBObject("_id", nameID);
-            BasicDBObject simulationParameterObject = simulationTable.simulationParameters.getDBObject();
-
-            BasicDBObject actionMapObject = new BasicDBObject();
-            for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
-                for(HandSituation hs : simulationTable.actionMap.keySet()){
-                    if(orderedHS.equals(hs)) {
-                        String keyAsString = hs.getStringFromEncoding();
-                        DecisionCell dc = simulationTable.actionMap.get(hs);
-                        BasicDBObject decisionCellObject = dc.getDBObject();
-                        actionMapObject.append(keyAsString, decisionCellObject);
-                    }
-                }
-            }
+            BasicDBObject tableObject = simulationTable.getDBObject();
 
             BasicDBObject query = new BasicDBObject();
-            query.put("_id", nameID);
-
-            tableObject.append("simulationParameterObject", simulationParameterObject)
-                    .append("actionMapObject", actionMapObject);
+            query.put("_id", tableObject.get("_id"));
 
             // One upsert, so the stored table is replaced in a single write and is never
             // absent. This used to remove the document and then insert a new one, which left
@@ -117,6 +108,70 @@ public class SimulationTable {
         }
     }
 
+    /**
+     * The document saveTable writes, stamped with the semantics version and the key of the
+     * parameters, so that a later run can tell whether it means the same by these numbers.
+     */
+    public BasicDBObject getDBObject(){
+        ObjectId nameID = new ObjectId(name);//?
+
+        BasicDBObject tableObject = new BasicDBObject("_id", nameID);
+        BasicDBObject simulationParameterObject = simulationParameters.getDBObject();
+
+        BasicDBObject actionMapObject = new BasicDBObject();
+        for(HandSituation orderedHS : HandSituation.getOrderedSituations()){
+            for(HandSituation hs : actionMap.keySet()){
+                if(orderedHS.equals(hs)) {
+                    String keyAsString = hs.getStringFromEncoding();
+                    DecisionCell dc = actionMap.get(hs);
+                    BasicDBObject decisionCellObject = dc.getDBObject();
+                    actionMapObject.append(keyAsString, decisionCellObject);
+                }
+            }
+        }
+
+        tableObject.append("simulationParameterObject", simulationParameterObject)
+                .append("actionMapObject", actionMapObject);
+        StoredState.stamp(tableObject, simulationParameters.getSemanticsKey());
+        return tableObject;
+    }
+
+
+    /**
+     * The most bytes saveTable could write for a finished table at these parameters.
+     *
+     * Every situation gets a cell at every bucket, holding every move the house rules
+     * could let it record there, each with its average written out to the full hundred
+     * decimal places insertEvent keeps. The three-card hands, hard 20, hard 21 and soft
+     * 21, get every move a two-card hand gets, which is more than the run offers them, so
+     * this comes out a little larger than any real table. That is the side to err on for
+     * a limit. The document is the one getDBObject builds for saveTable, and the driver's
+     * own encoder measures it, so the figure follows any change to what a cell stores.
+     */
+    static int largestEncodedSize(SimulationParameters sp, List<GranularCount> buckets){
+        // An average of a third never terminates, so insertEvent writes it out to its full
+        // scale with a sign in front, which is the longest string a cell holds.
+        ActionPayoff widest = new ActionPayoff();
+        widest.insertEventSmart(-1.0);
+        widest.insertEventSmart(0.0);
+        widest.insertEventSmart(0.0);
+
+        HouseRules hr = sp.houseRules;
+        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        SimulationTable table = new SimulationTable(sp, "000000000000000000000000");
+        for(HandSituation hs : HandSituation.getOrderedSituations()){
+            MoveChoices mc = new MoveChoices();
+            for(PlayerMove pm : PlayerMove.getLegalMoves(true, hs.playerHE.canSplit, canSurrender, true)){
+                mc.actionPayoffs.put(pm, widest);
+            }
+            DecisionCell dc = new DecisionCell();
+            for(GranularCount gc : buckets){
+                dc.countToMoveChoice.put(gc, mc);
+            }
+            table.actionMap.put(hs, dc);
+        }
+        return new BasicBSONEncoder().encode(table.getDBObject()).length;
+    }
 
     public static SimulationTable getTable(String name, SimulationTable emptySimTable) throws UnknownHostException {
         MongoClient mongoClient = new MongoClient();
@@ -131,20 +186,82 @@ public class SimulationTable {
             if(stObject == null){
                 return emptySimTable;
             }
-            BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
-            SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
-            HashMap<HandSituation, DecisionCell> am = new HashMap<>();
-            BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
-            for(String s : amObject.keySet()){
-                HandSituation hs = HandSituation.getEncodingFromString(s);
-                DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
-                am.put(hs, dc);
-            }
-
-
-            return new SimulationTable(sp, am, name);
+            return fromDBObject(stObject, name);
         } finally {
             mongoClient.close();
+        }
+    }
+
+    /**
+     * Read a stored table back, along with what its document says about how it was built.
+     *
+     * It comes back with the parameters it was stored under, which is what printTables
+     * wants. A run that means to add to it calls resumeUnder first.
+     */
+    public static SimulationTable fromDBObject(BasicDBObject stObject, String name){
+        BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
+        SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
+        HashMap<HandSituation, DecisionCell> am = new HashMap<>();
+        BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
+        for(String s : amObject.keySet()){
+            HandSituation hs = HandSituation.getEncodingFromString(s);
+            DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
+            am.put(hs, dc);
+        }
+
+        SimulationTable st = new SimulationTable(sp, am, name);
+        st.storedState = StoredState.readFrom(stObject);
+        return st;
+    }
+
+    /**
+     * Get a table ready to be added to by the running code, or refuse.
+     *
+     * getTable used to hand back the stored parameters in place of the code's without a
+     * word, so a rule changed in getSimulation2 never reached a table that already
+     * existed: the run went on building the old game, and nothing said so. A stored
+     * table now has to mean by its numbers what the code would, and then it runs
+     * under the code's parameters, which can differ from the stored ones only in the
+     * progress thresholds. A table that was never stored has nothing to check.
+     */
+    public void resumeUnder(SimulationParameters codeParameters){
+        if(storedState != null){
+            storedState.refuseToResumeUnlessMeaning(
+                    codeParameters.getSemanticsKey(), "SimulationTables", name);
+        }
+        simulationParameters = codeParameters;
+    }
+
+    /**
+     * A digest of the strategy this table plays: every situation, every count bucket, and
+     * the compound best move there, as the printed tables show it.
+     *
+     * A PayoffTable records this, because its average is the edge of one strategy only if
+     * every hand in it was played by that strategy. More data can move a best move, and
+     * the next payoff run would then average hands played two ways. Data that leaves every
+     * best move where it was leaves the digest alone.
+     */
+    public String getStrategyFingerprint(){
+        ArrayList<String> lines = new ArrayList<>();
+        for(HandSituation hs : actionMap.keySet()){
+            DecisionCell dc = actionMap.get(hs);
+            for(GranularCount gc : dc.countToMoveChoice.keySet()){
+                lines.add(hs.getStringFromEncoding() + " " + gc.getStringFromCount() + " "
+                        + dc.countToMoveChoice.get(gc).getCompoundBestMove());
+            }
+        }
+        Collections.sort(lines);
+        try {
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            byte[] digest = sha256.digest(String.join("\n", lines).getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for(byte b : digest){
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // Every Java platform is required to provide SHA-256.
+            throw new IllegalStateException(e);
         }
     }
 
@@ -170,6 +287,23 @@ public class SimulationTable {
         startTableRow.add("<td class=\"tg-0pky\">A</td>");
         startTableRow.add("</tr>");
         return startTableRow;
+    }
+
+    /**
+     * One cell of a rendered table.
+     *
+     * The table fills in dependency order, hard 21 first, so while a run is going most
+     * situations have no cell yet. Each builder used to call through whatever the lookup
+     * returned, and the first missing situation stopped the render with a
+     * NullPointerException. A situation not reached yet is rendered the way a cell with
+     * nothing at count zero already is: empty, and marked unmeasured.
+     */
+    String getCellLine(HandSituation hs){
+        DecisionCell dc = actionMap.get(hs);
+        if(dc == null){
+            dc = new DecisionCell();
+        }
+        return "<td class=\"tg-" + dc.getCellColorTag() + "\">" + dc.createStringCell() + "</td>";
     }
 
     public void printAllTables() throws IOException{
@@ -222,10 +356,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 hardCountTable.add(line);
             }
             hardCountTable.add("</tr>");
@@ -252,10 +383,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(true, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 softTable.add(line);
             }
             softTable.add("</tr>");
@@ -282,10 +410,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, true, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 splitTable.add(line);
             }
             splitTable.add("</tr>");
@@ -296,10 +421,7 @@ public class SimulationTable {
         for(int j=2; j<=11; j++){
             HandEncoding he = new HandEncoding(true, true, 2);
             HandSituation hs = new HandSituation(he, j);
-            DecisionCell dc = actionMap.get(hs);
-            String cellContent = dc.createStringCell();
-            String cellColorTag = dc.getCellColorTag();
-            String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+            String line = getCellLine(hs);
             splitTable.add(line);
         }
         splitTable.add("</tr>");

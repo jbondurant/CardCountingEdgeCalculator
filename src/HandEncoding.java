@@ -180,11 +180,24 @@ public class HandEncoding {
         return result;
     }
 
-    public static ArrayList<TripleRanks> allPossibleTripleRanksForHandEncoding(CompositeCardSource multiDeck, HandEncoding goalHE){
+    /**
+     * The enumeration counts the ways a full shoe makes a hand, so it only means anything
+     * over a full one. A dealt shoe would weight the hands by whatever happened to be dealt.
+     *
+     * This used to print "nope" and return null, which only moved the failure: the null
+     * became the list the table run deals from, and came back as a NullPointerException on
+     * the first hand, a long way from the shoe that caused it.
+     */
+    private static void requireFullShoe(CompositeCardSource multiDeck){
         if(multiDeck.cards.size() != multiDeck.startingSize){
-            System.out.println("nope");
-            return null;
+            throw new IllegalArgumentException("holdings are enumerated over a full shoe, but "
+                    + "this one holds " + multiDeck.cards.size() + " of the "
+                    + multiDeck.startingSize + " cards it started with");
         }
+    }
+
+    public static ArrayList<TripleRanks> allPossibleTripleRanksForHandEncoding(CompositeCardSource multiDeck, HandEncoding goalHE){
+        requireFullShoe(multiDeck);
         ArrayList<TripleRanks> result = new ArrayList<>();
         ArrayList<Card> currCards = new ArrayList<>();
 
@@ -212,10 +225,7 @@ public class HandEncoding {
     }
 
     public static ArrayList<DoubleRanks> allPossibleDoubleRanksForHandEncoding(CompositeCardSource multiDeck, HandEncoding goalHE){
-        if(multiDeck.cards.size() != multiDeck.startingSize){
-            System.out.println("nope");
-            return null;
-        }
+        requireFullShoe(multiDeck);
         ArrayList<DoubleRanks> result = new ArrayList<>();
         ArrayList<Card> currCards = new ArrayList<>();
 

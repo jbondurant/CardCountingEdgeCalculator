@@ -5,10 +5,28 @@ implementation details and are not. Both are the kind of thing where the wrong
 version still runs, still produces numbers, and the numbers are quietly wrong.
 
 Every figure below comes from a solver in `src/`, not from a spreadsheet. They are
-exact expectations under the Montreal casino rules — eight decks, dealer hits soft 17
-and peeks for blackjack, blackjack pays 3:2, double after split, resplit to four hands
-— computed in closed form rather than sampled, so there is no margin of error to
-quote. Re-run them and you get the same numbers.
+exact expectations under the Montreal casino rules — dealer hits soft 17 and peeks for
+blackjack, blackjack pays 3:2, double after split, resplit to four hands — computed in
+closed form rather than sampled, so there is no margin of error to quote. Re-run them
+and you get the same numbers.
+
+The payout enters in one place. The dealer has already peeked, and no hand in these
+tables starts as a natural, so the only blackjack either solver meets is a split ace
+that draws a ten or a split ten that draws an ace. Most casinos, Casino de Montréal
+among them, pay that hand as an ordinary 21; a few pay it as a blackjack. Both solvers
+take that rule, and the payout, from `blackjackOnSplitPairs` and `blackjackPayout` in
+`HouseRules`. Paying it as a blackjack makes splitting aces and splitting tens worth
+more, but it changes no decision, and none of the figures quoted below moves with it.
+
+One place they part from the casino is the shoe. The casino deals from eight decks;
+both solvers draw from an infinite deck instead, where each rank is as likely on every
+card as on the first, whatever has already been dealt. That is the usual stand-in for
+a big shoe, and it is what keeps the solvers short: with no memory of what has been
+dealt, the value of playing on depends only on the total and whether it is soft. In a
+real shoe the cards on the table are gone from it, so the odds on the next card shift
+a little with each one. Against 416 cards a handful of them moves things only
+slightly, but it does move them, and the figures below are infinite-deck figures, not
+eight-deck ones.
 
 ```
 java RandomVsOptimalReport          # part one
@@ -83,8 +101,10 @@ random player hit anything at all, up to and including a 21, and it is **154 of 
 Splitting aces is underpriced by **exactly 0.0000**.
 
 Split aces take one card each and then stand. There are no downstream decisions, so
-there is nothing for a random walker to get wrong. Same *shape* of decision as
-splitting eights, with the navigation removed, and the error vanishes completely.
+there is nothing for a random walker to get wrong. Where a house pays a ten on a split
+ace as a blackjack, the split is worth more, but it is settled without a decision all
+the same. Same *shape* of decision as splitting eights, with the navigation removed, and
+the error vanishes completely.
 
 Two split decisions side by side, identical in form, one broken by 0.80 and the other
 by nothing. That isolates the cause better than any argument: **the error is not in
@@ -219,7 +239,10 @@ Both solvers reproduce published figures where published figures exist. Hard 16
 against a ten comes out as hit −0.5398 against stand −0.5404, matching the standard
 infinite-deck H17 values to four decimals. Every per-round split decision matches
 published basic strategy, including the non-obvious 4,4 against a 5 and a 6 with
-double after split.
+double after split. That holds with a split ace and ten paid as a blackjack too:
+splitting tens gains from the rule but still falls short of standing on 20 against
+every up-card, which is also what Wizard of Odds finds for the rule. `SplitNaturalTest`
+checks both.
 
 The sharpest check is surrender, because it is a threshold rather than a ranking: a
 hand is worth surrendering exactly when its best move is worth less than −0.5. So
