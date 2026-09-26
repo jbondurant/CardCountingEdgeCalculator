@@ -39,11 +39,16 @@ public class StoredState {
      * Version 1 is every document written before this field existed, the 2022 tables
      * among them. Those were built by code with bugs since fixed: ties in the true count
      * rounded upward, a copied shoe counted in 51-card decks, the first observation of
-     * every situation dropped, hands with two aces scored hard. So a bucket of theirs does
-     * not hold the shoe states the same bucket holds now, and adding to one would average
-     * the two.
+     * every situation dropped, a player's drawn cards counted in one run and not the
+     * other. So a bucket of theirs does not hold the shoe states the same bucket holds
+     * now, and adding to one would average the two.
+     *
+     * Version 2 never read blackjackOnSplitPairs, so it paid every split ace and ten as an
+     * ordinary 21 whatever the rule said. Version 3 pays that hand by the rule. Under a
+     * ruleset with the flag on the two mean different things by the same cell, so a
+     * version 2 document is refused too.
      */
-    public static final int SEMANTICS_VERSION = 2;
+    public static final int SEMANTICS_VERSION = 3;
 
     /** What a document that carries no version was written by. */
     static final int VERSION_BEFORE_STAMPING = 1;

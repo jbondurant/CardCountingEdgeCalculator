@@ -161,7 +161,9 @@ public class StoredStateTest {
         BasicDBObject asWrittenIn2022 = new BasicDBObject("numberCells", 11);
         assertEquals(1, StoredState.readFrom(asWrittenIn2022).version,
                 "a document with no version was written before there was one");
-        assertEquals(2, StoredState.SEMANTICS_VERSION, "this code is version 2");
+        // Pinned on purpose, so that changing what a stored number means is a decision
+        // someone makes here rather than a side effect.
+        assertEquals(3, StoredState.SEMANTICS_VERSION, "this code is version 3");
     }
 
     /**
@@ -180,22 +182,33 @@ public class StoredStateTest {
                 () -> stored.resumeUnder(montreal()),
                 "a table from version 1 code was resumed as though its buckets meant the same");
         String message = e.getMessage();
-        assertTrue(message.contains("version 1") && message.contains("version 2"),
+        assertTrue(message.contains("version 1")
+                        && message.contains("version " + StoredState.SEMANTICS_VERSION),
                 "the message should say which versions differ: " + message);
         assertTrue(message.contains("testTable2"), "the message should name the table: " + message);
         assertTrue(message.contains("new table name"),
                 "the message should say what to do about it: " + message);
     }
 
+    /**
+     * The version just before this one and the one just after are both refused. The one
+     * before is the case that matters: version 2 paid every split ace and ten as an ordinary
+     * 21, whatever blackjackOnSplitPairs said.
+     */
     @Test
     public void aTableFromAnotherVersionIsRefused() {
-        BasicDBObject document = new SimulationTable(montreal(), ID).getDBObject();
-        document.put("semanticsVersion", 3);
-        SimulationTable stored = SimulationTable.fromDBObject(document, ID);
+        for (int other : new int[]{StoredState.SEMANTICS_VERSION - 1,
+                StoredState.SEMANTICS_VERSION + 1}) {
+            BasicDBObject document = new SimulationTable(montreal(), ID).getDBObject();
+            document.put("semanticsVersion", other);
+            SimulationTable stored = SimulationTable.fromDBObject(document, ID);
 
-        IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> stored.resumeUnder(montreal()));
-        assertTrue(e.getMessage().contains("version 3"), "the message should name it: " + e.getMessage());
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> stored.resumeUnder(montreal()),
+                    "a table from version " + other + " was resumed");
+            assertTrue(e.getMessage().contains("version " + other),
+                    "the message should name it: " + e.getMessage());
+        }
     }
 
     /** The rule change in the report: the code asks for S17, the table was built under H17. */
