@@ -132,6 +132,27 @@ public class SimulationParameters {
         return simParamObject;
     }
 
+    /**
+     * What the numbers of a table built under these parameters mean, as one string: the
+     * house rules, the count method, the grain and the count range. A stored table can
+     * only be added to by code whose key is the same.
+     *
+     * minHitsPerDecisionCellCount and minMetaDealer are left out on purpose. They say how
+     * much evidence is enough, not what the evidence is, so raising them on an existing
+     * table only asks it to keep going.
+     *
+     * It is built from getDBObject rather than listed by hand, so a rule added there is
+     * covered without anyone remembering this method. equals cannot do this job: it
+     * compares HouseRules and CountMethod by identity, so parameters never equal an
+     * identical copy of themselves read back from the database.
+     */
+    public String getSemanticsKey(){
+        BasicDBObject meaning = getDBObject();
+        meaning.removeField("minHitsPerDecisionCellCount");
+        meaning.removeField("minMetaDealer");
+        return StoredState.keyOf(meaning);
+    }
+
     public static SimulationParameters getSimParamFromObject(BasicDBObject simParamObject){
         HouseRules hr = HouseRules.getHouseRulesFromObject((BasicDBObject) simParamObject.get("houseRules"));
         CountMethod cm = CountMethod.getCountMethodFromObject((BasicDBObject) simParamObject.get("countMethod"));

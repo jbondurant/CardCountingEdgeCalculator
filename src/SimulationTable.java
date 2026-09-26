@@ -9,12 +9,20 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class SimulationTable {
     SimulationParameters simulationParameters;
     HashMap<HandSituation, DecisionCell> actionMap;
     String name;
+    /**
+     * What the stored document said about the code and the rules it was built under, or
+     * null for a table that has never been stored.
+     */
+    StoredState storedState;
 
 
     public SimulationTable(SimulationParameters sp, String n){
@@ -84,12 +92,10 @@ public class SimulationTable {
             DB database = mongoClient.getDB("CardCounting");
             DBCollection collection = database.getCollection("SimulationTables");
 
-            ObjectId nameID = new ObjectId(simulationTable.name);//?
-
             BasicDBObject tableObject = simulationTable.getDBObject();
 
             BasicDBObject query = new BasicDBObject();
-            query.put("_id", nameID);
+            query.put("_id", tableObject.get("_id"));
 
             // One upsert, so the stored table is replaced in a single write and is never
             // absent. This used to remove the document and then insert a new one, which left
@@ -102,10 +108,12 @@ public class SimulationTable {
         }
     }
 
-
-    /** The document saveTable writes: the parameters and every cell, as one. */
+    /**
+     * The document saveTable writes, stamped with the semantics version and the key of the
+     * parameters, so that a later run can tell whether it means the same by these numbers.
+     */
     public BasicDBObject getDBObject(){
-        ObjectId nameID = new ObjectId(name);
+        ObjectId nameID = new ObjectId(name);//?
 
         BasicDBObject tableObject = new BasicDBObject("_id", nameID);
         BasicDBObject simulationParameterObject = simulationParameters.getDBObject();
@@ -124,8 +132,10 @@ public class SimulationTable {
 
         tableObject.append("simulationParameterObject", simulationParameterObject)
                 .append("actionMapObject", actionMapObject);
+        StoredState.stamp(tableObject, simulationParameters.getSemanticsKey());
         return tableObject;
     }
+
 
     /**
      * The most bytes saveTable could write for a finished table at these parameters.
@@ -176,20 +186,82 @@ public class SimulationTable {
             if(stObject == null){
                 return emptySimTable;
             }
-            BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
-            SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
-            HashMap<HandSituation, DecisionCell> am = new HashMap<>();
-            BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
-            for(String s : amObject.keySet()){
-                HandSituation hs = HandSituation.getEncodingFromString(s);
-                DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
-                am.put(hs, dc);
-            }
-
-
-            return new SimulationTable(sp, am, name);
+            return fromDBObject(stObject, name);
         } finally {
             mongoClient.close();
+        }
+    }
+
+    /**
+     * Read a stored table back, along with what its document says about how it was built.
+     *
+     * It comes back with the parameters it was stored under, which is what printTables
+     * wants. A run that means to add to it calls resumeUnder first.
+     */
+    public static SimulationTable fromDBObject(BasicDBObject stObject, String name){
+        BasicDBObject spObject = (BasicDBObject) stObject.get("simulationParameterObject");
+        SimulationParameters sp = SimulationParameters.getSimParamFromObject(spObject);
+        HashMap<HandSituation, DecisionCell> am = new HashMap<>();
+        BasicDBObject amObject = (BasicDBObject) stObject.get("actionMapObject");
+        for(String s : amObject.keySet()){
+            HandSituation hs = HandSituation.getEncodingFromString(s);
+            DecisionCell dc = DecisionCell.getDecisionCellFromObject((BasicDBObject) amObject.get(s));
+            am.put(hs, dc);
+        }
+
+        SimulationTable st = new SimulationTable(sp, am, name);
+        st.storedState = StoredState.readFrom(stObject);
+        return st;
+    }
+
+    /**
+     * Get a table ready to be added to by the running code, or refuse.
+     *
+     * getTable used to hand back the stored parameters in place of the code's without a
+     * word, so a rule changed in getSimulation2 never reached a table that already
+     * existed: the run went on building the old game, and nothing said so. A stored
+     * table now has to mean by its numbers what the code would, and then it runs
+     * under the code's parameters, which can differ from the stored ones only in the
+     * progress thresholds. A table that was never stored has nothing to check.
+     */
+    public void resumeUnder(SimulationParameters codeParameters){
+        if(storedState != null){
+            storedState.refuseToResumeUnlessMeaning(
+                    codeParameters.getSemanticsKey(), "SimulationTables", name);
+        }
+        simulationParameters = codeParameters;
+    }
+
+    /**
+     * A digest of the strategy this table plays: every situation, every count bucket, and
+     * the compound best move there, as the printed tables show it.
+     *
+     * A PayoffTable records this, because its average is the edge of one strategy only if
+     * every hand in it was played by that strategy. More data can move a best move, and
+     * the next payoff run would then average hands played two ways. Data that leaves every
+     * best move where it was leaves the digest alone.
+     */
+    public String getStrategyFingerprint(){
+        ArrayList<String> lines = new ArrayList<>();
+        for(HandSituation hs : actionMap.keySet()){
+            DecisionCell dc = actionMap.get(hs);
+            for(GranularCount gc : dc.countToMoveChoice.keySet()){
+                lines.add(hs.getStringFromEncoding() + " " + gc.getStringFromCount() + " "
+                        + dc.countToMoveChoice.get(gc).getCompoundBestMove());
+            }
+        }
+        Collections.sort(lines);
+        try {
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            byte[] digest = sha256.digest(String.join("\n", lines).getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for(byte b : digest){
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // Every Java platform is required to provide SHA-256.
+            throw new IllegalStateException(e);
         }
     }
 
