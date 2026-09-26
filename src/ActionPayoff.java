@@ -54,14 +54,26 @@ public class ActionPayoff {
         avPayoff = updatedAverage.doubleValue();
     }
 
+    /** A round that was not a paid natural; see the two-argument form. */
     public void insertEventSmart(double payoff){
+        insertEventSmart(payoff, false);
+    }
+
+    /**
+     * Records a round of the payoff run, and whether the player was paid for a natural.
+     *
+     * The natural is passed in rather than read off the payoff. This used to count a round
+     * as a blackjack when its payoff was exactly 1.5, which is what a natural pays at 3:2
+     * and nothing else: at 6:5 a natural is worth 1.2 and the count stayed at zero.
+     */
+    public void insertEventSmart(double payoff, boolean paidNatural){
         BigDecimal multipliedAverage = avPayoffPrecise.multiply(BigDecimal.valueOf(numTimes));
         BigDecimal multAvWithEvent = multipliedAverage.add(BigDecimal.valueOf(payoff));
         numTimes++;
         BigDecimal updatedAverage = multAvWithEvent.divide(BigDecimal.valueOf(numTimes), 100, RoundingMode.FLOOR);
         avPayoffPrecise = updatedAverage;
         avPayoff = updatedAverage.doubleValue();
-        if(payoff == 1.5){//not optimal, but will do for now
+        if(paidNatural){
             numPlayerBlackjacks++;
         }
         playerBlackjackPercentage = (numPlayerBlackjacks * 100.0) / (numTimes * 1.0);
