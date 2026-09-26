@@ -26,21 +26,28 @@ public class MoveChoices {
             throw new UnsolvedCellException("this count bucket holds no moves at all, so "
                     + "there is no label to render for it");
         }
-        if(pm1.equals(PlayerMove.Double) || pm1.equals(PlayerMove.Split)){
-            if(pm1.equals(PlayerMove.Double)){
-                legalMoves.remove(PlayerMove.Double);
-                PlayerMove pm2 = getActionWithBestPayoff(legalMoves);
-                return pm2 == null ? pm1.name() : pm1.name() + pm2.name();
-            }
-            else{
-                legalMoves.remove(PlayerMove.Split);
-                PlayerMove pm2 = getActionWithBestPayoff(legalMoves);
-                return pm2 == null ? pm1.name() : pm1.name() + pm2.name();
-            }
+        // A cell covers every hand with its total, however many cards made it, and Double,
+        // Split and Surrender are only legal on some of those hands. So the label also
+        // names a fallback: what to do when the best move is not available. This used to
+        // be the runner-up whatever it was, which could itself be unavailable -- DoubleSplit
+        // or SplitSurrender -- and Surrender, which is just as conditional, got none.
+        //
+        // Double and Surrender are gone once the hand has a third card, which leaves Hit
+        // and Stand. Split is gone on a pair at the resplit limit. That is still two
+        // cards, so doubling may be allowed, but the hand came out of a split and
+        // surrendering never is.
+        EnumSet<PlayerMove> fallbackMoves;
+        if(pm1.equals(PlayerMove.Double) || pm1.equals(PlayerMove.Surrender)){
+            fallbackMoves = EnumSet.of(PlayerMove.Hit, PlayerMove.Stand);
+        }
+        else if(pm1.equals(PlayerMove.Split)){
+            fallbackMoves = EnumSet.of(PlayerMove.Stand, PlayerMove.Hit, PlayerMove.Double);
         }
         else{
             return pm1.name();
         }
+        PlayerMove pm2 = getActionWithBestPayoff(fallbackMoves);
+        return pm2 == null ? pm1.name() : pm1.name() + pm2.name();
 
     }
 
