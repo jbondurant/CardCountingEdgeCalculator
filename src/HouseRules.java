@@ -99,11 +99,10 @@ public class HouseRules {
      * produce tables that look like any others while describing a game nobody configured,
      * so the Simulation constructor refuses them instead.
      *
-     * blackjackOnSplitPairs is left out on purpose. The engine pays a split ace and ten as
-     * an ordinary 21 while the Montreal rules say it is a blackjack, and which of the two is
-     * right about Montreal is an open question rather than something to settle by refusing
-     * to run. possibleSideBets is left out because declining a side bet is always a legal
-     * way to play the main game.
+     * blackjackOnSplitPairs is not refused because the engine plays either value: a split
+     * ace and ten is paid as a blackjack or as an ordinary 21, as the flag says, in
+     * RandomishPlayer.handIsPaidAsBlackjack. possibleSideBets is left out because declining
+     * a side bet is always a legal way to play the main game.
      */
     public List<String> unplayableRules(){
         List<String> unplayable = new ArrayList<>();
