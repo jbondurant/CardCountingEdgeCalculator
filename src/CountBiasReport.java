@@ -22,6 +22,15 @@ import java.util.Random;
  * that mean minus the bucket's own label, so a rule that describes its buckets honestly
  * has a bias near zero and a skew near 1.000.
  *
+ * That holds for the nine buckets between the two ends. The simulator files a count
+ * past either end of the range under the end bucket, because Table.getGranularCount
+ * clamps it there, so +5 holds +5 and every count above it, and -5 likewise below. The
+ * report files them the same way, so that its end rows describe the buckets the
+ * simulator actually fills. Their means sit 0.5 to 0.6 beyond their labels under every
+ * rule, which is the reach of the tail rather than anything the tie rule did. Under the
+ * current rule a result recorded at +5 is for counts averaging about +5.6, and one at -5
+ * for counts averaging about -5.6.
+ *
  * Run: java CountBiasReport [numShoes] [seed]
  */
 public class CountBiasReport {
@@ -38,7 +47,7 @@ public class CountBiasReport {
         public String name() { return "Math.round (was)"; }
     };
 
-    /** Symmetric, but drags every bucket's mean below its label. */
+    /** Symmetric, but leaves every interior bucket's mean about 0.11 short of its label. */
     private static final TieRule HALF_AWAY = new TieRule() {
         public double round(double d) { return Math.signum(d) * Math.floor(Math.abs(d) + 0.5); }
         public String name() { return "half away from zero"; }
@@ -105,10 +114,12 @@ public class CountBiasReport {
             }
 
             for (int r = 0; r < rules.length; r++) {
+                // A count past either end of the range goes into the end bucket, because
+                // that is where Table.getGranularCount puts it, and the simulator plays,
+                // records and pays the hand there. Dropping it would describe an end
+                // bucket the simulator never fills.
                 int bucket = (int) rules[r].round(trueCount);
-                if (bucket < MIN_COUNT || bucket > MAX_COUNT) {
-                    continue;
-                }
+                bucket = Math.max(MIN_COUNT, Math.min(MAX_COUNT, bucket));
                 population[r][bucket - MIN_COUNT]++;
                 trueCountSum[r][bucket - MIN_COUNT] += trueCount;
             }
@@ -121,7 +132,7 @@ public class CountBiasReport {
         for (int r = 0; r < rules.length; r++) {
             System.out.println();
             System.out.println("--- " + rules[r].name());
-            System.out.printf("%7s %14s %11s %9s %8s%n",
+            System.out.printf("%12s %14s %11s %9s %8s%n",
                     "bucket", "hands", "mean count", "bias", "skew");
             for (int c = MAX_COUNT; c >= MIN_COUNT; c--) {
                 long hands = population[r][c - MIN_COUNT];
@@ -129,14 +140,25 @@ public class CountBiasReport {
                     continue;
                 }
                 double mean = trueCountSum[r][c - MIN_COUNT] / hands;
-                System.out.printf("%7d %14d %11.4f %+9.4f %8s%n",
-                        c, hands, mean, mean - c, skew(population[r], c));
+                System.out.printf("%12s %14d %11.4f %+9.4f %8s%n",
+                        label(c), hands, mean, mean - c, skew(population[r], c));
             }
         }
 
         System.out.println();
         System.out.println("bias = mean true count in the bucket, minus the bucket's label");
         System.out.println("skew = hands(+k) / hands(-k); a balanced count should give 1.000");
+    }
+
+    /** The end buckets hold every count past them, so their labels say so. */
+    private static String label(int c) {
+        if (c == MAX_COUNT) {
+            return "+" + c + " and above";
+        }
+        if (c == MIN_COUNT) {
+            return c + " and below";
+        }
+        return String.valueOf(c);
     }
 
     /** Whether this count sits exactly on a boundary between two buckets. */

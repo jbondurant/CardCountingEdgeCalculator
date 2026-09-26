@@ -1,5 +1,10 @@
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -126,13 +131,58 @@ public class TrueCountRoundingTest {
     // ------------------------------------------------- the properties that matter
 
     /**
-     * Sample shoes the way the payoff run does and check the two properties end to end:
-     * each bucket is reached about as often as its mirror image, and each bucket's label
-     * describes the counts actually in it.
+     * The bucket the simulator files a true count under.
+     *
+     * Table.getGranularCount rounds the count onto the grid and then clamps it into the
+     * table's range, so a count past +5.5 is played, recorded and paid as +5. The end
+     * buckets are open-ended as a result, and a sampler that dropped those hands instead
+     * would be describing buckets the simulator never fills.
+     */
+    private static int bucketOf(double trueCount) {
+        GranularCount bucket = new GranularCount(GranularCount.roundToGrain(trueCount, 1.0));
+        bucket.forceCountIntoBoundaries(-5, 5);
+        return bucket.getUnits();
+    }
+
+    /**
+     * The sampler below stands in for the table, so it has to file every count where the
+     * table does, the counts past either end of the range included.
+     */
+    @Test
+    public void theSamplerFilesEveryCountWhereTheTableDoes() {
+        int numDecks = 8;
+        for (int cardsRemoved : new int[]{0, 104, 208, 312}) {
+            Table table = new Table(numDecks, CountMethod.getHiLoValue(1));
+            int deckSize = table.gameDeck.startingSize / numDecks;
+            table.gameDeck.cards.subList(0, cardsRemoved).clear();
+            int decksLeft = CountMethod.getNumDecksRoundedUp(
+                    table.gameDeck.cards.size(), 1, deckSize);
+            for (int runningCount = -60; runningCount <= 60; runningCount++) {
+                table.runningCount = runningCount;
+                double trueCount = (double) runningCount / (double) decksLeft;
+                int atTheTable = table.getGranularCount(deckSize, 1.0, -5, 5).getUnits();
+                assertEquals(atTheTable, bucketOf(trueCount),
+                        "a true count of " + String.format("%.3f", trueCount)
+                                + " is filed under " + atTheTable + " at the table, but"
+                                + " the sampler files it under " + bucketOf(trueCount));
+            }
+        }
+    }
+
+    /**
+     * Sample shoes the way the payoff run does, file each hand where the simulator would,
+     * and check the two properties end to end: each bucket is reached about as often as
+     * its mirror image, and each bucket's label describes the counts actually in it.
+     *
+     * The simulator clamps a count past the range into the end bucket rather than
+     * dropping it, so +5 holds every count past 4.5 and -5 every count past -4.5. Those
+     * two are open-ended, and their means sit well beyond their labels, so the check there
+     * is only that they do; the check that the mean matches the label is for the nine
+     * buckets in between.
      *
      * The bias check is the one that separates the symmetric rules. Breaking ties away
-     * from zero leaves every bucket's mean roughly 0.11 short of its label; breaking them
-     * toward zero brings that down to about 0.02.
+     * from zero leaves every interior bucket's mean roughly 0.11 short of its label;
+     * breaking them toward zero brings that down to about 0.02.
      */
     @Test
     public void bucketsAreSymmetricAndDescribeTheirContents() {
@@ -174,10 +224,7 @@ public class TrueCountRoundingTest {
                 continue;
             }
             double trueCount = (double) runningCount / (double) decksLeft;
-            int bucket = (int) GranularCount.roundToGrain(trueCount, 1.0);
-            if (bucket < -5 || bucket > 5) {
-                continue;
-            }
+            int bucket = bucketOf(trueCount);
             population[bucket + 5]++;
             trueCountSum[bucket + 5] += trueCount;
         }
@@ -209,11 +256,97 @@ public class TrueCountRoundingTest {
                             + "; a balanced count must be symmetric");
         }
 
-        for (int k = -5; k <= 5; k++) {
+        for (int k = -4; k <= 4; k++) {
             double mean = trueCountSum[k + 5] / population[k + 5];
             assertEquals(k, mean, 0.06,
                     "bucket " + k + " holds counts averaging " + String.format("%.4f", mean)
                             + ", which is not what its label claims");
         }
+
+        double topMean = trueCountSum[10] / population[10];
+        assertTrue(topMean > 5.0,
+                "bucket +5 holds counts averaging " + String.format("%.4f", topMean)
+                        + ", but the simulator files every count past 4.5 there, so the"
+                        + " mean has to lie beyond the label");
+        double bottomMean = trueCountSum[0] / population[0];
+        assertTrue(bottomMean < -5.0,
+                "bucket -5 holds counts averaging " + String.format("%.4f", bottomMean)
+                        + ", but the simulator files every count past -4.5 there, so the"
+                        + " mean has to lie beyond the label");
+    }
+
+    // ------------------------------------------------------------------ the report
+
+    /**
+     * CountBiasReport has to print the buckets the simulator fills, for every tie rule it
+     * compares. So every hand it samples lands in one of its rows, and its end rows, which
+     * hold every count past the range, say they are open-ended and average beyond their
+     * labels.
+     */
+    @Test
+    public void theReportsEndRowsHoldEveryCountPastTheRange() throws Exception {
+        int numShoes = 40000;
+        String[] lines = runCountBiasReport(numShoes, 20220608L);
+
+        int rules = 0;
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].startsWith("--- ")) {
+                continue;
+            }
+            String rule = lines[i].substring(4);
+            rules++;
+
+            // A row's label can run to several words, so read its figures from the right.
+            List<String[]> rows = new ArrayList<>();
+            for (int j = i + 2; j < lines.length && !lines[j].trim().isEmpty(); j++) {
+                rows.add(lines[j].trim().split("\\s+"));
+            }
+            long hands = 0;
+            for (String[] row : rows) {
+                hands += Long.parseLong(row[row.length - 4]);
+            }
+            assertEquals(numShoes, hands,
+                    rule + ": the rows hold " + hands + " of the " + numShoes
+                            + " hands sampled; a count past the range belongs in an end"
+                            + " row, as it does at the table");
+
+            String[] top = rows.get(0);
+            String[] bottom = rows.get(rows.size() - 1);
+            assertTrue(meanOf(top) > 5.0,
+                    rule + ": the +5 row averages " + meanOf(top) + ", but it holds +5 and"
+                            + " every count above it, so it has to average beyond its label");
+            assertTrue(meanOf(bottom) < -5.0,
+                    rule + ": the -5 row averages " + meanOf(bottom) + ", but it holds -5"
+                            + " and every count below it, so it has to average beyond its"
+                            + " label");
+            assertEquals("+5 and above", labelOf(top),
+                    rule + ": the top row holds every count past the range and has to"
+                            + " say so");
+            assertEquals("-5 and below", labelOf(bottom),
+                    rule + ": the bottom row holds every count past the range and has to"
+                            + " say so");
+        }
+        assertEquals(4, rules, "expected one block of rows for each of the four tie rules");
+    }
+
+    private static String[] runCountBiasReport(int numShoes, long seed) throws Exception {
+        PrintStream original = System.out;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(captured, true, "UTF-8"));
+        try {
+            CountBiasReport.main(
+                    new String[]{String.valueOf(numShoes), String.valueOf(seed)});
+        } finally {
+            System.setOut(original);
+        }
+        return captured.toString("UTF-8").split("\\R");
+    }
+
+    private static String labelOf(String[] row) {
+        return String.join(" ", Arrays.copyOfRange(row, 0, row.length - 4));
+    }
+
+    private static double meanOf(String[] row) {
+        return Double.parseDouble(row[row.length - 3].replace(',', '.'));
     }
 }
