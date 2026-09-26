@@ -97,6 +97,11 @@ public class RandomVsOptimalReport {
         }
     }
 
+    /** The finished-hand distribution for an up-card: 17, 18, 19, 20, 21, bust. */
+    double[] dealerDistributionFor(int upCard) {
+        return dealerDistribution[upCard];
+    }
+
     // ------------------------------------------------------------------- the dealer
 
     /** Probabilities of the dealer finishing on 17, 18, 19, 20, 21, or busting. */
