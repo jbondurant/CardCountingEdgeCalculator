@@ -147,6 +147,11 @@ public class Table {
     public void removeRandomAmountCardsAndRunCount(int maxPenetration, GranularCount randomCount, int deckSize, double countGranularity, int minC, int maxC){
         int maxCardsRemoved = mostCardsBurned(gameDeck.cards.size(), gameDeck.startingSize, maxPenetration);
 
+        // The chosen cards were each taken as the first card of their rank from the top,
+        // so the cards above where they were found are all other ranks. Burning from that
+        // order leaves the player drawing from a top that is short of the ranks just
+        // dealt. A missed count reshuffles below, but the first attempt needs it too.
+        gameDeck.shuffle();
         CompositeCardSource currDeckCopy = gameDeck.deepCopy();
         int runningCountCopy = runningCount;
         while(true) {
