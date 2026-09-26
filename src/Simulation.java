@@ -560,7 +560,6 @@ public class Simulation {
         PlayerMove firstMove = pm;
         boolean hitsOnSoft17 = hr.hitsOnSoft17;
         int deckSize = table.gameDeck.startingSize / hr.numDecks;
-        double countGranularity = simulationTable.simulationParameters.countGranularity;
         CountMethod countMethod = simulationTable.simulationParameters.countMethod;
         int maxSplitsAces = hr.numSplitsAces;
         int maxSplitsNotAces = hr.numSplitsNotAces;
@@ -568,15 +567,7 @@ public class Simulation {
         int maxC = this.simulationTable.simulationParameters.maxCountish;
 
         if(firstMove.equals(PlayerMove.Stand)){
-            GranularCount gcKey = table.getGranularCount(deckSize, countGranularity, minC, maxC);
-            int dKey = table.dealer.revealedCards.get(0).rank.getRankpoints();
-            GranularCountAndDealerUpCard gcadup = new GranularCountAndDealerUpCard(gcKey, dKey);
-            MetaDealerResult mdr = metaDealer.dealerCountAndUpCardToResults.get(gcadup);
-            HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
-            int playerBestScore = playerHE.getBestScore();
-            boolean playerHasBlackjack = table.randomishPlayer.playerHasBlackjack();
-            boolean dealerHasBlackjack = false;
-            return PlayerDealerBestScore.getPlayerPayoff(outcomeFinder, mdr, playerBestScore, hr.blackjackPayout, playerHasBlackjack, dealerHasBlackjack);
+            return getStandPayoff(handNode, outcomeFinder, metaDealer);
         }
         else if(firstMove.equals(PlayerMove.Hit)){
             Card c = table.gameDeck.cards.remove(0);
@@ -627,7 +618,7 @@ public class Simulation {
             int dealerRevealedScore = table.dealer.revealedCards.get(0).rank.getRankpoints();
 
             if(cantSplitAces || cantSplitNotAces){
-                return playBestNotSplit(handNode);
+                return playBestNotSplit(handNode, outcomeFinder, metaDealer);
             }
 
             Card phV1c1 = handNode.playerHand.handCards.get(0);
@@ -648,14 +639,14 @@ public class Simulation {
 
             double leftPayoff = 0.0;
             if(cantSplitLeft){
-                leftPayoff = playBestNotSplit(handNode.leftChildHandNode);
+                leftPayoff = playBestNotSplit(handNode.leftChildHandNode, outcomeFinder, metaDealer);
             }
             else {
                 leftPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.leftChildHandNode, outcomeFinder, metaDealer);
             }
             double rightPayoff = 0.0;
             if(cantSplitRight){
-                rightPayoff = playBestNotSplit(handNode.rightChildHandNode);
+                rightPayoff = playBestNotSplit(handNode.rightChildHandNode, outcomeFinder, metaDealer);
             }
             else {
                 rightPayoff = doPlayerMoveAndGetPayoff(PlayerMove.Split, handNode.rightChildHandNode, outcomeFinder, metaDealer);
@@ -669,6 +660,34 @@ public class Simulation {
 
 
 
+
+    /**
+     * What standing on this hand is worth in the table run, at the current count and
+     * up-card.
+     *
+     * Nothing here is looked up in a cell. The MetaDealer is filled before the table run
+     * starts and does not change during it, so the dealer's odds of ending on each total
+     * are already settled, and a stand is weighed against those. It follows that a stand
+     * recorded by the table run is the same number every time for a given count, up-card
+     * and total.
+     */
+    public double getStandPayoff(HandNode handNode, HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealer metaDealer){
+        HouseRules hr = this.simulationTable.simulationParameters.houseRules;
+        int deckSize = table.gameDeck.startingSize / hr.numDecks;
+        double countGranularity = simulationTable.simulationParameters.countGranularity;
+        int minC = this.simulationTable.simulationParameters.minCountish;
+        int maxC = this.simulationTable.simulationParameters.maxCountish;
+
+        GranularCount gcKey = table.getGranularCount(deckSize, countGranularity, minC, maxC);
+        int dKey = table.dealer.revealedCards.get(0).rank.getRankpoints();
+        GranularCountAndDealerUpCard gcadup = new GranularCountAndDealerUpCard(gcKey, dKey);
+        MetaDealerResult mdr = metaDealer.dealerCountAndUpCardToResults.get(gcadup);
+        HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
+        int playerBestScore = playerHE.getBestScore();
+        boolean playerHasBlackjack = table.randomishPlayer.playerHasBlackjack();
+        boolean dealerHasBlackjack = false;
+        return PlayerDealerBestScore.getPlayerPayoff(outcomeFinder, mdr, playerBestScore, hr.blackjackPayout, playerHasBlackjack, dealerHasBlackjack);
+    }
 
     public double getBestPlayerMovePayoff(HandSituation playerHS, GranularCount gc, EnumSet<PlayerMove> legalMoves){
         return simulationTable.getBestPlayerMovePayoff(playerHS, gc, legalMoves);
@@ -734,7 +753,13 @@ public class Simulation {
         }
         legalMoves.remove(PlayerMove.Split);
 
-
+        // With one legal move there is no choice to read from the table, so play it.
+        // Asking anyway went wrong for split aces, which may only stand: a split ace that
+        // draws another ace is A,A again, and a finished A,A cell need not have measured
+        // standing at every count, since standing is rarely the best way to play A,A.
+        if(legalMoves.size() == 1){
+            return doPlayerMoveSmartAndGetPayoff(legalMoves.iterator().next(), handNode);
+        }
 
         PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
         if(bestOtherMove == null){
@@ -745,7 +770,25 @@ public class Simulation {
         return doPlayerMoveSmartAndGetPayoff(bestOtherMove, handNode);
     }
 
-    public double playBestNotSplit(HandNode handNode){
+    /**
+     * What a hand that came out of a split is worth in the table run: standing, or the
+     * best of its other legal moves that its cell has measured.
+     *
+     * Standing is priced directly rather than read from the cell, and that is not a
+     * shortcut. A child that is still a pair and cannot be split again -- A,A once aces
+     * have been split, x,x at four hands -- has for its own cell the pair cell being
+     * built at this moment, often at a count that cell has not reached yet. Split aces
+     * may not hit or double, so standing is all they have left, and a pair cell that has
+     * been leaning towards splitting has seldom measured it. Reading the cell found
+     * nothing and stopped the run; before that, the gap was filled with 0.0 and recorded
+     * as an observation.
+     *
+     * For any other split hand this changes nothing. A stand the table run recorded is
+     * the same number every time for a given count, up-card and total (see
+     * getStandPayoff), so a cell that has measured Stand holds exactly the value
+     * computed here.
+     */
+    public double playBestNotSplit(HandNode handNode, HashMap<PlayerDealerBestScore, Outcome> outcomeFinder, MetaDealer metaDealer){
         int minC = this.simulationTable.simulationParameters.minCountish;
         int maxC = this.simulationTable.simulationParameters.maxCountish;
         HouseRules hr = this.simulationTable.simulationParameters.houseRules;
@@ -757,28 +800,24 @@ public class Simulation {
         HandSituation playerHS = new HandSituation(playerHE, dealerRevealedScore);
         GranularCount gc = table.getGranularCount(deckSize, simulationTable.simulationParameters.countGranularity, minC, maxC);
 
-        EnumSet<PlayerMove> knownMovesWithPayoffs = this.simulationTable.getKnownMovesWithPayoffs(playerHS, gc);
-        EnumSet<PlayerMove> legalMoves = knownMovesWithPayoffs;
-        legalMoves.remove(PlayerMove.Split);
+        EnumSet<PlayerMove> otherMeasuredMoves = this.simulationTable.getKnownMovesWithPayoffs(playerHS, gc);
+        otherMeasuredMoves.remove(PlayerMove.Stand);
+        otherMeasuredMoves.remove(PlayerMove.Split);
         if((rank.equals(Rank.ACE)) && (!hr.canHitAfterSplittingAces)) {
-            legalMoves.remove(PlayerMove.Hit);
+            otherMeasuredMoves.remove(PlayerMove.Hit);
         }
         // Always removed, not just when the rules forbid it: this hand came out of a
         // split, and surrender is a first action on the original two cards.
-        legalMoves.remove(PlayerMove.Surrender);
+        otherMeasuredMoves.remove(PlayerMove.Surrender);
         if(!hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
-            legalMoves.remove(PlayerMove.Double);
+            otherMeasuredMoves.remove(PlayerMove.Double);
         }
-        if(legalMoves.size() == 0){
-            // This used to return 0.0, on the reasoning that it would wash out over enough
-            // simulations. It does not: the 0.0 is recorded as an observation, so more
-            // simulations accumulate more of them rather than diluting them.
-            throw new UnsolvedCellException("no measured moves for "
-                    + playerHS.getStringFromEncoding() + " at true count "
-                    + gc.countToCellString() + ", reached after a split");
+
+        double bestPayoff = getStandPayoff(handNode, outcomeFinder, metaDealer);
+        if(!otherMeasuredMoves.isEmpty()){
+            bestPayoff = Math.max(bestPayoff, getBestPlayerMovePayoff(playerHS, gc, otherMeasuredMoves));
         }
-        double nextMoveAveragePayoff = getBestPlayerMovePayoff(playerHS, gc, legalMoves);
-        return nextMoveAveragePayoff;
+        return bestPayoff;
     }
 
 
