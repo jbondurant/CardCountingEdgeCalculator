@@ -425,6 +425,14 @@ public class Simulation {
         return eventResult;
     }
 
+    // Neither dispatcher counts a card the player draws, whether from a hit, a double or a
+    // split. Every cell and the MetaDealer are measured at the count before the round's own
+    // cards, which is why setCards and setCardsSmart deal the hand and the dealer's up card
+    // without counting them. That was settled in June 2022: counting the player's cards
+    // made low counts look better only because a low count meant the hand was more likely
+    // to be holding a ten or an ace. So every lookup within a round reads the count the
+    // round was dealt at. Counting the drawn card would look up the hand it made at a count
+    // that includes one of that hand's own cards, which is not how its cell was measured.
     public double doPlayerMoveSmartAndGetPayoff(PlayerMove pm, HandNode handNode){
         HouseRules hr = this.simulationTable.simulationParameters.houseRules;
         PlayerMove firstMove = pm;
@@ -453,7 +461,6 @@ public class Simulation {
         else if(firstMove.equals(PlayerMove.Hit)){
             //i'll need a while loop and i'll need to remove double from my nex possible moves
             Card c = table.gameDeck.cards.remove(0);
-            //table.runningCount += countMethod.rankToCount.get(c.rank);
             handNode.playerHand.handCards.add(c);
 
             while(true) {
@@ -485,7 +492,6 @@ public class Simulation {
                 }
                 // best move is hit
                 Card cNext = table.gameDeck.cards.remove(0);
-                //table.runningCount += countMethod.rankToCount.get(cNext.rank);
                 handNode.playerHand.handCards.add(cNext);
             }
         }
@@ -523,9 +529,7 @@ public class Simulation {
             Card phV2c1 = handNode.playerHand.handCards.get(1);
 
             Card phV1c2 = table.gameDeck.cards.remove(0);
-            table.runningCount += countMethod.rankToCount.get(phV1c2.rank);
             Card phV2c2 = table.gameDeck.cards.remove(0);
-            table.runningCount += countMethod.rankToCount.get(phV2c2.rank);
 
             handNode.leftChildHandNode = HandNode.createHand(phV1c1, phV1c2);
             handNode.rightChildHandNode = HandNode.createHand(phV2c1, phV2c2);
@@ -571,7 +575,6 @@ public class Simulation {
         }
         else if(firstMove.equals(PlayerMove.Hit)){
             Card c = table.gameDeck.cards.remove(0);
-            table.runningCount += countMethod.rankToCount.get(c.rank);
             handNode.playerHand.handCards.add(c);
 
             HandEncoding playerHE = new HandEncoding(handNode.playerHand.handCards);
@@ -625,9 +628,7 @@ public class Simulation {
             Card phV2c1 = handNode.playerHand.handCards.get(1);
 
             Card phV1c2 = table.gameDeck.cards.remove(0);
-            table.runningCount += countMethod.rankToCount.get(phV1c2.rank);
             Card phV2c2 = table.gameDeck.cards.remove(0);
-            table.runningCount += countMethod.rankToCount.get(phV2c2.rank);
 
             handNode.leftChildHandNode = HandNode.createHand(phV1c1, phV1c2);
             handNode.rightChildHandNode = HandNode.createHand(phV2c1, phV2c2);
