@@ -117,7 +117,9 @@ public class PlayerDealerBestScore {
         return playerOutcomeVsDealerForTable(hr, bestScorePlayer, bestScoreDealer, playerHasBlackjack, dealerHasBlackjack);
     }
 
-    //TODO, I think I want to add surrender stuff to these methods
+    // Surrender never reaches this or playerOutcomeVsDealerForPayoff below: both move
+    // dispatchers return -0.5 for it before the dealer plays, and MoveChoices prices it at
+    // -0.5 by rule.
     public static Outcome playerOutcomeVsDealerForTable(HouseRules hr, int bestScorePlayer, int bestScoreDealer, boolean playerHasBlackjack, boolean dealerHasBlackjack){
         boolean pushOnDealerHard22 =  hr.pushOnDealerHard22;
         boolean player21AlwaysWins = hr.player21AlwaysWins;
@@ -148,7 +150,6 @@ public class PlayerDealerBestScore {
         return getOutcomeWhenNoPlayerNorDealerBlackjacks(bestScorePlayer, bestScoreDealer, pushOnDealerHard22, player21AlwaysWins);
     }
 
-    //TODO, I think I want to add surrender stuff to these methods
     public static Outcome playerOutcomeVsDealerForPayoff(HouseRules hr, int bestScorePlayer, int bestScoreDealer, boolean playerHasBlackjack, boolean dealerHasBlackjack){
         boolean pushOnDealerHard22 =  hr.pushOnDealerHard22;
         boolean player21AlwaysWins = hr.player21AlwaysWins;
