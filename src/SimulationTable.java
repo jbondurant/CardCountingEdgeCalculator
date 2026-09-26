@@ -172,6 +172,23 @@ public class SimulationTable {
         return startTableRow;
     }
 
+    /**
+     * One cell of a rendered table.
+     *
+     * The table fills in dependency order, hard 21 first, so while a run is going most
+     * situations have no cell yet. Each builder used to call through whatever the lookup
+     * returned, and the first missing situation stopped the render with a
+     * NullPointerException. A situation not reached yet is rendered the way a cell with
+     * nothing at count zero already is: empty, and marked unmeasured.
+     */
+    String getCellLine(HandSituation hs){
+        DecisionCell dc = actionMap.get(hs);
+        if(dc == null){
+            dc = new DecisionCell();
+        }
+        return "<td class=\"tg-" + dc.getCellColorTag() + "\">" + dc.createStringCell() + "</td>";
+    }
+
     public void printAllTables() throws IOException{
         printHardCountTable();
         printSoftTable();;
@@ -222,10 +239,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 hardCountTable.add(line);
             }
             hardCountTable.add("</tr>");
@@ -252,10 +266,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(true, false, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 softTable.add(line);
             }
             softTable.add("</tr>");
@@ -282,10 +293,7 @@ public class SimulationTable {
             for(int j=2; j<=11; j++){
                 HandEncoding he = new HandEncoding(false, true, i);
                 HandSituation hs = new HandSituation(he, j);
-                DecisionCell dc = actionMap.get(hs);
-                String cellContent = dc.createStringCell();
-                String cellColorTag = dc.getCellColorTag();
-                String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+                String line = getCellLine(hs);
                 splitTable.add(line);
             }
             splitTable.add("</tr>");
@@ -296,10 +304,7 @@ public class SimulationTable {
         for(int j=2; j<=11; j++){
             HandEncoding he = new HandEncoding(true, true, 2);
             HandSituation hs = new HandSituation(he, j);
-            DecisionCell dc = actionMap.get(hs);
-            String cellContent = dc.createStringCell();
-            String cellColorTag = dc.getCellColorTag();
-            String line = "<td class=\"tg-" + cellColorTag + "\">" + cellContent + "</td>";
+            String line = getCellLine(hs);
             splitTable.add(line);
         }
         splitTable.add("</tr>");
