@@ -106,11 +106,14 @@ public class SplitChildPricingTest {
      * ace. Aces split once under these rules, so that hand is A,A with nothing left but
      * to stand, and it used to be priced from the A,A cell's measured Stand, which was not
      * there. It is worth standing on 12, and the other hand, an ace and a ten, standing on
-     * 21; the split returns the sum for runSimulation to record.
+     * 21; the split returns the sum for runSimulation to record. The rules are set to pay
+     * no blackjack on split pairs, so that 21 is an ordinary one; BlackjackOnSplitPairsTest
+     * covers the other rule.
      */
     @Test
     public void aSplitAceThatDrawsAnotherAceIsPricedInsteadOfStoppingTheRun() {
         HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        hr.blackjackOnSplitPairs = false;
         SimulationTable table = emptyTable(hr);
         HandEncoding aces = new HandEncoding(true, true, 2);
         record(table, aces, PlayerMove.Split, 0.3);
@@ -248,11 +251,13 @@ public class SplitChildPricingTest {
      * ace can only stand, so there is nothing to look up; it used to ask the A,A cell
      * which of {Stand} was best, find nothing, and stop the run.
      *
-     * The dealer turns a ten under the 6 and draws another ten, so both hands win.
+     * The dealer turns a ten under the 6 and draws another ten, so both hands win. The
+     * rules are set to pay no blackjack on split pairs, so the ace and ten wins even money.
      */
     @Test
     public void thePayoffRunPlaysASplitHandsOnlyLegalMoveWithoutALookup() {
         HouseRules hr = HouseRules.getMtlCasino25MinBlackjackParams(75);
+        hr.blackjackOnSplitPairs = false;
         SimulationTable table = emptyTable(hr);
         HandEncoding aces = new HandEncoding(true, true, 2);
         record(table, aces, PlayerMove.Split, 0.3);

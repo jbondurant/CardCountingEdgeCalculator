@@ -109,8 +109,13 @@ public class PlayerDealerBestScore {
         HandEncoding dealerHE = new HandEncoding(dealer.getDealerCards());
         int bestScorePlayer = playerHE.getBestScore();
         int bestScoreDealer = dealerHE.getBestScore();
-        boolean playerHasBlackjack = player.playerHasBlackjack();
         boolean dealerHasBlackjack = dealer.dealerHasBlackjack();
+        // A dealer natural beats every hand but a dealt natural, which it pushes, so a
+        // split hand paid as a blackjack still loses to one. That only arises where the
+        // dealer does not peek; a peeked natural ends the round before anyone can split.
+        boolean playerHasBlackjack = dealerHasBlackjack
+                ? player.playerHasBlackjack()
+                : player.handIsPaidAsBlackjack(handNode, hr);
         if(isSmart) {
             return playerOutcomeVsDealerForPayoff(hr, bestScorePlayer, bestScoreDealer, playerHasBlackjack, dealerHasBlackjack);
         }
@@ -125,26 +130,29 @@ public class PlayerDealerBestScore {
         boolean player21AlwaysWins = hr.player21AlwaysWins;
         boolean dealerPeeksBlackjack = hr.dealerPeeksBlackjack;
 
-        // Both of these resolve before the player makes a decision, so neither carries any
-        // information about whether hitting or standing was better. VOID marks that: the
-        // hand does not count, and is dropped rather than scored.
+        // A natural the dealer peeks at resolves before the player makes a decision, so it
+        // carries no information about whether hitting or standing was better. VOID marks
+        // that: the hand does not count, and is dropped rather than scored. It is not
+        // reachable in the table run, which discards a dealer natural in runSingleEvent and
+        // never records one in the MetaDealer.
         //
-        // Neither is reachable in the table run. runSingleEvent discards a dealer natural
-        // upstream, and a player natural cannot arise, because setCards deals a soft-21
-        // target as three cards while playerHasBlackjack() requires exactly two.
-        //
-        // That three-card dealing is also what keeps a natural's 3:2 out of the soft-21
-        // cell, so hitting a soft 14 into a 21 does not inherit a bonus it has not earned.
+        // A player blackjack is reachable, but never a dealt natural: setCards deals a
+        // soft-21 target as three cards, and a natural is two. That three-card dealing is
+        // what keeps a natural's 3:2 out of the soft-21 cell, so hitting a soft 14 into a
+        // 21 does not inherit a bonus it has not earned. What can reach here is a hand out
+        // of a split that drew to two cards making 21, where the house pays blackjack on
+        // split pairs (RandomishPlayer.handIsPaidAsBlackjack). It is paid as a blackjack,
+        // and its value goes to the pair that was split, not to the soft-21 cell. Being a
+        // split hand, it loses to a dealer natural like any other hand but a dealt one.
         if(dealerHasBlackjack && dealerPeeksBlackjack){
             return Outcome.VOID;
         }
-        else if(playerHasBlackjack){
-            return Outcome.VOID;
-        }
-        //DealerNoBlackjack or dealerblackjackAndNoPeek
-        //PlayerNoBlackjack
+        //dealerblackjackAndNoPeek
         else if(dealerHasBlackjack){
             return Outcome.LOSS;
+        }
+        else if(playerHasBlackjack){
+            return Outcome.WINBLACKJACK;
         }
         //DealerNoBlackjack and PlayerNoBlackjack
         return getOutcomeWhenNoPlayerNorDealerBlackjacks(bestScorePlayer, bestScoreDealer, pushOnDealerHard22, player21AlwaysWins);
