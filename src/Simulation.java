@@ -322,10 +322,18 @@ public class Simulation {
                     + granularCount.countToCellString());
         }
 
+        // Taken from the cards before the round is played, since playing it changes them. A
+        // natural is paid when the dealer has none to push it and the player stands on it;
+        // hitting it would leave an ordinary three-card hand, settled as one. In practice the
+        // soft-21 cell always says stand, so this comes down to a natural the dealer lacks.
+        boolean paidNatural = table.randomishPlayer.playerHasBlackjack()
+                && !table.dealer.dealerHasBlackjack()
+                && pm.equals(PlayerMove.Stand);
+
         //System.out.println("-----");
         double payoff = doPlayerMoveSmartAndGetPayoff(pm, table.randomishPlayer.playerHands);
 
-        EventResult eventResult = new EventResult(payoff, playerHE, dealerRevealedRank, pm, granularCount);
+        EventResult eventResult = new EventResult(payoff, playerHE, dealerRevealedRank, pm, granularCount, paidNatural);
         return eventResult;
 
     }
