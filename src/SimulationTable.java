@@ -157,7 +157,7 @@ public class SimulationTable {
         widest.insertEventSmart(0.0);
 
         HouseRules hr = sp.houseRules;
-        boolean canSurrender = hr.canEarlySurrender || hr.canLateSurrender;
+        boolean canSurrender = hr.offersSurrender();
         SimulationTable table = new SimulationTable(sp, "000000000000000000000000");
         for(HandSituation hs : HandSituation.getOrderedSituations()){
             MoveChoices mc = new MoveChoices();

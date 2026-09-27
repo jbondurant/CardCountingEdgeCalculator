@@ -8,6 +8,21 @@ public class Simulation {
     public SimulationTable simulationTable;
     public String name;
 
+    /**
+     * The dealer the table was built from, and the outcomes that price a stand against it,
+     * for the payoff run.
+     *
+     * The payoff run deals the dealer's own cards and reads its moves from the table, so
+     * it prices nothing, with one exception. Where the house lets a split hand surrender,
+     * the table run priced that hand as the best of surrendering and its other moves, with
+     * a stand priced from this dealer, and the payoff run has to make the same choice to
+     * play the strategy the table describes. runPayoffFinderSim loads both, and only under
+     * rules that need them. They are fields so that a test can supply them without a
+     * database.
+     */
+    public MetaDealer payoffRunDealer;
+    public HashMap<PlayerDealerBestScore, Outcome> payoffRunOutcomeFinder;
+
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
@@ -213,6 +228,15 @@ public class Simulation {
         double countPrecision = sp.countGranularity;
         String semanticsKey = sp.getSemanticsKey();
         String strategyFingerprint = fingerprintOfFinishedStrategy();
+
+        // Loaded exactly as runSimulation loads it, and refused on the same terms, since it
+        // has to be the dealer the table's stands were priced from.
+        if(sp.houseRules.offersSurrenderAfterSplit()){
+            MetaDealer md = MetaDealer.getMetaDealer(name);
+            md.resumeUnder(semanticsKey);
+            payoffRunDealer = md;
+            payoffRunOutcomeFinder = PlayerDealerBestScore.initializeOutcomeFinderForTable(sp.houseRules);
+        }
 
         PayoffTable emptyPayoffTable = new PayoffTable(minC, maxC, countPrecision, name);
         PayoffTable payoffTable = PayoffTable.getTable(name, emptyPayoffTable);
@@ -449,7 +473,7 @@ public class Simulation {
         boolean canSplit = playerHE.canSplit && hr.allowsSplitting(pairRank);
         // Surrender is a first action on the original two cards. setCards deals three of
         // them for the hard 20, hard 21 and soft 21 targets, and those cannot surrender.
-        boolean canSurrender = (hr.canEarlySurrender || hr.canLateSurrender)
+        boolean canSurrender = hr.offersSurrender()
                 && table.randomishPlayer.playerHands.playerHand.handCards.size() == 2;
         boolean canHit = true;
         HandEncoding hard21Encoding = new HandEncoding(false, false, 21);
@@ -814,8 +838,8 @@ public class Simulation {
         if((!rank.equals(Rank.ACE)) || hr.canHitAfterSplittingAces){
             legalMoves.add(PlayerMove.Hit);
         }
-        // No surrender here: it is a first action on the original two cards, and this hand
-        // came out of a split. A few houses do allow it; this ruleset does not model that.
+        // Surrender is not among these even where the house allows it after a split. It is
+        // weighed below, once the move it competes with is known.
         if (hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             legalMoves.add(PlayerMove.Double);
         }
@@ -825,22 +849,52 @@ public class Simulation {
         // Asking anyway went wrong for split aces, which may only stand: a split ace that
         // draws another ace is A,A again, and a finished A,A cell need not have measured
         // standing at every count, since standing is rarely the best way to play A,A.
+        PlayerMove move;
         if(legalMoves.size() == 1){
-            return doPlayerMoveSmartAndGetPayoff(legalMoves.iterator().next(), handNode);
+            move = legalMoves.iterator().next();
+        }
+        else {
+            move = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
+            if(move == null){
+                throw new UnsolvedCellException("the payoff run reads a finished table, but the "
+                        + "split hand " + playerHS.getStringFromEncoding()
+                        + " has no measured move at true count " + gc.countToCellString());
+            }
         }
 
-        PlayerMove bestOtherMove = getBestPlayerMove(playerHS, gc, legalMoves, minC, maxC);
-        if(bestOtherMove == null){
-            throw new UnsolvedCellException("the payoff run reads a finished table, but the "
-                    + "split hand " + playerHS.getStringFromEncoding()
-                    + " has no measured move at true count " + gc.countToCellString());
+        // The table run priced a split hand that may surrender as the better of that and
+        // its other moves, so this surrenders exactly when the move above is worth less
+        // than -0.5 by the table run's measure. That measure prices a stand from the dealer
+        // rather than the cell, which is what lets the split ace that drew another ace
+        // choose at all: its only other move is to stand, and its cell seldom measured it.
+        if(hr.offersSurrenderAfterSplit()
+                && valueInTheTableRun(move, handNode, playerHS, gc) < -0.5){
+            move = PlayerMove.Surrender;
         }
-        return doPlayerMoveSmartAndGetPayoff(bestOtherMove, handNode);
+        return doPlayerMoveSmartAndGetPayoff(move, handNode);
     }
 
     /**
-     * What a hand that came out of a split is worth in the table run: standing, or the
-     * best of its other legal moves that its cell has measured.
+     * What the table run counts a split hand's move as worth: a stand priced from the
+     * dealer the table was built from, as playBestNotSplit prices it, and a hit or a double
+     * as its cell measured it.
+     */
+    private double valueInTheTableRun(PlayerMove pm, HandNode handNode, HandSituation playerHS, GranularCount gc){
+        if(payoffRunDealer == null || payoffRunOutcomeFinder == null){
+            throw new IllegalStateException("this split hand may surrender, and the payoff run "
+                    + "weighs that against a stand priced from the dealer the table was built "
+                    + "from, but it was given no dealer. runPayoffFinderSim loads it.");
+        }
+        if(pm.equals(PlayerMove.Stand)){
+            return getStandPayoff(handNode, payoffRunOutcomeFinder, payoffRunDealer);
+        }
+        return getBestPlayerMovePayoff(playerHS, gc, EnumSet.of(pm));
+    }
+
+    /**
+     * What a hand that came out of a split is worth in the table run: standing, the best
+     * of its other legal moves that its cell has measured, or surrendering where the house
+     * allows that after a split.
      *
      * Standing is priced directly rather than read from the cell, and that is not a
      * shortcut. A child that is still a pair and cannot be split again -- A,A once aces
@@ -874,8 +928,11 @@ public class Simulation {
         if((rank.equals(Rank.ACE)) && (!hr.canHitAfterSplittingAces)) {
             otherMeasuredMoves.remove(PlayerMove.Hit);
         }
-        // Always removed, not just when the rules forbid it: this hand came out of a
-        // split, and surrender is a first action on the original two cards.
+        // Removed whatever the rules say. These are the moves measured for the hand
+        // situation, which is keyed on total, up-card and pairness but not on how the hand
+        // was reached, so a split eight that drew a six shares its cell with a 10,4 dealt
+        // straight up. A surrender measured for the 10,4 says nothing about whether this
+        // hand may take one; where it may, surrender is priced by rule below.
         otherMeasuredMoves.remove(PlayerMove.Surrender);
         if(!hr.ranksThatCanBeDoubledDownAfterSplit.contains(rank)) {
             otherMeasuredMoves.remove(PlayerMove.Double);
@@ -884,6 +941,10 @@ public class Simulation {
         double bestPayoff = getStandPayoff(handNode, outcomeFinder, metaDealer);
         if(!otherMeasuredMoves.isEmpty()){
             bestPayoff = Math.max(bestPayoff, getBestPlayerMovePayoff(playerHS, gc, otherMeasuredMoves));
+        }
+        // Forfeiting half the bet is worth -0.5 by rule, so like standing it needs no cell.
+        if(hr.offersSurrenderAfterSplit()){
+            bestPayoff = Math.max(bestPayoff, -0.5);
         }
         return bestPayoff;
     }

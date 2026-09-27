@@ -93,6 +93,20 @@ public class UnplayableRulesTest {
         assertDoesNotThrow(() -> simulationFor(hr));
     }
 
+    /**
+     * Both split paths read surrender after a split, so it is not refused either, with
+     * surrender offered or without it, where it simply means nothing.
+     */
+    @Test
+    public void surrenderAfterASplitIsPlayable() {
+        HouseRules hr = montreal();
+        hr.canSurrenderAfterSplit = true;
+        assertEquals(List.of(), hr.unplayableRules());
+        hr.canLateSurrender = true;
+        assertEquals(List.of(), hr.unplayableRules());
+        assertDoesNotThrow(() -> simulationFor(hr));
+    }
+
     @Test
     public void doubleDownRescueIsRefused() {
         HouseRules hr = montreal();
