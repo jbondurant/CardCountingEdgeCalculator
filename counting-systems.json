@@ -1,0 +1,2031 @@
+{
+  "_about": "Published card-counting systems, compiled 2026-09-28 by a Claude Code research workflow. One sweep read the reference tables (QFIT and Modern Blackjack, blackjackreview's comparison table, Wizard of Odds, Wikipedia, Blackjack Apprenticeship, BlackjackInfo's efficiency calculator). A second sweep of the originators' own publications stalled and never reported, so the reconciling agent checked every system against a second source itself, fetching the authors' own texts where it could (Snyder on Red 7 and Hi-Lo Lite, Vancura and Fuchs on KO, Wattenberger on REKO and FELT, Victor, Harris on the BRH counts, Renzey on KISS). A system is listed only when two sources agree on its tags or its author published them; the rest are under 'excluded' with the reason. 'tags' are per rank as published, T being every ten-valued card; where a count depends on suit or face, 'cardTags' gives the real tags ('2red', '7black', '10', 'J', ...) and 'tags' holds their average. 'count' is the author's conversion where the sources state one, otherwise 'true' for a balanced count and 'running' for an unbalanced one. The text fields are the sources' words, summarised, including what could not be confirmed.",
+  "systems": [
+    {
+      "name": "Hi-Lo",
+      "aliases": [
+        "High-Low",
+        "Plus-Minus",
+        "Dubner / Braun / Wong / Thorp High-Low (blackjackreview row label)",
+        "Revere Plus-Minus (blackjackreview uses this label for Hi-Lo too; see Revere Advanced Plus-Minus)",
+        "Extreme (blackjackreview row label)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Running count divided by decks remaining (Wizard's example: RC +7 with 4 decks left gives 1.75, rounded to 2). Insurance at TC +3 or more (Wizard).",
+      "aceSideCount": "None needed; ace-reckoned.",
+      "publishedBcPeIc": "QFIT table: BC .97, PE .51, IC .76. blackjackreview table: .97/.51/.76. BlackjackInfo calculator (Griffin EORs, 6D): PE 0.5114, BC 0.9682, IC 0.7601.",
+      "notes": "Wizard 6D sim (S17, DAS, surrender, I18+Fab4, bet raised only after wins): at 4.5 decks dealt, 1-5 +0.300% (SD 1.60, avg bet 1.41), 1-10 +0.587% (2.27, 1.68), 1-15 +0.834% (3.06, 1.90); at 5 decks dealt, 1-5 +0.469% (1.70, 1.47), 1-10 +0.837% (2.52, 1.80), 1-15 +1.147% (3.49, 2.10). Sweep A's '+1.182%, SD 3.54, avg bet 2.11 with full indexes' did not appear in my fetch of the page; treat as unverified. Sweep A's insurance counts from the blackjackreview 'i' page (1.5 SD, 2.4 DD, 3 shoe) were not re-fetched. Same tags as Hi-Lo Lite.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC, type B, level 1"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 0, BC/PE/IC, alias labels"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags, level 1"
+        },
+        {
+          "url": "https://wizardofodds.com/games/blackjack/card-counting/high-low/",
+          "what": "TC = RC / decks remaining, insurance at TC +3, 6D simulation table"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/card-counting-efficiency-calculator/",
+          "what": "4-decimal PE/BC/IC"
+        }
+      ]
+    },
+    {
+      "name": "Hi-Lo Lite",
+      "aliases": [
+        "Snyder Hi-Lo Lite"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Running count converted to a true count per deck. Indexes are grouped into five blocks: +1, +5, -1, -5, +10. Insurance sits in the +1 block.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "None published separately. The tags equal Hi-Lo's, so BC and IC equal Hi-Lo's (QFIT .97/.76).",
+      "notes": "A simplified index set on Hi-Lo tags, not new tags. Snyder's single-deck test (100M hands, 1-4 spread): Wong's complete Hi-Lo +1.32%, Hi-Lo Lite (39 indexes) +1.29%. The +1 insurance block looks tuned for single deck. For a tag-only EV engine this is a duplicate of Hi-Lo; it differs only if the engine models this index set.",
+      "sources": [
+        {
+          "url": "https://www.lasvegasadvisor.com/gambling-with-an-edge/the-hi-lo-lite/",
+          "what": "Snyder, Blackjack Forum Vol. XI #3 (Sept 1991): tags, per-deck TC, index blocks, insurance +1, 39-index version"
+        },
+        {
+          "url": "https://www.qfit.com/card_counting_systems.htm",
+          "what": "Casino Verite lists 'Snyder Hi-Lo Lite' index set"
+        }
+      ]
+    },
+    {
+      "name": "KO (Knock-Out)",
+      "aliases": [
+        "K-O",
+        "KO Rookie / Preferred / Full (index sets)"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. Standard IRC = 4 - (4 x decks): 0 (1D), -4 (2D), -20 (6D), -28 (8D) per the authors, so the pack ends at +4. The 4D value is -12 by the same formula. Pivot = IRC + 4 x decks = +4 (BlackjackInfo forum), roughly a Hi-Lo TC of +4. Key count for 2D is +1 (authors' sample chapter). Sweep A also cites secondary key counts from bonusinsider (+2 1D, -4 6D, -6 8D) and insurance at RC +3; I did not re-fetch those. The authors allow shifting the IRC to avoid negative numbers.",
+      "trueCountMethod": "None. The authors say unbalancing removes the true-count conversion; decisions use the running count.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT table: .98/.55/.78. blackjackreview: .98/.55/.78. BlackjackInfo calculator (tags centred): PE 0.5530, BC 0.9770, IC 0.7832. Sweep A cites Modern Blackjack p.174: Rookie BC .98 with PE/IC blank (not re-fetched).",
+      "notes": "Same tags as REKO. Sweep A's extra aliases (All Sevens Count, T-Hop Basic, ESP-U) were not re-verified.",
+      "sources": [
+        {
+          "url": "https://www.lasvegasadvisor.com/shop/wp-content/uploads/2017/06/KOBJ-Sample.pdf",
+          "what": "Vancura & Fuchs sample chapter: +1 for 2-7, -1 for 10/J/Q/K/A, IRC = 4 - (4 x decks), 2D key count +1, no true count"
+        },
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, U type, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 4, BC/PE/IC"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/k-o-key-count-vs-pivot.19993/",
+          "what": "pivot = 4 x decks + IRC; approximately Hi-Lo TC +4"
+        }
+      ]
+    },
+    {
+      "name": "REKO (Ridiculously Easy Knock-Out)",
+      "aliases": [
+        "REKO-F (full risk-averse indexes)"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. Published IRCs (Modern Blackjack p.71): -1 (1D), -5 (2D), -12 (4D), -20 (6D), -27 (8D). These are not a fixed-pivot formula: IRC + 4 x decks = +3, +3, +4, +4, +5 respectively. It differs from KO at 1, 2 and 8 decks.",
+      "trueCountMethod": "None; running count only. One index value, +2, is used for every play at every deck count (QFIT REKO page). Sweep A's claim that insurance is also at +2 (p.73) was not confirmed by my fetch of p.73, which says only to insure when the count is high.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "QFIT table: .98/.55/.78. Modern Blackjack p.172: .98/.55/.78.",
+      "notes": "Wattenberger's own system on his own site, so primary. Same tags as KO; it differs only in IRCs and indexes.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC (author's own site)"
+        },
+        {
+          "url": "https://www.qfit.com/cardcounting/REKO/",
+          "what": "tags, single index +2, same power as KO Preferred, author Norm Wattenberger"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage71.htm",
+          "what": "IRC table by decks"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "REKO row, type UC1"
+        }
+      ]
+    },
+    {
+      "name": "Red Seven (Red 7)",
+      "aliases": [
+        "Red 7"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0.5,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "cardTags": {
+        "7red": 1,
+        "7black": 0
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Suit-aware: red 7 = +1, black 7 = 0; 0.5 is the per-rank average. Deck sum +2 checked. IRC = -2 x decks: -2 (1D), -4 (2D), -12 (6D), -16 (8D), so the pack ends at 0. At pivot 0 the advantage is up about 1% from the start (Snyder), roughly a balanced TC of +2. Raise bets at RC 0 or higher. Insurance at RC 0 or more in 1-2 deck games, +2 or more in shoes.",
+      "trueCountMethod": "None; running count only.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT table: .98/.54/.78 (7 shown as 0/1). blackjackreview: .98/.54/.78 (7 shown as .5). BlackjackInfo calculator (7 = 0.5): PE 0.5423, BC 0.9833, IC 0.7804.",
+      "notes": "ENGINE WARNING: a rank-only engine with 7 = 0.5 is not the real count; it changes the count's distribution. For exact EV, model red 7s (2 per deck, +1) and black 7s (2 per deck, 0) as separate card types.",
+      "sources": [
+        {
+          "url": "https://www.lasvegasadvisor.com/gambling-with-an-edge/the-easy-red-7-count/",
+          "what": "Snyder's own article: tags, red/black 7 rule, IRC by decks, pivot, betting and insurance"
+        },
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags (7 = 0/1), BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags (7 = .5), SUM 2"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/card-counting-efficiency-calculator/",
+          "what": "4-decimal values"
+        }
+      ]
+    },
+    {
+      "name": "Hi-Opt I",
+      "aliases": [
+        "Highly Optimum I",
+        "Austin / Einstein / Humble (blackjackreview row label)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B); the author's exact divisor was not found.",
+      "aceSideCount": "Ace-neutral. QFIT betting procedure: multiply excess aces by |ten tag| (1) and add to the RC for betting only.",
+      "publishedBcPeIc": "QFIT table: .88/.61/.85. With ace side count (Modern Blackjack p.172, 'Hi-Opt I (SC)'): BC .95, PE .61, IC .85. blackjackreview: .88/.61/.85. BlackjackInfo: PE 0.6094, BC 0.8752, IC 0.8498.",
+      "notes": "Humble & Cooper. Compute the with- and without-ace-side-count variants separately; the side count only raises BC.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "side-count BC .95"
+        },
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "ace side-count procedure; Hi-Opt I listed as ace-neutral"
+        }
+      ]
+    },
+    {
+      "name": "Hi-Opt II",
+      "aliases": [
+        "Accu-Count / Humble (blackjackreview row label)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B); divisor not stated in the sources.",
+      "aceSideCount": "Ace-neutral; side count recommended. QFIT betting procedure: excess aces x 2 added to the RC.",
+      "publishedBcPeIc": "QFIT: .91/.67/.91. With ace SC (Modern Blackjack p.172): BC .98, PE .67, IC .91. blackjackreview: .91/.67/.91. BlackjackInfo: PE 0.6684, BC 0.9087, IC 0.9085.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "SC BC .98"
+        },
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "ace-neutral, side-count procedure"
+        }
+      ]
+    },
+    {
+      "name": "Omega II",
+      "aliases": [
+        "Advanced / Basic Omega II",
+        "Griffin 2 (identical tags, blackjackreview)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "Ace-neutral, side count optional. Excess aces x 2 added for betting (QFIT). blackjackreview: the side count raises BC from 0.92 to 0.99.",
+      "publishedBcPeIc": "QFIT: .92/.67/.85. With ace SC (Modern Blackjack p.172): BC .99, PE .67, IC .85. blackjackreview: .92/.67/.85 (Griffin 2 row identical). BlackjackInfo: PE 0.6717, BC 0.9170, IC 0.8498.",
+      "notes": "Same tags as Canfield Master.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC, Griffin 2 row"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/o/",
+          "what": "tags, Bryce Carlson 1992"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "SC BC .99"
+        }
+      ]
+    },
+    {
+      "name": "Canfield Master",
+      "aliases": [
+        "Canfield Master Count"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B); the forum description says the count is adjusted for decks remaining.",
+      "aceSideCount": "Side counts of aces and 8s (forum post describing the book); QFIT says side counts were suggested.",
+      "publishedBcPeIc": "QFIT table: .92/.67/.85.",
+      "notes": "Same tags as Omega II; it differs only by its side counts. blackjackreview has no separate row.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/using-the-canfield-master-system.4974/",
+          "what": "robertjsweet (2007), from Blackjack Your Way to Riches: A and 8 neutral, 2/3/7 +1, 4-6 +2, 9 -1, tens -2; 8s and aces side-counted"
+        }
+      ]
+    },
+    {
+      "name": "Canfield Expert",
+      "aliases": [
+        "Expert Count"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "Ace-neutral; QFIT lists 'Expert' as eligible for the ace side count for betting.",
+      "publishedBcPeIc": "QFIT: .87/.63/.76. blackjackreview: .87/.63/.76.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "ace-neutral list"
+        }
+      ]
+    },
+    {
+      "name": "Zen Count",
+      "aliases": [
+        "Zen"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Two published versions. The original divides by remaining decks; the later one divides by remaining quarter-decks. QFIT says the original is markedly stronger.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .96/.63/.85. blackjackreview: .96/.63/.85. BlackjackInfo: PE 0.6268, BC 0.9621, IC 0.8498.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/cardcounting/Zen-Count/",
+          "what": "tags, two TC versions, Snyder Blackbelt 1983"
+        },
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags"
+        }
+      ]
+    },
+    {
+      "name": "Unbalanced Zen 2 (UBZ2)",
+      "aliases": [
+        "UBZ II",
+        "Unbalanced Zen 11 (Casino Verite label)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 2,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. The IRC is UNRESOLVED; George C.'s 1995 booklet was not accessed. BJInfo's community 'Open Source UBZ II' table gives -4 x decks (-4 1D, -8 2D, -24 6D), pivot 0, 6D key count -6. That is the only choice with a deck-independent pivot (0), and it fits Renzey's forum remark that the pivot is +2 true (level-2 count). Several secondary sites say -2 x decks, and Casino Verite has index sets labelled 'starting at -2' and 'starting at 0'. With -2 x decks there is no fixed pivot (IRC + 4 x decks = 2 x decks).",
+      "trueCountMethod": "None; running count.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .97/.62/.84. blackjackreview gives lower values: .94/.61/.82 (SUM 4).",
+      "notes": "The tags are confirmed. The IRC only shifts the running count, so an engine that sets its own bet ramp on a pivot-normalised count is unaffected; one that reproduces the booklet's key counts is affected.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/cardcounting/Unbalanced-Zen-2/",
+          "what": "tags, BC/PE/IC, George C. 1995"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 4, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/unbalanced-zen-ii.10257/",
+          "what": "IRC -4/-8/-24, key count -6, pivot 0 (community open-source version)"
+        },
+        {
+          "url": "https://www.qfit.com/card_counting_systems.htm",
+          "what": "CV index sets 'starting at -2' and 'starting at 0'"
+        }
+      ]
+    },
+    {
+      "name": "Wong Halves",
+      "aliases": [
+        "Halves"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 0.5,
+        "3": 1,
+        "4": 1,
+        "5": 1.5,
+        "6": 1,
+        "7": 0.5,
+        "8": 0,
+        "9": -0.5,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 3,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B). The fractional tags are real, not suit averages. Doubling to integers (2 = 1, 5 = 3, ...) is the common practice.",
+      "aceSideCount": "Not needed; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .99/.56/.72. blackjackreview: .99/.57/.72 (PE differs). BlackjackInfo: PE 0.5650, BC 0.9919, IC 0.7247.",
+      "notes": "Stanford Wong, Professional Blackjack.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC, level 3"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, PE .57"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "tags, level 3"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/card-counting-efficiency-calculator/",
+          "what": "4-decimal values"
+        }
+      ]
+    },
+    {
+      "name": "Mentor",
+      "aliases": [
+        "C-K or Precision Count (Cant/Keen) - identical tags and values in blackjackreview"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Divide by remaining DOUBLE decks (QFIT).",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .97/.62/.80. blackjackreview: .97/.62/.80.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/cardcounting/Mentor/",
+          "what": "double-deck divisor, Renzey Blackjack Bluebook II 2003, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC, C-K row"
+        }
+      ]
+    },
+    {
+      "name": "KISS I",
+      "aliases": [
+        "KISS 1"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": 0,
+        "2": 0.5,
+        "3": 0,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -0.75
+      },
+      "cardTags": {
+        "2red": 0,
+        "2black": 1,
+        "10": 0,
+        "J": -1,
+        "Q": -1,
+        "K": -1
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Suit- and face-aware: black 2s +1 and red 2s 0; J, Q and K -1; the 10-spot 0; 4, 5 and 6 +1. Deck sum +2 checked (matches blackjackreview SUM 2). The published IRC and key count were not found.",
+      "trueCountMethod": "None; running count.",
+      "aceSideCount": "None; the ace is not counted.",
+      "publishedBcPeIc": "blackjackreview: .87/.58/.81. Not in the QFIT table.",
+      "notes": "Renzey's own post resolves the conflict with CasinoGuardian (2 = 0, all tens -1): blackjackreview's reading is correct. ENGINE WARNING: T = -0.75 and 2 = 0.5 are averages. For exact EV, split tens into the 10-spot (4 per deck, 0) and faces (12 per deck, -1), and 2s into black (+1) and red (0).",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags (2 = .5, T = -.75), SUM 2, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/best-system-for-occasional-player.4322/",
+          "what": "Fred Renzey (author) post: the paints (J/Q/K) against 4-6, plus black deuces for unbalancing"
+        }
+      ]
+    },
+    {
+      "name": "KISS II",
+      "aliases": [
+        "KISS 2"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 0.5,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "cardTags": {
+        "2red": 0,
+        "2black": 1
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Black 2s +1, red 2s 0. Deck sum +2 checked. The published IRC was not found.",
+      "trueCountMethod": "None; running count.",
+      "aceSideCount": "None; ace-neutral.",
+      "publishedBcPeIc": "QFIT: .90/.62/.87 (2 shown as 0/1). Modern Blackjack p.172: .90/.62/.87 (2 = .5). blackjackreview: .90/.62/.87.",
+      "notes": "ENGINE WARNING: model black and red 2s separately.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "2 = .5, type US1"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 2"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/best-system-for-occasional-player.4322/",
+          "what": "Renzey: KISS II adds the 3 and the 10-spot to KISS I"
+        }
+      ]
+    },
+    {
+      "name": "KISS III",
+      "aliases": [
+        "KISS 3"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 0.5,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "cardTags": {
+        "2red": 0,
+        "2black": 1
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Black 2s +1, red 2s 0. Deck sum +2 checked. IRCs quoted on Wizard of Vegas as from Blackjack Bluebook II: 18 (1D), 17 (2D), 9 (6D); key count always 20 (Renzey, quoted). The poster's written formula '21 - (6 x decks)' does not reproduce these numbers; 21 - 2 x decks gives 17 and 9, with 1D an exception at 18. Unshifted equivalent: IRC -2 x decks with pivot 0, like Red 7. The shifted form has pivot 21, and key count 20 sits one below it.",
+      "trueCountMethod": "None; running count.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .98/.56/.78. Modern Blackjack p.172: .98/.56/.78. blackjackreview: .97/.56/.78 (BC differs).",
+      "notes": "The IRCs come from a forum quotation of the book, not the book itself. ENGINE WARNING: model black and red 2s separately.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "2 = .5"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 2, BC .97"
+        },
+        {
+          "url": "https://wizardofvegas.com/forum/gambling/blackjack/11675-irc-used-in-kiss-iii/",
+          "what": "IRCs 18/17/9, key count 20, formula text"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/best-system-for-occasional-player.4322/",
+          "what": "Renzey: KISS III adds the 7 and the ace"
+        }
+      ]
+    },
+    {
+      "name": "Silver Fox",
+      "aliases": [
+        "Green Fountain Count / Systems Research (per Sweep A, not re-verified)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .96/.53/.69. blackjackreview: .96/.54/.69 (PE differs).",
+      "notes": "Tek's Computo-Matic (excluded) is exactly this count with the signs reversed.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, PE .54"
+        }
+      ]
+    },
+    {
+      "name": "Revere Advanced Plus-Minus",
+      "aliases": [
+        "Revere Plus-Minus (blackjackreview row label)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": -1,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "Ace-neutral; QFIT lists it as eligible for the ace side count for betting.",
+      "publishedBcPeIc": "QFIT: .89/.59/.76. blackjackreview: .89/.59/.76.",
+      "notes": "NAME TRAP: blackjackreview also lists 'Revere Plus-Minus' as a Hi-Lo alias. Key systems by tags, not by name.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "'Revere Plus-Minus' row, same tags and values"
+        },
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "ace-neutral list"
+        }
+      ]
+    },
+    {
+      "name": "Revere Point Count (RPC)",
+      "aliases": [
+        "RPC"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -2,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B); divisor not stated.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .99/.55/.78. blackjackreview table and encyclopedia 'r': .98/.56/.78.",
+      "notes": "FELT has identical tags. C-R is exactly RPC divided by 2.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, .98/.56/.78"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/r/",
+          "what": "tags, Revere/Braun, Playing Blackjack as a Business"
+        }
+      ]
+    },
+    {
+      "name": "Revere Advanced Point Count 1971 (RAPC)",
+      "aliases": [
+        "Revere RAPC",
+        "Revere 1971 APC"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -4,
+        "2": 2,
+        "3": 3,
+        "4": 3,
+        "5": 4,
+        "6": 3,
+        "7": 2,
+        "8": 0,
+        "9": -1,
+        "T": -3
+      },
+      "balanced": true,
+      "level": 4,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B); divisor not given.",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: BC 1.0, PE .53, IC .71. blackjackreview encyclopedia 'r': 1.00/.53/.71.",
+      "notes": "Proprietary.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/r/",
+          "what": "tags, BC/PE/IC, Revere/Braun"
+        }
+      ]
+    },
+    {
+      "name": "Revere 14 Count (1973 Advanced Point Count)",
+      "aliases": [
+        "Revere 1973 APC",
+        "14 Count"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 2,
+        "3": 2,
+        "4": 3,
+        "5": 4,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -2,
+        "T": -3
+      },
+      "balanced": true,
+      "level": 4,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "Ace-neutral (A = 0), so an ace side count applies for betting.",
+      "publishedBcPeIc": "QFIT: .92/.65/.82. blackjackreview encyclopedia 'r': .92/.65/.82.",
+      "notes": "Proprietary.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/r/",
+          "what": "tags, BC/PE/IC, 'also called 14 Count'"
+        }
+      ]
+    },
+    {
+      "name": "Uston Advanced Plus-Minus",
+      "aliases": [
+        "Uston APM",
+        "Uston Adv Plus-Minus"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .95/.55/.76. blackjackreview: .95/.55/.76.",
+      "notes": "Ken Uston, Million Dollar Blackjack.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Uston Advanced Point Count (Uston APC)",
+      "aliases": [
+        "UAPC",
+        "Uston Adv Point",
+        "Griffin 3 (identical tags, blackjackreview)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 3,
+        "6": 2,
+        "7": 2,
+        "8": 1,
+        "9": -1,
+        "T": -3
+      },
+      "balanced": true,
+      "level": 3,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True-counted (QFIT type B).",
+      "aceSideCount": "The ace is counted separately (Million Dollar Blackjack p.107, via Wizard). QFIT procedure: excess aces x 3 added for betting.",
+      "publishedBcPeIc": "QFIT: .91/.69/.90. With ace SC (Modern Blackjack p.172): BC .99, PE .69, IC .90. blackjackreview ('Uston Adv Point' and 'Griffin 3' rows): .90/.69/.90 (BC differs).",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/card-counting.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://wizardofodds.com/ask-the-wizard/blackjack/card-counting/",
+          "what": "tag table from Million Dollar Blackjack p.107, ace counted separately"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, .90/.69/.90"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "SC BC .99"
+        }
+      ]
+    },
+    {
+      "name": "Uston SS",
+      "aliases": [
+        "Uston Strongest and Simplest",
+        "EBJ III-U (identical tags, blackjackreview)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 3,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 3,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked (blackjackreview SUM 4). The IRC is UNRESOLVED; the 1986 Gambling Times manual was not accessed. Most secondary sites give -2 x decks (-12 6D, -16 8D), but one of them also says 1D = -4, which contradicts -2 x decks. With -2 x decks there is no deck-independent pivot (IRC + 4 x decks = 2 x decks); -4 x decks would give pivot 0. The forum thread has no manual citation.",
+      "trueCountMethod": "Running count; not true-counted in the original (per Sweep A's rec.gambling source, which returned HTTP 429 to me).",
+      "aceSideCount": "None; ace-reckoned.",
+      "publishedBcPeIc": "QFIT: .99/.54/.73. blackjackreview: .99/.56/.73 (PE differs); its EBJ III-U row: .99/.55/.73.",
+      "notes": "The tags are confirmed; treat the IRC as unverified.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/cardcounting/Uston-SS/",
+          "what": "tags, unbalanced, level III, Uston/Snyder/Case 1986, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 4"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/question-about-uston-ss.25510/",
+          "what": "forum; no manual IRC cited"
+        }
+      ]
+    },
+    {
+      "name": "FELT (Fairly Easy Level Two)",
+      "aliases": [
+        "FELT-F (risk-averse indexes)",
+        "RPC-Lite (intended name)"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -2,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Modern Blackjack's method: RC divided by remaining decks, rounded to the nearest full or half deck in shoes (quarter-deck in single deck), then floored.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "Modern Blackjack p.172: .99/.55/.78 (type BC2).",
+      "notes": "Wattenberger's own system, so primary. Same tags as RPC; it differs in indexes and divisor. Sweep A's claim that the full-deck divisor is why FELT slightly beats RPC was not found on the pages I fetched.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage85.htm",
+          "what": "definition, tags, simplified RPC, 6-8% better than REKO in 6D"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage172.htm",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/Book/ModernBlackjackPage87.htm",
+          "what": "true count by remaining decks, rounding, flooring"
+        }
+      ]
+    },
+    {
+      "name": "Victor Advanced Point Count (Victor APC)",
+      "aliases": [
+        "Victor APC",
+        "Victor Adv Point"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": 0,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 3,
+        "6": 2,
+        "7": 2,
+        "8": 0,
+        "9": -1,
+        "T": -3
+      },
+      "balanced": true,
+      "level": 3,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "True count per half-deck (Victor).",
+      "aceSideCount": "Ace-neutral with an ace side count: add 3 to the RC per excess ace, subtract 3 per missing ace, for betting. Victor Insurance Parameter: RC divided by unseen aces.",
+      "publishedBcPeIc": "Victor: BC 92% without ace adjustment, 99%+ with; PE 68%; IC 89% (91% with the insurance parameter). blackjackreview: .92/.68/.89.",
+      "notes": "Only in blackjackreview's table among the compilations, but confirmed by the author's own article.",
+      "sources": [
+        {
+          "url": "https://www.lasvegasadvisor.com/gambling-with-an-edge/the-victor-apc/",
+          "what": "Rich Victor, Blackjack Forum Vol. XV #4 (Dec 1995): tags, half-deck TC, ace side count, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "BRH-0",
+      "aliases": [
+        "Brh-0",
+        "EBJ II-U (identical tags and values, blackjackreview)"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 2,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked (blackjackreview SUM 4). The author calls it a Red-7-type unbalance and prefers a pivot near Hi-Lo TC +2. The IRC is not stated in the fetched text; -4 x decks would give pivot 0 at about Hi-Lo TC +2 (my inference).",
+      "trueCountMethod": "The author runs the BRH counts as running or true counts (unbalanced true count).",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "blackjackreview: .98/.54/.78 (EBJ II-U row the same).",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/archives/brh-systems/",
+          "what": "Dr. Brett Harris's own article: tag table, unbalance type, pivot preference"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 4, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "BRH-I",
+      "aliases": [
+        "Brh-1"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": -2,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 3,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 3,
+      "count": "true",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. Red-7-type unbalance, pivot near Hi-Lo TC +2 (author). IRC not stated in the fetched text.",
+      "trueCountMethod": "The author uses 'true count Brh-I' as the primary betting reference.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "blackjackreview: .99/.56/.76.",
+      "notes": "This is Halves x 2 with the 9 zeroed. The author says counting the 9 as negative hurts insurance and hard-12 decisions.",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/archives/brh-systems/",
+          "what": "author's tag table"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "BRH-II",
+      "aliases": [
+        "Brh-2",
+        "T-Hop 2 (Hopper; identical tags and values, blackjackreview)"
+      ],
+      "confidence": "primary-source",
+      "tags": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 2,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. IRC not stated in the fetched text.",
+      "trueCountMethod": "Running or true count (author).",
+      "aceSideCount": "Optional secondary count 'Sec': A -2, 3 +1, 5 +1, all others 0 (author's table).",
+      "publishedBcPeIc": "blackjackreview: .91/.67/.90 (T-Hop 2 row the same).",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/archives/brh-systems/",
+          "what": "author's tag table including Sec"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "C-R (Chambliss-Roginski)",
+      "aliases": [
+        "Chambliss-Roginski count"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 0.5,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0.5,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "balanced": true,
+      "level": 2,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Not stated.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "blackjackreview: .98/.56/.78.",
+      "notes": "The half-points are real, not suit averages. It is exactly RPC / 2, so for a tag-only engine it is the same count as RPC and FELT. Level 2 in integer form.",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 0, BC/PE/IC"
+        },
+        {
+          "url": "https://wizardofvegas.com/forum/gambling/blackjack/15933-skewed-distribution/",
+          "what": "BizzyB: aces and tens -1, 2s and 7s +1/2, 3-6 +1; RPC is C-R x 2"
+        }
+      ]
+    },
+    {
+      "name": "Thorp Ultimate",
+      "aliases": [
+        "Thorp Ultimate Strategy count (Beat the Dealer, 1st ed.)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -9,
+        "2": 5,
+        "3": 6,
+        "4": 8,
+        "5": 11,
+        "6": 6,
+        "7": 4,
+        "8": 0,
+        "9": -3,
+        "T": -7
+      },
+      "balanced": true,
+      "level": 11,
+      "count": "true",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked.",
+      "trueCountMethod": "Not stated.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "blackjackreview: 1.0/.53/.70. The BlackjackInfo forum post claims BC .99, PE .52.",
+      "notes": "A benchmark count, not humanly playable. The forum calls it level 9, but max |tag| is 11, which is what I report.",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackinfo.com/community/threads/thorp-ultimate.3475/",
+          "what": "SystemsTrader: tags '5 6 8 11 6 4 0 -3 -7 -9' in order 2-9, T, A; in 1st ed. of Beat the Dealer only"
+        }
+      ]
+    },
+    {
+      "name": "Ten Count (unbalanced; insurance-oriented)",
+      "aliases": [
+        "10 Count (Wikipedia)",
+        "Archer / Goldberg / Hecher / One-Two / J. Noir (blackjackreview 'Archer' row label)",
+        "Wong 1981 insurance ten count",
+        "Optimal insurance count, Griffin -9/+4 (the balanced form of the same count)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "T": -2
+      },
+      "balanced": false,
+      "level": 2,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked. Wong 1981 via QFIT: start at 0 and insure when the count exceeds 4 x the number of decks in the game. Check: with IRC 0, count > 4n exactly when remaining tens are more than 1/3 of remaining cards, so insurance is perfect. Equivalent: IRC -4n, insure when RC > 0.",
+      "trueCountMethod": "For insurance, compare the RC with 4 x total decks. Thorp's and Revere's original ten counts used a ratio of non-tens to tens (Sweep A, via Wizard).",
+      "aceSideCount": "n/a",
+      "publishedBcPeIc": "blackjackreview 'Archer' row: BC .72, PE .61, IC 1.0. QFIT: -9/+4 tags are perfect for insurance (no numbers).",
+      "notes": "Any count with two tag values is an affine transform of any other. -9/+4 = (13/3) x (this count) - 1/3 per card, so it carries identical information; it is folded in here rather than listed separately.",
+      "sources": [
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "Wong 1981 ten count (-2 / +1) and insurance rule; -9/+4 perfect insurance count"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Card_counting",
+          "what": "'10 Count' tags, level 2"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "Archer row tags, SUM 4, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Ace-Five Count",
+      "aliases": [
+        "Ace/Five",
+        "Uston Ace-Five (blackjackreview row, same tags)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": -1,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 1,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": 0
+      },
+      "balanced": true,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "IRC 0 (balanced). Deck sum 0 checked. Wizard's rule: start each shoe at 0 with the minimum bet. At count 2 or more, double the last bet up to the max; at 1 or less, bet the minimum.",
+      "trueCountMethod": "None; running count only (Wizard).",
+      "aceSideCount": "n/a (the ace is one of the two counted ranks).",
+      "publishedBcPeIc": "blackjackreview 'Uston Ace-Five': BC .54, PE .05, IC 0.0. Wizard gives none.",
+      "notes": "Wizard sim (6D, 75% pen, S17, DAS, LS, RSA): 1-8 +0.30%, avg initial bet 2.7, SCORE 3.1; 1-16 +0.45%, 4.2, 5.3; 1-32 +0.57%, 7.1, 6.5. The betting rule is a progression on the running count, not a ramp on a true count.",
+      "sources": [
+        {
+          "url": "https://wizardofodds.com/games/blackjack/ace-five-count/",
+          "what": "tags, rules, 6D 75% pen simulation"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "Uston Ace-Five row"
+        },
+        {
+          "url": "https://wizardofodds.com/ask-the-wizard/blackjack/card-counting/",
+          "what": "Uston's Million Dollar Blackjack claims +0.5% with a 1-3 range"
+        }
+      ]
+    },
+    {
+      "name": "Revere Five-Count",
+      "aliases": [
+        "Thorp Five-Count (a ratio form of the same information)"
+      ],
+      "confidence": "two-sources",
+      "tags": {
+        "A": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 1,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": 0
+      },
+      "balanced": false,
+      "level": 1,
+      "count": "running",
+      "initialRunningCountAndPivot": "Deck sum +4 checked (blackjackreview SUM 4). No IRC published.",
+      "trueCountMethod": "Thorp's version compares fives remaining with total cards remaining (Wizard). The point-count form is blackjackreview's representation.",
+      "aceSideCount": "None.",
+      "publishedBcPeIc": "blackjackreview: .43/.15/.19.",
+      "notes": "The second source corroborates in words (fives only), not with a tag table.",
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, SUM 4, BC/PE/IC"
+        },
+        {
+          "url": "https://wizardofodds.com/games/blackjack/ace-five-count/",
+          "what": "Thorp 1969 five tracking; Revere 1971 'Five Count Strategy'"
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "name": "Red Zen (Linsenmeyer)",
+      "reason": "Tags conflict and no primary source was reachable. The blackjackreview table gives 3 = +2 (SUM 0, BC/PE/IC .97/.62/.85), but its own encyclopedia calls the count unbalanced. Another source, via search (with BlackjackInfo calculator values PE 0.6152, BC 0.9510, IC 0.8381), gives 3 = +1. That version is Zen with only red 2s and red 7s counted, sums to -4 per deck, and fits 'unbalanced'. Linsenmeyer's book was not accessible and the blackjacktheforum thread returned 403.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 0.5,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 0.5,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/r/",
+          "what": "level-2 unbalanced, Linsenmeyer's Modern Card Counting"
+        }
+      ]
+    },
+    {
+      "name": "Olsen TruCount",
+      "reason": "blackjackreview contradicts itself. The table has 9 = +.5 (SUM 8), while its encyclopedia 'o' entry says one color of 9 counts -1 (9 = -.5, deck sum +4). No second source was found.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 2,
+        "6": 1,
+        "7": 0.5,
+        "8": 0,
+        "9": 0.5,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "DMPro / EBJ III (Sharp)",
+      "reason": "Only blackjackreview gives tags (Halves x 2). Sharp's Dynamic Blackjack was not accessible, and web sources describe but do not list the tags. If the tags are Halves x 2, it is the same count as Wong Halves (confirmed) with a different divisor."
+    },
+    {
+      "name": "Griffin Ultimate",
+      "reason": "Only blackjackreview was readable. A blackjacktheforum thread that search results show with matching values (-60 37 45 52 70 46 27 0 -17 -50) returned 403, so I could not read it.",
+      "tagsFromOneSource": {
+        "A": -60,
+        "2": 37,
+        "3": 45,
+        "4": 52,
+        "5": 70,
+        "6": 46,
+        "7": 27,
+        "8": 0,
+        "9": -17,
+        "T": -50
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Tek's Black Jack Computo-Matic",
+      "reason": "blackjackreview only (table plus its own encyclopedia). Its tags are exactly Silver Fox with the signs reversed, so it adds no information beyond Silver Fox.",
+      "tagsFromOneSource": {
+        "A": 1,
+        "2": -1,
+        "3": -1,
+        "4": -1,
+        "5": -1,
+        "6": -1,
+        "7": -1,
+        "8": 0,
+        "9": 1,
+        "T": 1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/t/",
+          "what": "slide-rule device (1991), starting count +2"
+        }
+      ]
+    },
+    {
+      "name": "T-Hop 1 (Hopper)",
+      "reason": "blackjackreview only; no second source or author publication found.",
+      "tagsFromOneSource": {
+        "A": 0,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/t/",
+          "what": "T-Hop series description"
+        }
+      ]
+    },
+    {
+      "name": "Andersen (Reppert) / Tri-Level",
+      "reason": "blackjackreview only. Snyder's 1981 article names the 'Andersen Count' but gives no tags that I could read.",
+      "tagsFromOneSource": {
+        "A": -2,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 2,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC, Tri-Level remark"
+        }
+      ]
+    },
+    {
+      "name": "DHM (Gordon)",
+      "reason": "The tags come from blackjackreview only. QFIT lists DHM as ace-neutral but gives no tags. Snyder's 1981 article names 'DHM (Simple)' without readable tags.",
+      "tagsFromOneSource": {
+        "A": 0,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.qfit.com/blackjack-side-counts.htm",
+          "what": "DHM ace-neutral"
+        }
+      ]
+    },
+    {
+      "name": "AceMT",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "AWK",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -2,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 2,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Ambition (Courter/Tibbetts)",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0.5,
+        "8": 0,
+        "9": -0.5,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Ambition-U",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -0.5,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Bushido",
+      "reason": "blackjackreview only; the search found no other source.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "EBJ II",
+      "reason": "blackjackreview only. Its U-variant, EBJ II-U, is kept under BRH-0's tags, confirmed by Harris.",
+      "tagsFromOneSource": {
+        "A": -2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 1,
+        "8": 0,
+        "9": -1,
+        "T": -2
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Graham 2",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -2,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Graham 7",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -6,
+        "2": 4,
+        "3": 4,
+        "4": 5,
+        "5": 7,
+        "6": 4,
+        "7": 3,
+        "8": 0,
+        "9": -1,
+        "T": -5
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Griffin (level 1)",
+      "reason": "blackjackreview only; Griffin's Theory of Blackjack was not accessible.",
+      "tagsFromOneSource": {
+        "A": 0,
+        "2": 0,
+        "3": 0,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        },
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/g/",
+          "what": "Griffin counts from The Theory of Blackjack"
+        }
+      ]
+    },
+    {
+      "name": "Griffin 4",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": 0,
+        "2": 1,
+        "3": 2,
+        "4": 3,
+        "5": 4,
+        "6": 3,
+        "7": 3,
+        "8": 1,
+        "9": -1,
+        "T": -4
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Griffin 5",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": 0,
+        "2": 2,
+        "3": 2,
+        "4": 4,
+        "5": 5,
+        "6": 4,
+        "7": 3,
+        "8": 1,
+        "9": -1,
+        "T": -5
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Griffin 7",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -6,
+        "2": 4,
+        "3": 4,
+        "4": 5,
+        "5": 7,
+        "6": 5,
+        "7": 3,
+        "8": 0,
+        "9": -2,
+        "T": -5
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "HNF",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": 1,
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": -2
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "J. Noir Count",
+      "reason": "blackjackreview only (SUM -8).",
+      "tagsFromOneSource": {
+        "A": -2,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "T": -2
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Lima",
+      "reason": "blackjackreview only.",
+      "tagsFromOneSource": {
+        "A": -1,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 0,
+        "9": 0,
+        "T": 0
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "Wilson Point Count",
+      "reason": "blackjackreview only. Wilson's Casino Gambler's Guide (1965) was not read.",
+      "tagsFromOneSource": {
+        "A": 4,
+        "2": -1,
+        "3": -1,
+        "4": -1,
+        "5": -1,
+        "6": -1,
+        "7": -1,
+        "8": -1,
+        "9": -1,
+        "T": 1
+      },
+      "sources": [
+        {
+          "url": "https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/",
+          "what": "tags, BC/PE/IC"
+        }
+      ]
+    },
+    {
+      "name": "KISS I (CasinoGuardian variant: 2 = 0, all tens -1)",
+      "reason": "Contradicted by Renzey's own forum description (black deuces counted, 10-spot ignored). The blackjackreview tags are kept instead."
+    }
+  ]
+}
