@@ -16,76 +16,11 @@
 public class ExactRoundTimingReport {
 
     /**
-     * Basic strategy for a multi-deck game where the dealer hits soft 17, close enough to
-     * give the rounds a realistic shape. With alwaysResplit, every pair that may split does.
+     * BasicStrategy's chart. With alwaysResplit, every pair that may split does, the worst
+     * case for a split's cost.
      */
     static RoundPolicy basicStrategy(boolean alwaysResplit) {
-        return d -> {
-            int t = d.total;
-            int up = d.upCard == 1 ? 11 : d.upCard;
-            if (d.canSplit && (alwaysResplit || splitsPair(d.pairRank, up))) {
-                return PlayerMove.Split;
-            }
-            if (d.canSurrender && !d.soft && ((t == 16 && up >= 9) || (t == 15 && up == 10))) {
-                return PlayerMove.Surrender;
-            }
-            if (d.soft) {
-                if (t >= 19) {
-                    return t == 19 && up == 6 && d.canDouble ? PlayerMove.Double : PlayerMove.Stand;
-                }
-                if (t == 18) {
-                    if (up <= 6 && d.canDouble) {
-                        return PlayerMove.Double;
-                    }
-                    return up <= 8 || !d.canHit ? PlayerMove.Stand : PlayerMove.Hit;
-                }
-                boolean doubles = (t == 17 && up >= 3 && up <= 6) || (t >= 15 && up >= 4 && up <= 6)
-                        || (t >= 13 && up >= 5 && up <= 6);
-                if (doubles && d.canDouble) {
-                    return PlayerMove.Double;
-                }
-                return d.canHit ? PlayerMove.Hit : PlayerMove.Stand;
-            }
-            if (t >= 17 || !d.canHit) {
-                return PlayerMove.Stand;
-            }
-            if (t >= 13) {
-                return up <= 6 ? PlayerMove.Stand : PlayerMove.Hit;
-            }
-            if (t == 12) {
-                return up >= 4 && up <= 6 ? PlayerMove.Stand : PlayerMove.Hit;
-            }
-            if (t == 11) {
-                return d.canDouble ? PlayerMove.Double : PlayerMove.Hit;
-            }
-            if (t == 10) {
-                return d.canDouble && up <= 9 ? PlayerMove.Double : PlayerMove.Hit;
-            }
-            if (t == 9) {
-                return d.canDouble && up >= 3 && up <= 6 ? PlayerMove.Double : PlayerMove.Hit;
-            }
-            return PlayerMove.Hit;
-        };
-    }
-
-    private static boolean splitsPair(int rank, int up) {
-        switch (rank) {
-            case 1:
-            case 8:
-                return true;
-            case 2:
-            case 3:
-            case 7:
-                return up <= 7;
-            case 4:
-                return up == 5 || up == 6;
-            case 6:
-                return up <= 6;
-            case 9:
-                return up <= 9 && up != 7;
-            default:
-                return false;
-        }
+        return BasicStrategy.policy(alwaysResplit);
     }
 
     static RoundRules montreal(int maxHandsAces, int maxHandsNotAces) {
