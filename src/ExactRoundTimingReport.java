@@ -1,3 +1,6 @@
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
+
 /**
  * How long ExactRound takes on a real eight-deck shoe, for a few rounds that range from one
  * draw to four split hands.
@@ -10,7 +13,12 @@
  *
  * Each case is valued a few times in one JVM, with a fresh ExactRound each time. The first
  * run includes the JIT warming up; the fastest is closer to what a long batch of calls
- * would see. Run it after ./run-tests.sh has compiled the sources:
+ * would see. Both the wall time and the thread's CPU time are shown, as in
+ * StateTimingReport. On a machine busy with other work a call of a few milliseconds can
+ * wait for a core longer than it runs, so its wall time says more about the machine than
+ * about the engine; the CPU time is the figure to compare between versions, measured in one
+ * sitting, since it too grows when other work shares the memory. Run it after
+ * ./run-tests.sh has compiled the sources:
  * java -cp build/classes ExactRoundTimingReport [runs per case].
  */
 public class ExactRoundTimingReport {
@@ -46,22 +54,29 @@ public class ExactRoundTimingReport {
     private static void time(String name, RoundRules rules, int p1, int p2, int up, PlayerMove first,
                              RoundPolicy policy, int runs) {
         int[] shoe = eightDecksLess(p1, p2, up);
+        ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         double value = 0;
-        long firstNanos = 0;
-        long best = Long.MAX_VALUE;
+        long firstWall = 0;
+        long firstCpu = 0;
+        long bestWall = Long.MAX_VALUE;
+        long bestCpu = Long.MAX_VALUE;
         for (int i = 0; i < runs; i++) {
             // A fresh ExactRound each run, so no run reuses another's dealer hands.
             ExactRound exact = new ExactRound(rules);
+            long startCpu = threads.getCurrentThreadCpuTime();
             long start = System.nanoTime();
             value = exact.valueOfFirstMove(shoe, p1, p2, up, first, policy);
-            long took = System.nanoTime() - start;
+            long wall = System.nanoTime() - start;
+            long cpu = threads.getCurrentThreadCpuTime() - startCpu;
             if (i == 0) {
-                firstNanos = took;
+                firstWall = wall;
+                firstCpu = cpu;
             }
-            best = Math.min(best, took);
+            bestWall = Math.min(bestWall, wall);
+            bestCpu = Math.min(bestCpu, cpu);
         }
-        System.out.printf("%-58s %+.15f   first %9.1f ms   fastest %9.1f ms%n", name, value,
-                firstNanos / 1e6, best / 1e6);
+        System.out.printf("%-50s %+.15f   wall first %8.1f fastest %8.1f ms   cpu first %8.1f fastest %8.1f ms%n",
+                name, value, firstWall / 1e6, bestWall / 1e6, firstCpu / 1e6, bestCpu / 1e6);
     }
 
     public static void main(String[] args) {
