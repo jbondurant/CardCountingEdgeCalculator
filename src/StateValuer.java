@@ -17,9 +17,11 @@ import java.util.concurrent.Future;
  *
  * A long run gives each thread whole states (submit), so no thread waits for another's
  * slowest split; value spreads the deals of a few shoes over the threads instead. Each
- * thread keeps its own ExactRound, which caches the dealer's hands per up-card. Any call
- * that takes longer than a minute is reported with its shoe, since the only way one could
- * is the slow coupled split computation on a shoe near running out.
+ * thread keeps its own ExactRound, which caches the dealer's hands per up-card and, while
+ * its calls come from one state, the dealer's distributions from that state's shoes, which
+ * many of its deals share. Any call that takes longer than a minute is reported with its
+ * shoe, since the only way one could is the slow coupled split computation on a shoe near
+ * running out.
  */
 final class StateValuer implements AutoCloseable {
 

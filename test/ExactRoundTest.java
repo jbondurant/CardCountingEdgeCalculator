@@ -663,4 +663,160 @@ public class ExactRoundTest {
                     PlayerMove.Split, resplitThenHitTo17);
         }
     }
+
+    /**
+     * Where a split stops being valued coupled and starts being valued hand by hand. The
+     * hand-by-hand computation is exact only on a shoe that cannot run out, and wherever it
+     * is used it gives the coupled one's value, so a value cannot show a guard that lets it
+     * in too early; the engine's count of hand-by-hand splits can. The guard is the bound
+     * mostCardsASplitCanDraw documents, worked out here by hand for three shoes, and the
+     * switch must come at exactly that many cards, and as many that are not the natural hole
+     * card. At each side of it the value is also held to the coupled one and BruteForceRound.
+     *
+     * 8,8 against a 7, up to four hands, from 2 aces, 3 fives, an eight and some tens: the
+     * one eight caps the round at three hands. The budget is 18 x 3 + 14 = 68, which the
+     * smallest cards fill as 2 aces (66 left), 3 fives (51), the eight (43) and 4 tens (3), 10
+     * cards. With the hole card, 2 x 2 second cards, a last card for each of the 3 hands and
+     * the dealer's last draw, the bound is 1 + 4 + 3 + 1 + 10 = 19: 13 tens go hand by hand
+     * and 12 go coupled.
+     *
+     * The same against a 10: the 2 aces are natural hole cards, so the shoe needs 19 others,
+     * 21 cards in all: 15 tens go hand by hand and 14 go coupled.
+     *
+     * A,A against a 7, aces split to two hands, from 3 aces, 4 twos, 13 threes and some tens:
+     * the budget is 18 x 2 + 14 = 50, which 3 aces (47 left), 4 twos (39) and the 13 threes
+     * use up exactly, 20 cards, so the bound is 1 + 2 + 2 + 1 + 20 = 26: 6 tens go hand by hand
+     * and 5 go coupled. With no budget left over, a budget one short would move the switch.
+     */
+    @Test
+    public void aSplitIsValuedHandByHandFromTheBoundUp() {
+        RoundRules rules = montreal(2, 4);
+        RoundPolicy resplitThenHitTo17 = d -> d.canSplit ? PlayerMove.Split
+                : d.canHit && d.total < 17 ? PlayerMove.Hit : PlayerMove.Stand;
+        splitGoes(true, rules, shoe(1, 2, 5, 3, 8, 1, 10, 13), 8, 7, resplitThenHitTo17);
+        splitGoes(false, rules, shoe(1, 2, 5, 3, 8, 1, 10, 12), 8, 7, resplitThenHitTo17);
+        splitGoes(true, rules, shoe(1, 2, 5, 3, 8, 1, 10, 15), 8, 10, resplitThenHitTo17);
+        splitGoes(false, rules, shoe(1, 2, 5, 3, 8, 1, 10, 14), 8, 10, resplitThenHitTo17);
+        splitGoes(true, rules, shoe(1, 3, 2, 4, 3, 13, 10, 6), 1, 7, resplitThenHitTo17);
+        splitGoes(false, rules, shoe(1, 3, 2, 4, 3, 13, 10, 5), 1, 7, resplitThenHitTo17);
+    }
+
+    /** Splits the pair and checks which way the engine valued it, and the value. */
+    private static void splitGoes(boolean handByHand, RoundRules rules, int[] shoe, int pair, int up,
+                                  RoundPolicy policy) {
+        String at = pair + "," + pair + " vs " + up + " on " + Arrays.toString(shoe);
+        ExactRound engine = new ExactRound(rules);
+        double v = engine.valueOfFirstMove(shoe, pair, pair, up, PlayerMove.Split, policy);
+        assertEquals(handByHand ? 1 : 0, engine.splitsValuedHandByHand(),
+                at + " should be valued " + (handByHand ? "hand by hand" : "coupled"));
+        assertEquals(new ExactRound(rules, true).valueOfFirstMove(shoe, pair, pair, up, PlayerMove.Split, policy),
+                v, EXACT, "coupled, " + at);
+        assertEquals(new BruteForceRound(rules).valueOfFirstMove(shoe, pair, pair, up, PlayerMove.Split, policy),
+                v, EXACT, "BruteForceRound, " + at);
+    }
+
+    // ------------------------------------------------------------------ one engine, many calls
+
+    /**
+     * An ExactRound keeps the dealer's distributions from one state's shoes from one call to
+     * the next. That may not change a value, not even in its last bit, whatever order calls
+     * come in: from one state to another, from one up-card and policy to another, right
+     * after a call whose policy made an illegal move part way through, and on a shoe that
+     * does not fit the layout the distributions are kept in. Every call on the one engine is
+     * held to a fresh one's.
+     */
+    @Test
+    public void anEngineUsedForManyCallsGivesWhatAFreshOneGives() {
+        RoundRules rules = montreal(2, 4);
+        int[][] states = {
+                eightDecksLess(),
+                shoe(1, 12, 2, 9, 3, 10, 4, 9, 5, 8, 6, 10, 7, 13, 8, 13, 9, 14, 10, 68),
+                shoe(1, 10, 2, 14, 3, 14, 4, 13, 5, 14, 6, 13, 7, 11, 8, 10, 9, 10, 10, 26),
+                // 64 aces do not fit the six bits a rank has in that layout.
+                shoe(1, 64, 2, 3, 3, 3, 4, 3, 5, 3, 6, 3, 7, 3, 8, 3, 9, 3, 10, 30),
+        };
+        RoundPolicy[] policies = {BasicStrategy.chart(), hitBelow(17), RESPLIT};
+        // Hits to 17 but doubles on a hard 16 after a hit, which is not legal, so the call
+        // throws part way through.
+        RoundPolicy doublesAfterAHit = d -> !d.firstDecision && !d.soft && d.total == 16 ? PlayerMove.Double
+                : d.canHit && d.total < 17 ? PlayerMove.Hit : PlayerMove.Stand;
+        PlayerMove[] moves = {PlayerMove.Stand, PlayerMove.Hit, PlayerMove.Double, PlayerMove.Split};
+        ExactRound reused = new ExactRound(rules);
+        java.util.Random rnd = new java.util.Random(20260928);
+        int valued = 0;
+        int threw = 0;
+        for (int i = 0; i < 400; i++) {
+            int s = rnd.nextInt(states.length);
+            int p1 = 1 + rnd.nextInt(10);
+            int p2 = rnd.nextInt(3) == 0 ? p1 : 1 + rnd.nextInt(10);
+            int up = 1 + rnd.nextInt(10);
+            int[] left = states[s].clone();
+            left[p1]--;
+            left[p2]--;
+            left[up]--;
+            if (p1 + p2 == 11 && (p1 == 1 || p2 == 1) || left[p1] < 0 || left[p2] < 0 || left[up] < 0) {
+                continue;
+            }
+            if (rnd.nextInt(8) == 0 && p1 + p2 < 16) {
+                assertThrows(IllegalStateException.class,
+                        () -> reused.valueOfFirstMove(left, p1, p2, up, PlayerMove.Hit, doublesAfterAHit));
+                threw++;
+                continue;
+            }
+            // Splits on the shoe of 64 aces are left out. Against a ten its aces are natural
+            // hole cards, too many for a split to be valued hand by hand, and the coupled
+            // computation can take a second or two a split on a shoe this big.
+            PlayerMove move = moves[rnd.nextInt(p1 == p2 && s != 3 ? 4 : 3)];
+            RoundPolicy policy = policies[rnd.nextInt(policies.length)];
+            double fresh = new ExactRound(rules).valueOfFirstMove(left, p1, p2, up, move, policy);
+            double again = reused.valueOfFirstMove(left, p1, p2, up, move, policy);
+            assertEquals(fresh, again, 0.0, "call " + i + ": " + p1 + "," + p2 + " vs " + up + " " + move
+                    + " on state " + s);
+            valued++;
+        }
+        assertTrue(valued > 250 && threw > 20, valued + " valued, " + threw + " threw");
+    }
+
+    /**
+     * The kept distributions are keyed in one fixed layout, six bits for each rank from ace
+     * to nine and eight for the tens, and a shoe that does not fit is valued without them. A
+     * fit check one card too loose packs the shoe at the edge wrongly: 256 tens in eight bits
+     * read as none. A fresh engine uses the same layout as a reused one, so only a value
+     * worked out another way can catch that. Here it is BruteForceRound's, which standing or
+     * hitting once leaves only a card and the dealer's draws to follow, quick on any shoe.
+     *
+     * The shoes sit on both sides of each edge: 63 of every rank from ace to nine with 255
+     * tens fits, and one more ten, or one more of any rank from ace to nine, does not. Each is
+     * valued against a 7 and against an ace, where the tens are also what the peek conditions
+     * on.
+     */
+    @Test
+    public void shoesAtTheEdgesOfTheKeptLayoutAreValuedRight() {
+        RoundRules rules = montreal(2, 4);
+        List<int[]> shoes = new ArrayList<>();
+        int[] fits = shoe(1, 63, 2, 63, 3, 63, 4, 63, 5, 63, 6, 63, 7, 63, 8, 63, 9, 63, 10, 255);
+        assertTrue(ExactRound.fitsSharedLayout(fits), "63 of each rank and 255 tens should fit");
+        shoes.add(fits);
+        int[] oneTenOver = fits.clone();
+        oneTenOver[10]++;
+        assertFalse(ExactRound.fitsSharedLayout(oneTenOver), "256 tens should not fit");
+        shoes.add(oneTenOver);
+        for (int r = 1; r <= 9; r++) {
+            int[] oneOver = fits.clone();
+            oneOver[r]++;
+            assertFalse(ExactRound.fitsSharedLayout(oneOver), "64 of rank " + r + " should not fit");
+            shoes.add(oneOver);
+        }
+        RoundPolicy hitTo17 = hitBelow(17);
+        for (int[] s : shoes) {
+            String at = Arrays.toString(s);
+            for (int up : new int[]{7, 1}) {
+                for (PlayerMove move : new PlayerMove[]{PlayerMove.Stand, PlayerMove.Hit}) {
+                    double brute = new BruteForceRound(rules).valueOfFirstMove(s, 10, 6, up, move, hitTo17);
+                    double exact = new ExactRound(rules).valueOfFirstMove(s, 10, 6, up, move, hitTo17);
+                    assertEquals(brute, exact, EXACT, "10,6 vs " + up + " " + move + " on " + at);
+                }
+            }
+        }
+    }
 }

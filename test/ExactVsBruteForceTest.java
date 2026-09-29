@@ -23,10 +23,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * two must return the same value, to within 1e-12, or throw the same kind of exception,
  * and ask the policy about the same decisions. The random rounds draw shoes of 14 to 24
  * cards of varied make-up, every RoundRules field, a family of deterministic policies, and
- * every first move, legal or not. Two more sets aim at what those reach least: shoes of 1
+ * every first move, legal or not. Three more sets aim at what those reach least: shoes of 1
  * to 13 cards, where rounds run out of cards, and splits on shoes of 30 to 50 cards, which
- * ExactRound values hand by hand. The features that are easy to miss are counted, the
- * counts are printed, and each must be reached many times among the rounds both valued.
+ * ExactRound values hand by hand, with plenty of the split rank or with at most three. The
+ * features that are easy to miss are counted, the counts are printed, and each must be
+ * reached many times among the rounds both valued.
  *
  * Two points of the contract can be read two ways, and each has a hand-worked case below
  * that both must match: a split ace that may not be hit has a first decision like any
@@ -177,6 +178,72 @@ public class ExactVsBruteForceTest {
     }
 
     /**
+     * Splits valued hand by hand on shoes that hold none to three cards of the split rank,
+     * with room to resplit. Which hands such a round can have turns on those last few cards,
+     * and a split hand that draws one can leave the other hands no way to be dealt the
+     * second cards that made it a hand at all. ExactRound values each hand alone, with the
+     * other second cards weighed afterwards, so this is where it must take most care to ask
+     * the policy only about decisions the contract reaches.
+     */
+    @Test
+    void exactAgreesWithBruteForceOnSplitsShortOfTheirRank() throws InterruptedException {
+        long seed = Long.getLong("crosscheck.seed", SEED) + 3;
+        int cases = CASES / 10;
+        Coverage cov = compareRandomRounds(cases, 5 * WORK, true, i -> shortSplitCase(seed, i));
+        cov.print("split rounds on shoes of 30 to 50 cards with 0 to 3 of the split rank");
+        assertEquals(cov.split, cov.handByHand, "a split here that ExactRound values coupled");
+        int enough = Math.max(1, cases / 10);
+        cov.require(enough, "a split", cov.split);
+        cov.require(enough / 2, "a re-split", cov.resplit);
+        cov.require(enough / 2, "the hand limit binding", cov.limitBinds);
+    }
+
+    /**
+     * A pair to split on a shoe of 30 to 50 cards holding none to three of the pair's rank,
+     * the rest a few ranks, mostly tens (nines when tens are the pair), redrawn until
+     * ExactRound values the split hand by hand. The limit leaves room for one or two
+     * resplits, and most policies take them.
+     */
+    private static Case shortSplitCase(long seed, int index) {
+        Random rnd = new Random(mix(seed + index));
+        int rank = 1 + rnd.nextInt(10);
+        int left = rnd.nextInt(4);
+        double u = rnd.nextDouble();
+        int up = u < 0.2 ? 1 : u < 0.4 ? 10 : 1 + rnd.nextInt(10);
+        boolean[] das = new boolean[11];
+        for (int r = 1; r <= 10; r++) {
+            das[r] = rnd.nextBoolean();
+        }
+        int limit = 3 + rnd.nextInt(2);
+        int maxAces = rank == 1 ? limit : 1 + rnd.nextInt(4);
+        int maxOthers = rank == 1 ? 1 + rnd.nextInt(4) : limit;
+        boolean surrender = rnd.nextDouble() < 0.5;
+        RoundRules rules = new RoundRules(rnd.nextBoolean(), rnd.nextBoolean() ? 1.5 : 1.2, maxAces, maxOthers,
+                rnd.nextBoolean(), das, rnd.nextBoolean(), surrender, rnd.nextBoolean());
+        int filler = rank == 10 ? 9 : 10;
+        int[] shoe;
+        int attempts = 0;
+        do {
+            if (++attempts > 100 && (up == 1 || up == 10)) {
+                up = 2 + rnd.nextInt(8);
+            }
+            double[] weight = new double[11];
+            weight[filler] = 8;
+            for (int extra = 1 + rnd.nextInt(3); extra > 0; extra--) {
+                int r = rnd.nextDouble() < 0.7 ? 6 + rnd.nextInt(4) : 1 + rnd.nextInt(5);
+                weight[r] += 1 + rnd.nextInt(3);
+            }
+            weight[rank] = 0;
+            shoe = randomShoe(rnd, 30 + rnd.nextInt(21) - left, weight);
+            shoe[rank] = left;
+        } while (!valuedHandByHand(shoe, rank, up, rules));
+        int[] policies = {2, 2, 1, 6, SPLIT_HANDS_ACT};
+        int which = policies[rnd.nextInt(policies.length)];
+        return new Case(index, "hand by hand, " + left + " of the split rank", rules, shoe, rank, rank, up,
+                POLICY_NAMES[which], policy(which, rnd));
+    }
+
+    /**
      * A pair to split on a shoe of 30 to 50 cards of a few ranks, mostly high, redrawn until
      * the shoe passes the bound under which ExactRound values the split hand by hand. Half
      * the aces are aimed at what a split ace that may not be hit can do on its first
@@ -235,12 +302,13 @@ public class ExactVsBruteForceTest {
 
     /**
      * Whether ExactRound values a split of this pair hand by hand: the bound its
-     * mostCardsASplitCanDraw documents, restated. The round ends with at most `reachable`
-     * hands; each hand's cards but its last add up to 18 at most and the dealer's draws but
-     * its last to 14, and no set of cards with that total holds more than the smallest
-     * cards do; then one last card per hand, the dealer's last draw, the hole card, and the
-     * second cards of the splits. The shoe must hold that many cards, and that many that are
-     * not the natural hole card.
+     * mostCardsASplitCanDraw documents, restated, which compare() holds the engine's actual
+     * choice to on every split. The round ends with at most `reachable` hands; each hand's
+     * cards but its last add up to 18 at most and the dealer's draws but its last to 14, and
+     * no set of cards with that total holds more than the smallest cards do; then one last
+     * card per hand, the dealer's last draw, the hole card, and the second cards of the
+     * splits. The shoe must hold that many cards, and that many that are not the natural
+     * hole card.
      */
     private static boolean valuedHandByHand(int[] shoe, int rank, int up, RoundRules rules) {
         long reachable = Math.min(rules.maxHandsFor(rank), 2L + shoe[rank]);
@@ -675,9 +743,16 @@ public class ExactVsBruteForceTest {
             return;
         }
         Recording asExact = new Recording(c.rules, splitsAces, c.policy, null);
-        Object exact = outcome(() -> new ExactRound(c.rules)
-                .valueOfFirstMove(c.shoe, c.p1, c.p2, c.up, first, asExact));
+        ExactRound engine = new ExactRound(c.rules);
+        Object exact = outcome(() -> engine.valueOfFirstMove(c.shoe, c.p1, c.p2, c.up, first, asExact));
         assertArrayEquals(before, c.shoe, "the shoe was modified: " + c.describe(first));
+        if (first == PlayerMove.Split) {
+            // Both ways of valuing a split give the same value wherever the hand-by-hand one
+            // is used, so a guard that let it in too early would show in no value here unless
+            // the shoe ran out; the way the engine actually went is held to its bound instead.
+            assertEquals(valuedHandByHand(c.shoe, c.p1, c.up, c.rules), engine.splitsValuedHandByHand() == 1,
+                    "ExactRound did not value the split the way its bound says on " + c.describe(first));
+        }
 
         if (brute instanceof Double && exact instanceof Double) {
             double b = (Double) brute;

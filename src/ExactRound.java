@@ -2,6 +2,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The exact value of one round, as ROUND_CONTRACT.md defines it, fast enough to run on a
@@ -49,20 +50,21 @@ import java.util.Map;
  * exact for any shoe, down to one that runs out.
  *
  * On a big shoe a split is valued hand by hand. Which hands a split ends up with depends
- * only on the second cards dealt to split hands and on the policy's one answer for a pair
- * that may split; a finished hand's own play depends only on its own cards. So the same
- * fact lets every second card be dealt first, and then, for the payoff of any one hand,
- * that hand's play and the dealer's draws come straight after, with the other hands'
- * draws later still. Each hand is then worth what it is worth played alone from the shoe
- * the second cards left, and the round is worth the sum over its hands, averaged over the
- * second cards. That needs a shoe that cannot run out: reordering does not preserve which
- * draw finds the shoe empty. It is used only when the shoe holds more cards, and more
- * cards that are not the natural hole card, than the round could possibly draw. Then the
- * decisions it asks the policy about are exactly the ones the contract reaches, so it
- * throws where the contract throws. On eight decks, 8,8 against a 10 resplit to three
- * hands takes the coupled computation 2.9 million spots and over a second, and this one
- * a few tens of milliseconds; at four hands the coupled one had not finished after two
- * minutes, and this one takes about a tenth of a second.
+ * only on which of the second cards dealt to split hands are of the split rank, and on the
+ * policy's one answer for a pair that may split; a finished hand's own play depends only
+ * on its own cards. So the same fact lets any one hand's second card, its draws and the
+ * dealer's cards be dealt first, and every other second card after them, where all that
+ * matters is the chance of their pattern of split-rank and other cards in the shoe the
+ * hand and the dealer left. Each kind of finished hand is then played alone from the shoe
+ * the split starts from, against the dealer's distribution with each dealer hand weighted
+ * by that chance, and the round is worth the sum over its hands. That needs a shoe that
+ * cannot run out: reordering does not preserve which draw finds the shoe empty. It is
+ * used only when the shoe holds more cards, and more cards that are not the natural hole
+ * card, than the round could possibly draw. Then the decisions it asks the policy about
+ * are exactly the ones the contract reaches, so it throws where the contract throws. On
+ * eight decks, 8,8 against a 10 resplit to three hands takes the coupled computation 2.9
+ * million spots and over a second; at four hands the coupled one had not finished after
+ * two minutes, and this one takes about two milliseconds.
  */
 public final class ExactRound implements RoundValuer {
 
@@ -103,6 +105,14 @@ public final class ExactRound implements RoundValuer {
     private final boolean coupledOnly;
     /** The dealer's hands for each up-card, built the first time that up-card is valued. */
     private final DealerHands[] dealerHands = new DealerHands[11];
+    /** The dealer's distributions one call leaves the next, or null while a call holds them. */
+    private StateFinals kept = new StateFinals();
+    /**
+     * How many splits this engine has valued hand by hand. Both ways give the same value
+     * wherever the hand-by-hand one is used, so a value cannot show which was taken; this
+     * lets a test pin where a split switches from one to the other.
+     */
+    private final AtomicLong splitsByHand = new AtomicLong();
 
     public ExactRound(RoundRules rules) {
         this(rules, false);
@@ -184,7 +194,32 @@ public final class ExactRound implements RoundValuer {
             return rules.blackjackPayout;
         }
 
-        return new Round(shoe, up, policy, dealerHandsFor(up)).value(p1, p2, first, naturals, cards);
+        // A call on another thread may hold the kept distributions; this one then works
+        // without them.
+        StateFinals finals = takeKept();
+        try {
+            return new Round(shoe, p1, p2, up, policy, dealerHandsFor(up), finals)
+                    .value(p1, p2, first, naturals, cards);
+        } finally {
+            if (finals != null) {
+                giveBackKept(finals);
+            }
+        }
+    }
+
+    /** How many splits this engine has valued hand by hand rather than coupled. */
+    long splitsValuedHandByHand() {
+        return splitsByHand.get();
+    }
+
+    private synchronized StateFinals takeKept() {
+        StateFinals f = kept;
+        kept = null;
+        return f;
+    }
+
+    private synchronized void giveBackKept(StateFinals f) {
+        kept = f;
     }
 
     private static boolean isRank(int r) {
@@ -237,6 +272,8 @@ public final class ExactRound implements RoundValuer {
         final int entries;
         /** maxCount[r]: the most cards of rank r any dealer hand takes. */
         final int[] maxCount = new int[11];
+        /** countOf[r][i]: how many cards of rank r entry i holds. */
+        final byte[][] countOf = new byte[11][];
         final int maxSize;
         /** Keyed like found: the legal orders of each multiset after which the dealer still draws. */
         final Map<Long, Long> unfinished = new HashMap<>();
@@ -298,6 +335,14 @@ public final class ExactRound implements RoundValuer {
             start[entries] = j;
             maxSize = largest;
             found.clear();
+            for (int r = 1; r <= 10; r++) {
+                countOf[r] = new byte[entries];
+            }
+            for (int e = 0; e < entries; e++) {
+                for (int k = start[e]; k < start[e + 1]; k++) {
+                    countOf[ranks[k]][e] = counts[k];
+                }
+            }
         }
 
         private void walk(int hard, boolean ace, int[] held, int cards) {
@@ -337,16 +382,70 @@ public final class ExactRound implements RoundValuer {
         }
     }
 
+    // ------------------------------------------------------------------ between calls
+
+    /**
+     * The dealer's distributions from the shoes of one state, kept from one call to the next.
+     *
+     * StateValuer values every first move of all 550 deals of a state, one call each, and
+     * every call's shoe is the state's shoe less three cards. So the shoes the dealer draws
+     * from recur from call to call: 10,6 against a 7 hitting a 2 leaves the dealer the shoe
+     * that 10,2 against a 7 hitting a 6 does. A dealer's distribution depends only on the
+     * shoe, the up-card and the rules, and is worked out the same way whichever call asks for
+     * it, so reusing one changes no value, not even in the last bit. They are kept while the
+     * calls come from one state, the shoe with the deal's three cards put back, and dropped
+     * when another state begins, so an engine holds one state's worth at most.
+     *
+     * To be the same key in every call, a shoe is packed in one fixed layout here: six bits
+     * for each rank from ace to nine and eight for the tens, 62 in all, which holds any shoe
+     * of up to fifteen decks. A shoe that does not fit is valued without them.
+     */
+    private static final class StateFinals {
+        final int[] state = new int[11];
+        Memo finals = new Memo(OUTCOMES);
+
+        /**
+         * The distributions for a call from this state, the ones kept if it is the state
+         * they came from, or none if it is not.
+         */
+        Memo finalsFor(int[] shoe, int p1, int p2, int up) {
+            int[] from = shoe.clone();
+            from[p1]++;
+            from[p2]++;
+            from[up]++;
+            if (!Arrays.equals(from, state)) {
+                System.arraycopy(from, 0, state, 0, 11);
+                finals = new Memo(OUTCOMES);
+            }
+            return finals;
+        }
+    }
+
+    /**
+     * Whether a shoe fits the fixed layout the kept distributions are keyed in. A shoe that
+     * fits is packed in it for every call, so a check one card too loose would pack a shoe
+     * wrongly; ExactRoundTest holds shoes on both sides of each edge to BruteForceRound.
+     */
+    static boolean fitsSharedLayout(int[] shoe) {
+        for (int r = 1; r <= 9; r++) {
+            if (shoe[r] > 63) {
+                return false;
+            }
+        }
+        return shoe[10] <= 255;
+    }
+
     // ------------------------------------------------------------------ one call
 
     /**
      * Everything one call to valueOfFirstMove works with: the shoe's packing, the tables of
      * falling factorials, the memos and the policy's answers. Built per call, since the
-     * policy and the shoe change between calls.
+     * policy and the shoe change between calls, except for the dealer's distributions an
+     * engine keeps for one state.
      *
-     * A shoe is packed into one long, each rank in a field just wide enough for the count it
-     * starts with. Eight decks take 62 bits: 6 for each of ranks 1 to 9 (up to 32) and 8 for
-     * the tens (up to 128).
+     * A shoe is packed into one long. With the kept distributions it is their fixed layout;
+     * without, each rank has a field just wide enough for the count it starts with, which
+     * lets a shoe of more than fifteen decks fit if it is short of some ranks.
      *
      * The rest of a spot is packed into a second long, laid out below: the hand being
      * played, if one is mid-way, the number of hands in the round, and the second cards of
@@ -371,11 +470,18 @@ public final class ExactRound implements RoundValuer {
         /** No hand being played and none waiting: the dealer's turn. */
         private static final long DONE = 0;
         /**
-         * The kinds of finished split hand the hand-by-hand computation prices: 1 to 10 for
-         * a hand holding that second card that could not split, and PAIR_KEPT for a pair
-         * that could have split and that the policy played some other way.
+         * The classes of finished split hand the hand-by-hand computation weighs apart: one
+         * whose second card is not the split rank; one whose second card is, with no room
+         * left to split it; and one whose second card is, that could have split and that the
+         * policy played some other way. They are finished in different patterns of the other
+         * second cards.
          */
-        private static final int PAIR_KEPT = 11;
+        private static final int OTHER_CARD = 0;
+        private static final int PAIR_AT_LIMIT = 1;
+        private static final int PAIR_KEPT = 2;
+        private static final int CLASSES = 3;
+        /** Where a hand played alone keeps its class, above the bits of a live hand. */
+        private static final int CLASS_SHIFT = 16;
 
         private final int up;
         private final int natural;
@@ -394,28 +500,56 @@ public final class ExactRound implements RoundValuer {
 
         /** The coupled computation's spots. */
         private final Memo spots = new Memo(WIDTH);
-        /** The dealer's distribution for each shoe it has been asked about. */
-        private final Memo finals = new Memo(OUTCOMES);
-        /** The hand-by-hand computation: its spots between hands, and hands played alone. */
-        private final Memo splitSpots = new Memo(1);
+        /** The dealer's distribution for each shoe it has been asked about, keyed by the shoe and the up-card. */
+        private final Memo finals;
+        /**
+         * The hand-by-hand computation: hands played alone, keyed by their class, and the
+         * dealer's distribution weighted for each class.
+         */
         private final Memo aloneHands = new Memo(1);
-        private final double[] dealerScratch = new double[WIDTH];
+        private final Memo weightedFinals = new Memo(OUTCOMES);
+        private final double[] dealerScratch = new double[OUTCOMES];
         /** The policy's answer for each distinct decision, as ordinal + 1, or 0 before it is asked. */
         private final byte[] answers = new byte[1 << 21];
 
         private int splitRank;
         private int maxHands;
 
-        Round(int[] shoe, int up, RoundPolicy policy, DealerHands dealer) {
+        /** The shoe a split valued hand by hand starts from: its cards of the split rank, and all its cards. */
+        private int rankLeft;
+        private int cardsLeft;
+        /**
+         * For each class of finished hand, the patterns of the other second cards that finish
+         * a hand of it, as parallel lists: a pattern's cards of the split rank, its other
+         * cards, and how many hands of the class it finishes, summed over every way the round
+         * can go.
+         */
+        private final int[][] patternRanks = new int[CLASSES][];
+        private final int[][] patternOthers = new int[CLASSES][];
+        private final double[][] patternHands = new double[CLASSES][];
+        /** While the patterns are found: tally[class][a * tallyWidth + b], as patternHands. */
+        private double[][] tally;
+        private int tallyWidth;
+        /**
+         * weights[class][dN][dR]: what patternWeight gives once a hand and the dealer have
+         * taken dN cards, dR of them of the split rank, from the shoe the split starts from.
+         * Rows are made as they are needed, and NaN marks a value not yet worked out.
+         */
+        private double[][][] weights;
+        private double[] weightGrid = new double[0];
+
+        Round(int[] shoe, int p1, int p2, int up, RoundPolicy policy, DealerHands dealer, StateFinals state) {
             this.up = up;
             this.natural = naturalHoleRank(up);
             this.policy = policy;
             this.dealer = dealer;
             this.dealt = shoe.clone();
+            boolean shared = state != null && fitsSharedLayout(shoe);
+            finals = shared ? state.finalsFor(shoe, p1, p2, up) : new Memo(OUTCOMES);
 
             int bits = 0;
             for (int r = 1; r <= 10; r++) {
-                int width = 32 - Integer.numberOfLeadingZeros(shoe[r]);
+                int width = shared ? (r == 10 ? 8 : 6) : 32 - Integer.numberOfLeadingZeros(shoe[r]);
                 shift[r] = bits;
                 fieldMask[r] = width == 0 ? 0 : (1L << width) - 1;
                 one[r] = width == 0 ? 0 : 1L << bits;
@@ -488,7 +622,8 @@ public final class ExactRound implements RoundValuer {
                 startSplitting(p1);
                 long mostDrawn = mostCardsASplitCanDraw(p1);
                 if (!coupledOnly && cards >= mostDrawn && cards - naturals >= mostDrawn) {
-                    unconditional = splitByHand(comp, n, 0, 2, 0);
+                    splitsByHand.incrementAndGet();
+                    unconditional = splitByHand(comp, n);
                 } else {
                     double[] out = new double[WIDTH];
                     split(comp, n, 0, 2, out);
@@ -563,7 +698,7 @@ public final class ExactRound implements RoundValuer {
          */
         private boolean dealerTurn(long comp, int n, double[] out) {
             out[0] = 0;
-            int slot = finals.find(comp, 0);
+            int slot = finals.find(comp, up);
             if (slot >= 0) {
                 finals.read(slot, out, 1);
                 return finals.flag(slot);
@@ -612,7 +747,7 @@ public final class ExactRound implements RoundValuer {
                     runsOut = true;
                 }
             }
-            finals.put(comp, 0, out, 1, runsOut);
+            finals.put(comp, up, out, 1, runsOut);
             return runsOut;
         }
 
@@ -839,128 +974,232 @@ public final class ExactRound implements RoundValuer {
 
         // ---------------------------------------------------------- hand by hand
 
-        /**
-         * The hand-by-hand computation of a split, from a spot between hands. With kind 0 it
-         * is what every hand that finishes from here on is worth. With a kind of finished
-         * hand it is what one hand of that kind is worth, played from the shoe that is left
-         * once every second card still to come has been dealt: that is the shoe a hand
-         * finishing here plays from, once the split's second cards are all dealt first. The
-         * two are memoized together, the kind in the hand bits a spot between hands leaves
-         * clear.
+        /*
+         * A split valued hand by hand. The round is worth the sum of what its finished hands
+         * are worth, and a finished hand's payoff depends only on its own cards and the
+         * dealer's. The other split hands' second cards reach it only through which hands the
+         * round has: a hand whose second card is the split rank may split again, room
+         * permitting, and any other hand is finished. So, by the fact every rearrangement here
+         * rests on, a hand's second card, its draws and the dealer's cards can be dealt first
+         * and the other second cards after them, and of those only the pattern of split-rank
+         * and other cards matters. From a shoe of N cards holding R of the split rank, a
+         * pattern of a split-rank cards and b others, in any order, has the chance
+         * R (R - 1) ... (R - a + 1) x (N - R) ... (N - R - b + 1) / N (N - 1) ... (N - a - b + 1).
          *
-         * @param kind 0, or a kind of finished hand, 1 to PAIR_KEPT
+         * The patterns that finish a hand of each class are found first, with the policy
+         * asked whether a pair that may split does, exactly where the round can deal one.
+         * Then each class of hand is played once for each second card, alone, the dealer
+         * after it, and every payoff is weighted by the chance of those patterns in the shoe
+         * the hand and the dealer leave. A pattern needs cards the hand may have taken, so a
+         * decision is put to the policy only where some pattern still has a chance: where the
+         * contract can reach it.
          */
-        private double byHand(long comp, int n, long spot, int kind) {
-            if (spot == DONE) {
-                return kind == 0 ? 0 : handValue(comp, n, kind);
-            }
-            long key = spot | kind;
-            int slot = splitSpots.find(comp, key);
-            if (slot >= 0) {
-                return splitSpots.value(slot);
-            }
-            long queue = spot >>> QUEUE_SHIFT;
-            int hands = (int) ((spot >>> HANDS_SHIFT) & HANDS_MASK);
-            int second = (int) (queue & 15);
-            long waiting = queue >>> 4;
-            boolean canSplit = second == splitRank && hands != 0 && hands < maxHands;
-            double v;
-            if (canSplit && splitHandMove(second, true) == PlayerMove.Split) {
-                v = splitByHand(comp, n, waiting, hands + 1, kind);
-            } else {
-                long next = between(waiting, hands);
-                v = byHand(comp, n, next, kind);
-                if (kind == 0) {
-                    // This hand will not split again, so it is finished as far as the split
-                    // goes: add what one hand of its kind is worth once the rest of the
-                    // second cards are out.
-                    v += byHand(comp, n, next, canSplit ? PAIR_KEPT : second);
-                }
-            }
-            splitSpots.put(comp, key, v);
-            return v;
-        }
 
-        /** A split in the hand-by-hand computation: both second cards dealt, as in split. */
-        private double splitByHand(long comp, int n, long waiting, int hands, int kind) {
-            requireDraw(n);
+        /** The value of a split, summed over every finished hand, from the shoe it starts from. */
+        private double splitByHand(long comp, int n) {
+            rankLeft = count(comp, splitRank);
+            cardsLeft = n;
+            findPatterns();
+            weights = new double[CLASSES][n + 1][];
             double v = 0;
-            for (int y1 = 1; y1 <= 10; y1++) {
-                int c1 = count(comp, y1);
-                if (c1 == 0) {
+            for (int y = 1; y <= 10; y++) {
+                int c = count(comp, y);
+                if (c == 0) {
                     continue;
                 }
-                long once = comp - one[y1];
-                requireDraw(n - 1);
-                for (int y2 = 1; y2 <= 10; y2++) {
-                    int c2 = count(once, y2);
-                    if (c2 == 0) {
-                        continue;
-                    }
-                    long queue = (waiting << 8) | ((long) y2 << 4) | y1;
-                    v += (c1 / (double) n) * (c2 / (double) (n - 1))
-                            * byHand(once - one[y2], n - 2, between(queue, hands), kind);
+                long drawn = comp - one[y];
+                double p = c / (double) n;
+                if (y != splitRank) {
+                    v += p * firstMoveValue(drawn, n - 1, y, OTHER_CARD);
+                } else {
+                    v += p * (firstMoveValue(drawn, n - 1, y, PAIR_AT_LIMIT)
+                            + firstMoveValue(drawn, n - 1, y, PAIR_KEPT));
                 }
             }
             return v;
+        }
+
+        /** Every pattern of second cards the split can deal, and the finished hands of each. */
+        private void findPatterns() {
+            long reachable = Math.min(maxHands, 2L + rankLeft);
+            tallyWidth = (int) (2 * (reachable - 1)) + 1;
+            tally = new double[CLASSES][tallyWidth * tallyWidth];
+            dealPatterns(0, 0, 2, 0, 0, 0, 0, 0);
+            for (int cls = 0; cls < CLASSES; cls++) {
+                int kinds = 0;
+                for (double t : tally[cls]) {
+                    kinds += t > 0 ? 1 : 0;
+                }
+                patternRanks[cls] = new int[kinds];
+                patternOthers[cls] = new int[kinds];
+                patternHands[cls] = new double[kinds];
+                int k = 0;
+                for (int i = 0; i < tally[cls].length; i++) {
+                    if (tally[cls][i] > 0) {
+                        patternRanks[cls][k] = i / tallyWidth;
+                        patternOthers[cls][k] = i % tallyWidth;
+                        patternHands[cls][k] = tally[cls][i];
+                        k++;
+                    }
+                }
+            }
+            tally = null;
         }
 
         /**
-         * One finished split hand of this kind, played alone from this shoe, with the dealer
-         * drawing straight after it.
+         * A split deals two second cards, the first new hand's and then the second's, each of
+         * the split rank or not, as far as the shoe holds such cards; then the first new hand
+         * plays. The waiting hands are one bit each, set for a split-rank second card, the
+         * next to play lowest.
+         *
+         * @param ranks  split-rank second cards dealt so far
+         * @param others other second cards dealt so far
+         * @param other  hands finished so far holding another card; atLimit and kept count
+         *               the other two classes
          */
-        private double handValue(long comp, int n, int kind) {
-            int slot = aloneHands.find(comp, kind);
-            if (slot >= 0) {
-                return aloneHands.value(slot);
-            }
-            int second = kind == PAIR_KEPT ? splitRank : kind;
-            int hard = splitRank + second;
-            boolean ace = splitRank == 1 || second == 1;
-            int total = total(hard, ace);
-            double v;
-            if (isSplitBlackjack(second)) {
-                v = fixedValue(comp, n, rules.blackjackPayout);
-            } else {
-                switch (splitHandMove(second, kind == PAIR_KEPT)) {
-                    case Stand:
-                        v = stoodValue(comp, n, total, 1);
-                        break;
-                    case Surrender:
-                        v = fixedValue(comp, n, -0.5);
-                        break;
-                    case Hit:
-                        v = hitValue(comp, n, hard, ace, 2);
-                        break;
-                    case Double:
-                        v = doubleValue(comp, n, hard, ace);
-                        break;
-                    default:
-                        throw new AssertionError("a pair that splits is not a finished hand");
+        private void dealPatterns(long queue, int waiting, int hands, int ranks, int others,
+                                  int other, int atLimit, int kept) {
+            for (int first = 0; first <= 1; first++) {
+                for (int second = 0; second <= 1; second++) {
+                    int a = ranks + first + second;
+                    int b = others + 2 - first - second;
+                    if (a <= rankLeft && b <= cardsLeft - rankLeft) {
+                        playPatterns((queue << 2) | (second << 1) | first, waiting + 2, hands, a, b,
+                                other, atLimit, kept);
+                    }
                 }
             }
-            aloneHands.put(comp, kind, v);
-            return v;
         }
 
-        /** A split hand that has hit and not busted, played alone from here. */
-        private double liveValue(long comp, int n, int hard, boolean ace, int cards) {
-            long key = live(hard, ace, cards, true, DONE);
+        /** The next waiting hand's first decision, as far as the pattern goes. */
+        private void playPatterns(long queue, int waiting, int hands, int ranks, int others,
+                                  int other, int atLimit, int kept) {
+            if (waiting == 0) {
+                // The round's hands are all finished. Each is counted with the pattern of the
+                // other second cards: all of them less its own.
+                tallyHands(OTHER_CARD, ranks, others - 1, other);
+                tallyHands(PAIR_AT_LIMIT, ranks - 1, others, atLimit);
+                tallyHands(PAIR_KEPT, ranks - 1, others, kept);
+                return;
+            }
+            long rest = queue >>> 1;
+            if ((queue & 1) == 0) {
+                playPatterns(rest, waiting - 1, hands, ranks, others, other + 1, atLimit, kept);
+            } else if (hands >= maxHands) {
+                playPatterns(rest, waiting - 1, hands, ranks, others, other, atLimit + 1, kept);
+            } else if (splitHandMove(splitRank, true) == PlayerMove.Split) {
+                dealPatterns(rest, waiting - 1, hands + 1, ranks, others, other, atLimit, kept);
+            } else {
+                playPatterns(rest, waiting - 1, hands, ranks, others, other, atLimit, kept + 1);
+            }
+        }
+
+        private void tallyHands(int cls, int ranks, int others, int hands) {
+            if (hands > 0) {
+                tally[cls][ranks * tallyWidth + others] += hands;
+            }
+        }
+
+        /**
+         * The chance of the other second cards falling in a pattern that finishes a hand of
+         * this class, times the number of hands of the class each pattern finishes, from a
+         * shoe of this many cards holding this many of the split rank.
+         */
+        private double patternWeight(int cls, int rank, int cards) {
+            int[] as = patternRanks[cls];
+            int[] bs = patternOthers[cls];
+            int others = cards - rank;
+            double w = 0;
+            for (int k = 0; k < as.length; k++) {
+                int a = as[k];
+                int b = bs[k];
+                if (a > rank || b > others) {
+                    continue;
+                }
+                double p = patternHands[cls][k];
+                for (int i = 0; i < a; i++) {
+                    p *= (rank - i) / (double) (cards - i);
+                }
+                for (int j = 0; j < b; j++) {
+                    p *= (others - j) / (double) (cards - a - j);
+                }
+                w += p;
+            }
+            return w;
+        }
+
+        /** patternWeight once dN cards are gone from the split's shoe, dR of them of the split rank. */
+        private double weightAt(int cls, int dR, int dN) {
+            double[] row = weights[cls][dN];
+            if (row == null) {
+                row = new double[rankLeft + 1];
+                Arrays.fill(row, Double.NaN);
+                weights[cls][dN] = row;
+            }
+            double w = row[dR];
+            if (Double.isNaN(w)) {
+                w = patternWeight(cls, rankLeft - dR, cardsLeft - dN);
+                row[dR] = w;
+            }
+            return w;
+        }
+
+        /**
+         * Whether a hand of this class can be holding the cards that left this shoe: whether
+         * some pattern that finishes it still has the cards it needs.
+         */
+        private boolean reachable(long comp, int n, int cls) {
+            return weightAt(cls, rankLeft - count(comp, splitRank), cardsLeft - n) > 0;
+        }
+
+        /**
+         * A finished split hand of this class, holding the split card and this second card,
+         * played alone from this shoe with the dealer after it.
+         */
+        private double firstMoveValue(long comp, int n, int second, int cls) {
+            if (!reachable(comp, n, cls)) {
+                return 0;
+            }
+            if (isSplitBlackjack(second)) {
+                return fixedValue(comp, n, rules.blackjackPayout, cls);
+            }
+            int hard = splitRank + second;
+            boolean ace = splitRank == 1 || second == 1;
+            switch (splitHandMove(second, cls == PAIR_KEPT)) {
+                case Stand:
+                    return stoodValue(comp, n, total(hard, ace), 1, cls);
+                case Surrender:
+                    return fixedValue(comp, n, -0.5, cls);
+                case Hit:
+                    return hitValue(comp, n, hard, ace, 2, cls);
+                case Double:
+                    return doubleValue(comp, n, hard, ace, cls);
+                default:
+                    throw new AssertionError("a pair that splits is not a finished hand");
+            }
+        }
+
+        /** A split hand of this class that has hit and not busted, played alone from here. */
+        private double liveValue(long comp, int n, int hard, boolean ace, int cards, int cls) {
+            long key = live(hard, ace, cards, true, DONE) | (long) cls << CLASS_SHIFT;
             int slot = aloneHands.find(comp, key);
             if (slot >= 0) {
                 return aloneHands.value(slot);
             }
-            int total = total(hard, ace);
-            PlayerMove move = ask(total, isSoft(hard, ace), cards, 0, true, false, total < 21,
-                    false, false, false);
-            double v = move == PlayerMove.Stand
-                    ? stoodValue(comp, n, total, 1)
-                    : hitValue(comp, n, hard, ace, cards);
+            double v = 0;
+            if (reachable(comp, n, cls)) {
+                int total = total(hard, ace);
+                PlayerMove move = ask(total, isSoft(hard, ace), cards, 0, true, false, total < 21,
+                        false, false, false);
+                v = move == PlayerMove.Stand
+                        ? stoodValue(comp, n, total, 1, cls)
+                        : hitValue(comp, n, hard, ace, cards, cls);
+            }
             aloneHands.put(comp, key, v);
             return v;
         }
 
-        private double hitValue(long comp, int n, int hard, boolean ace, int cards) {
+        private double hitValue(long comp, int n, int hard, boolean ace, int cards, int cls) {
             requireDraw(n);
             double v = 0;
             for (int y = 1; y <= 10; y++) {
@@ -971,13 +1210,13 @@ public final class ExactRound implements RoundValuer {
                 long drawn = comp - one[y];
                 int hardAfter = hard + y;
                 v += c / (double) n * (hardAfter > 21
-                        ? fixedValue(drawn, n - 1, -1)
-                        : liveValue(drawn, n - 1, hardAfter, ace || y == 1, cards + 1));
+                        ? fixedValue(drawn, n - 1, -1, cls)
+                        : liveValue(drawn, n - 1, hardAfter, ace || y == 1, cards + 1, cls));
             }
             return v;
         }
 
-        private double doubleValue(long comp, int n, int hard, boolean ace) {
+        private double doubleValue(long comp, int n, int hard, boolean ace, int cls) {
             requireDraw(n);
             double v = 0;
             for (int y = 1; y <= 10; y++) {
@@ -988,30 +1227,95 @@ public final class ExactRound implements RoundValuer {
                 long drawn = comp - one[y];
                 int hardAfter = hard + y;
                 v += c / (double) n * (hardAfter > 21
-                        ? fixedValue(drawn, n - 1, -2)
-                        : stoodValue(drawn, n - 1, total(hardAfter, ace || y == 1), 2));
+                        ? fixedValue(drawn, n - 1, -2, cls)
+                        : stoodValue(drawn, n - 1, total(hardAfter, ace || y == 1), 2, cls));
             }
             return v;
         }
 
-        /** A hand standing on total with this stake, against the dealer drawing from this shoe. */
-        private double stoodValue(long comp, int n, int total, double stake) {
-            dealerTurn(comp, n, dealerScratch);
+        /** A hand of this class standing on total with this stake, against the dealer drawing from this shoe. */
+        private double stoodValue(long comp, int n, int total, double stake, int cls) {
+            weightedDealer(comp, n, cls, dealerScratch);
             double won = 0;
             for (int o = 0; o < OUTCOMES; o++) {
-                won += SETTLE[total][o] * dealerScratch[1 + o];
+                won += SETTLE[total][o] * dealerScratch[o];
             }
             return stake * won;
         }
 
-        /** A fixed payoff, counted when the hole card drawn from this shoe is not a natural. */
-        private double fixedValue(long comp, int n, double payoff) {
-            dealerTurn(comp, n, dealerScratch);
-            double noNatural = 0;
-            for (int o = 0; o < OUTCOMES; o++) {
-                noNatural += dealerScratch[1 + o];
+        /**
+         * A fixed payoff to a hand of this class, counted when the hole card drawn from this
+         * shoe is not a natural. The dealer's draws after the hole card can be dealt after
+         * the other second cards, where they are certain to finish, so only the hole card is
+         * needed before the patterns.
+         */
+        private double fixedValue(long comp, int n, double payoff, int cls) {
+            int dR = rankLeft - count(comp, splitRank);
+            int dN = cardsLeft - n + 1;
+            double w = 0;
+            for (int h = 1; h <= 10; h++) {
+                int c = count(comp, h);
+                if (c == 0 || h == natural) {
+                    continue;
+                }
+                w += c / (double) n * weightAt(cls, dR + (h == splitRank ? 1 : 0), dN);
             }
-            return payoff * noNatural;
+            return payoff * w;
+        }
+
+        /**
+         * The dealer's distribution from this shoe for a hand of this class: each dealer hand
+         * weighted by the chance of the patterns that finish such a hand in the shoe the
+         * dealer leaves. out[0..6] is in M's order; the dealer cannot run out here.
+         */
+        private void weightedDealer(long comp, int n, int cls, double[] out) {
+            int slot = weightedFinals.find(comp, cls);
+            if (slot >= 0) {
+                weightedFinals.read(slot, out, 0);
+                return;
+            }
+            int[] c = new int[11];
+            for (int r = 1; r <= 10; r++) {
+                c[r] = count(comp, r);
+            }
+            DealerHands d = dealer;
+            // The weight of a dealer hand depends only on how many cards it takes and how
+            // many of them are of the split rank, so it is looked up once per pair of those.
+            int dR = rankLeft - c[splitRank];
+            int dN = cardsLeft - n;
+            int sizes = d.maxSize + 1;
+            int kinds = Math.min(d.maxCount[splitRank], c[splitRank]) + 1;
+            if (weightGrid.length < (d.maxCount[splitRank] + 1) * sizes) {
+                weightGrid = new double[(d.maxCount[splitRank] + 1) * sizes];
+            }
+            double[] grid = weightGrid;
+            for (int k = 0; k < kinds; k++) {
+                for (int s = 1; s < sizes; s++) {
+                    grid[k * sizes + s] = s < k || s > n ? 0 : weightAt(cls, dR + k, dN + s) * inverseFall[n][s];
+                }
+            }
+            Arrays.fill(out, 0, OUTCOMES, 0);
+            byte[] held = d.countOf[splitRank];
+            for (int i = 0; i < d.entries; i++) {
+                int size = d.size[i];
+                if (size > n) {
+                    continue;
+                }
+                double p = d.orders[i];
+                for (int j = d.start[i]; j < d.start[i + 1]; j++) {
+                    int r = d.ranks[j];
+                    int k = d.counts[j];
+                    if (k > c[r]) {
+                        p = 0;
+                        break;
+                    }
+                    p *= fall[r][c[r]][k];
+                }
+                if (p != 0) {
+                    out[d.outcome[i]] += p * grid[held[i] * sizes + size];
+                }
+            }
+            weightedFinals.put(comp, cls, out, 0, false);
         }
 
         // ---------------------------------------------------------- spot keys
