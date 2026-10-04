@@ -121,6 +121,154 @@ public class SplitValuesTest {
         assertEquals(2, values.fromStore);
     }
 
+    /** The chart's split play with these later spots, by total and softness, answered the other way. */
+    static SplitPlay flipped(int rank, int up, int[][] spots, PlayerTree.LaterPlay base, int baseUp,
+                             SplitPlay.FirstMoves first) {
+        return new SplitPlay(rank, up, (total, soft) -> {
+            boolean stands = base.stands(total, soft, baseUp, 0);
+            for (int[] s : spots) {
+                if (s[0] == total && (s[1] == 1) == soft) {
+                    return !stands;
+                }
+            }
+            return stands;
+        }, first);
+    }
+
+    /** The chart's ranking, but for deal (r, r, up), which hits whether or not Split is offered. */
+    static SplitPlay.FirstMoves noResplit(int r, int up) {
+        int pair = Deals.index(r, r, up);
+        PlayerMove[] hitStand = {PlayerMove.Hit, PlayerMove.Stand};
+        return i -> i == pair ? hitStand : chartRanking(i);
+    }
+
+    /** What SplitValues gave, held to a fresh ExactRound under the same play. */
+    private static void isExact(int[] shoe, int deal, SplitPlay play, double v) {
+        int r = Deals.P1[deal];
+        double exact = new ExactRound(RULES).valueOfFirstMove(Deals.after(shoe, deal), r, r, Deals.UP[deal],
+                PlayerMove.Split, play);
+        assertEquals(exact, v, 1e-12, "deal " + deal);
+    }
+
+    /**
+     * The answer when a resplit is offered is part of the print. Under Montreal's rules a split
+     * 8 that draws another may be split again up to four hands, and a count-based pair index
+     * (splitting tens at a high count, say) differs from the chart at exactly that decision. So
+     * the chart's play with 8,8 against a ten ranked Hit first, which hits where the chart
+     * resplits and agrees everywhere else, is valued and not given the stored value; and two
+     * plays away from the chart elsewhere that differ only there are each valued.
+     */
+    @Test
+    public void theAnswerWhenAResplitIsOfferedIsPartOfThePrint() throws Exception {
+        StateStore.Record r = StoredStates.spread(5).get(2);
+        int[] shoe = r.ranksLeft();
+        int eights = Deals.index(8, 8, 10);
+        assertTrue(RULES.maxHandsFor(8) >= 3);
+
+        SplitValues values = new SplitValues(RULES, shoe, r.values);
+        SplitPlay hits = new SplitPlay(8, 10, (total, soft) -> PlayerTree.CHART.stands(total, soft, 10, 0),
+                noResplit(8, 10));
+        byte[] chartPrint = SplitValues.fingerprint(RULES, eights, CHART);
+        byte[] print = SplitValues.fingerprint(RULES, eights, hits);
+        assertFalse(java.util.Arrays.equals(chartPrint, print));
+        int differ = 0;
+        for (int k = 0; k < print.length; k++) {
+            differ += print[k] != chartPrint[k] ? 1 : 0;
+        }
+        assertEquals(1, differ, "the two plays differ at one decision a split reaches");
+        double v = values.value(eights, hits);
+        assertEquals(1, values.valued);
+        assertEquals(0, values.fromStore);
+        isExact(shoe, eights, hits, v);
+        assertNotEquals(r.values[StateValuer.slot(eights, PlayerMove.Split)], v, 1e-6);
+
+        // Both away from the chart at hard 16, and apart only where a resplit is offered.
+        SplitValues two = new SplitValues(RULES, shoe, r.values);
+        int[][] at16 = {{16, 0}};
+        SplitPlay resplits = flipped(8, 10, at16, PlayerTree.CHART, 10, SplitValuesTest::chartRanking);
+        SplitPlay hitsInstead = flipped(8, 10, at16, PlayerTree.CHART, 10, noResplit(8, 10));
+        double a = two.value(eights, resplits);
+        double b = two.value(eights, hitsInstead);
+        assertEquals(2, two.valued);
+        assertEquals(0, two.fromKept);
+        assertEquals(0, two.fromStore);
+        isExact(shoe, eights, resplits, a);
+        isExact(shoe, eights, hitsInstead, b);
+        assertNotEquals(a, b, 1e-6);
+    }
+
+    /**
+     * Every later decision a split hand's hits lead to is part of the print, however many hits
+     * deep. A split 2 against a 5 reaches soft 20 only after two hits (2,3 then a 4 and an ace,
+     * or 2,3 then an ace and a 4): the chart doubles 2,7, 2,8, 2,9 and 2,A there, so no
+     * one-hit path gets to it. The chart's play hitting soft 20 is valued, not given the stored
+     * value; and two plays away from the chart at hard 12 that differ only at soft 20 are each
+     * valued.
+     */
+    @Test
+    public void aDecisionTwoHitsDeepIsPartOfThePrint() throws Exception {
+        StateStore.Record r = StoredStates.spread(5).get(2);
+        int[] shoe = r.ranksLeft();
+        int twos = Deals.index(2, 2, 5);
+
+        SplitValues values = new SplitValues(RULES, shoe, r.values);
+        SplitPlay hitSoft20 = flipped(2, 5, 20, true);
+        assertTrue(PlayerTree.CHART.stands(20, true, 5, 0), "the chart stands on soft 20");
+        assertFalse(java.util.Arrays.equals(SplitValues.fingerprint(RULES, twos, CHART),
+                SplitValues.fingerprint(RULES, twos, hitSoft20)));
+        double v = values.value(twos, hitSoft20);
+        assertEquals(1, values.valued);
+        assertEquals(0, values.fromStore);
+        isExact(shoe, twos, hitSoft20, v);
+        assertNotEquals(r.values[StateValuer.slot(twos, PlayerMove.Split)], v, 1e-6);
+
+        SplitValues two = new SplitValues(RULES, shoe, r.values);
+        assertTrue(PlayerTree.CHART.stands(12, false, 5, 0), "the chart stands on hard 12 against a 5");
+        SplitPlay hit12 = flipped(2, 5, new int[][]{{12, 0}}, PlayerTree.CHART, 5, SplitValuesTest::chartRanking);
+        SplitPlay hit12And20 = flipped(2, 5, new int[][]{{12, 0}, {20, 1}}, PlayerTree.CHART, 5,
+                SplitValuesTest::chartRanking);
+        double a = two.value(twos, hit12);
+        double b = two.value(twos, hit12And20);
+        assertEquals(2, two.valued);
+        assertEquals(0, two.fromKept);
+        assertEquals(0, two.fromStore);
+        isExact(shoe, twos, hit12, a);
+        isExact(shoe, twos, hit12And20, b);
+        assertNotEquals(a, b, 1e-6);
+    }
+
+    /**
+     * Values are kept by deal, up-card included, not by the pair's rank. In the fit one
+     * SplitValues serves every pair deal of a state, and a group's plays for 8s against a 9 and
+     * against a ten can answer every split decision alike. Two such plays, with equal prints and
+     * neither the chart's, are each valued, and each is ExactRound's value for its own up-card.
+     */
+    @Test
+    public void keptValuesAreKeptByDealNotByRank() throws Exception {
+        StateStore.Record r = StoredStates.spread(5).get(2);
+        int[] shoe = r.ranksLeft();
+        int tens = Deals.index(8, 8, 10);
+        int nines = Deals.index(8, 8, 9);
+        int[][] at16 = {{16, 0}};
+        SplitPlay v10 = flipped(8, 10, at16, PlayerTree.CHART, 10, SplitValuesTest::chartRanking);
+        // Against a 9, the answers the play against a ten gives.
+        SplitPlay v9 = flipped(8, 9, at16, PlayerTree.CHART, 10,
+                i -> chartRanking(Deals.index(Deals.P1[i], Deals.P2[i], 10)));
+        assertArrayEquals(SplitValues.fingerprint(RULES, tens, v10), SplitValues.fingerprint(RULES, nines, v9));
+        assertFalse(java.util.Arrays.equals(SplitValues.fingerprint(RULES, nines, CHART),
+                SplitValues.fingerprint(RULES, nines, v9)));
+
+        SplitValues values = new SplitValues(RULES, shoe, r.values);
+        double a = values.value(tens, v10);
+        double b = values.value(nines, v9);
+        assertEquals(2, values.valued);
+        assertEquals(0, values.fromKept);
+        assertEquals(0, values.fromStore);
+        isExact(shoe, tens, v10, a);
+        isExact(shoe, nines, v9, b);
+        assertNotEquals(a, b, 1e-6);
+    }
+
     /** The split hand's first decision plays the best legal move of its deal's ranking. */
     @Test
     public void aSplitHandPlaysTheBestLegalMoveOfItsDeal() {
