@@ -1476,10 +1476,21 @@ final class SystemScorer {
         final Resolution[] fullResolution = new Resolution[CUTS.length];
         final double[] fullHalfFitFlat = new double[CUTS.length];
         final double[][] fullHalfFitBoot = new double[CUTS.length][];
+        /** [pen][fold]: each fold's first decisions under full play, fitted with its own full-index values. */
+        final Fit[][] fullFirst = new Fit[CUTS.length][2];
+        /** [pen][fold]: each fold's full-index fit and half fit, as FullIndexFit.Summary gives them. */
+        final FullIndexFit.Summary[][] fullFit = new FullIndexFit.Summary[CUTS.length][2];
+        final FullIndexFit.Summary[][] fullHalfFit = new FullIndexFit.Summary[CUTS.length][2];
+        /**
+         * [pen]: the in-sample check over both folds' half fits (FullIndexFit.Strategy.inSampleCheck):
+         * cells compared, cells the other half plays the other way, and the same two among the
+         * cells settled; null where there are no half fits.
+         */
+        final int[][] fullInSample = new int[CUTS.length][];
         /**
          * What the full-play intervals are widened by: the bootstrap holds the later plays as
-         * fitted, and the pilot measures how much that narrows a difference's SE (FullIndexPilot).
-         * 1 until a ratio is set. Applied to resamples with Bootstrap.widen.
+         * fitted, and the pilot measures how much that narrows a difference's SE
+         * (FULL_INDEX_PLAYS.md section 4). 1 until a ratio is set; difference applies it.
          */
         double widen = 1;
         double seconds;
@@ -1490,18 +1501,35 @@ final class SystemScorer {
     }
 
     /**
-     * The gain of one way of playing over another for the same count, full play over
-     * first-decision-only: the difference of the estimates, with its interval taken resample by
-     * resample, which pairs the two because they are scored on the same resamples.
+     * The difference a - b of two entries in metric m at penetration p, with its interval taken
+     * resample by resample, which pairs the two since every entry is scored on the same
+     * resamples. With widen other than 1 the differences are spread that many times as far from
+     * their mean first (Bootstrap.widen): the hook by which a full-play difference's interval is
+     * widened by the ratio the pilot measures per count, the bootstrap holding the later plays
+     * as fitted (FULL_INDEX_PLAYS.md section 4).
      */
-    static Bootstrap.Interval gain(Entry a, Entry b, int p, int m) {
+    static Bootstrap.Interval difference(Entry a, Entry b, int p, int m, double widen) {
         double[] da = a.boot[p][m];
         double[] db = b.boot[p][m];
         double[] d = new double[da.length];
         for (int r = 0; r < d.length; r++) {
             d[r] = da[r] - db[r];
         }
+        if (widen != 1) {
+            d = Bootstrap.widen(d, widen);
+        }
         return Bootstrap.interval(a.estimate[p][m] - b.estimate[p][m], d);
+    }
+
+    /**
+     * The gain from full play: a count's full-play entry less its first-decision-only entry,
+     * scored in the same run on the same resamples, so the interval is paired.
+     */
+    static Bootstrap.Interval gain(Entry fullPlay, Entry firstOnly, int p, int m, double widen) {
+        if (!fullPlay.fullPlay || firstOnly.fullPlay || firstOnly.bettingOnly || fullPlay.count != firstOnly.count) {
+            throw new IllegalArgumentException(fullPlay.name + " is not the full play of " + firstOnly.name);
+        }
+        return difference(fullPlay, firstOnly, p, m, widen);
     }
 
     /**
@@ -1567,6 +1595,8 @@ final class SystemScorer {
                 fullPlays = new FoldPlay[2];
                 for (int f = 0; f < 2; f++) {
                     fullPlays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null, null, null, values[f]);
+                    result.fullFirst[p][f] = fullPlays[f].fit;
+                    result.fullFit[p][f] = fits.fold[p][f].summary();
                 }
                 result.fullResolution[p] = resolution(parts, pen, ip, fullPlays, fits, p);
                 halfValues = fits.halfValues(p);
@@ -1574,6 +1604,15 @@ final class SystemScorer {
                     fullHalf = halfPlays(parts, pen, ip, pen.weight, null, null, null, halfValues, null);
                     result.fullHalfFitFlat[p] = halfFlat(pen, ip, fullHalf, pen.weight);
                     result.fullHalfFitBoot[p] = new double[boot.resamples];
+                    int[] check = new int[4];
+                    for (int f = 0; f < 2; f++) {
+                        result.fullHalfFit[p][f] = fits.half[p][f].summary();
+                        int[] c = result.fullHalfFit[p][f].inSample;
+                        for (int k = 0; k < 4; k++) {
+                            check[k] += c[k];
+                        }
+                    }
+                    result.fullInSample[p] = check;
                 }
                 double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true);
                 for (int e = 0; e < sums.length; e++) {
@@ -1882,6 +1921,62 @@ final class SystemScorer {
             }
         }
         return out;
+    }
+
+    /**
+     * The full-scope perfect row (FULL_INDEX_PLAYS.md section 4), flat, scored on every state of
+     * each penetration with the bootstrap as the other reference rows are: every state plays
+     * every decision of its dealt hand best from its own composition, its split hands at the
+     * chart, and insures exactly when insurance pays. perfectPlay[s] is state s's round value
+     * before insurance under that play (FullIndexFit.perfect). A penetration holding a state
+     * without one is left out, its estimate and resamples null.
+     */
+    Entry perfectPlayRow(double[] perfectPlay) {
+        if (perfectPlay.length != st.size) {
+            throw new IllegalArgumentException("a value for each of the " + st.size + " states");
+        }
+        Entry row = new Entry("Perfect play of the dealt hand and insurance, flat", null, false);
+        for (int p = 0; p < CUTS.length; p++) {
+            Pen pen = pens[p];
+            boolean every = true;
+            for (int s : pen.states) {
+                every &= !Double.isNaN(perfectPlay[s]);
+            }
+            if (!every) {
+                continue;
+            }
+            row.boot[p] = new double[METRICS][boot.resamples];
+            double[] w = pen.weight.clone();
+            for (int r = -1; r < boot.resamples; r++) {
+                if (r >= 0) {
+                    for (int j = 0; j < w.length; j++) {
+                        w[j] = pen.weight[j] * boot.mult(r, st.shoe[pen.states[j]]);
+                    }
+                }
+                double weight = 0;
+                double play = 0;
+                double insurance = 0;
+                for (int j = 0; j < w.length; j++) {
+                    int s = pen.states[j];
+                    weight += w[j];
+                    play += w[j] * perfectPlay[s];
+                    insurance += w[j] * st.perfectInsurance[s];
+                }
+                double[] m = new double[METRICS];
+                Arrays.fill(m, Double.NaN);
+                m[FLAT] = (play + insurance) / weight;
+                m[PLAY] = play / weight;
+                m[INSURANCE] = insurance / weight;
+                if (r < 0) {
+                    row.estimate[p] = m;
+                } else {
+                    for (int k = 0; k < METRICS; k++) {
+                        row.boot[p][k][r] = m[k];
+                    }
+                }
+            }
+        }
+        return row;
     }
 
     private double[][] referenceMetrics(Pen pen, double[] w) {

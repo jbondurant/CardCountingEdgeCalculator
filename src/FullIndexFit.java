@@ -140,6 +140,11 @@ final class FullIndexFit {
      * One play of a strategy: its first moves (with the sums they were fitted from) and their
      * rankings, and its later cells, stands[g x CELLS + cell] over the strategy's later groups,
      * or null for the chart before those groups are formed. Never changed once made.
+     *
+     * Pass 0's play, and a clean-up of it, has no rankings: it is the stored first-decision fit
+     * with the chart after the first move, so a split hand's two-card decisions are the chart's
+     * there, as the stored V(Split) has them. Every refit gives rankings, which split hands read
+     * from then on.
      */
     static final class Policy {
         final SystemScorer.Fit first;
@@ -272,35 +277,41 @@ final class FullIndexFit {
         }
     }
 
-    /** One number per count key, over whatever range of keys arrives. */
-    static final class KeyLine {
+    /**
+     * What the later-play groups are grown from, per count key over one range of keys: the
+     * valued states' mass at the key, each state's mass 1 spread over the keys of its later
+     * decisions by its reach there, and the rounds that reach the key. One range holds both, so
+     * the two always line up key for key.
+     */
+    static final class KeyMass {
         int lo;
         int hi = -1;
-        double[] v = new double[0];
+        double[] mass = new double[0];
+        double[] rounds = new double[0];
 
-        void add(int key, double x) {
+        void add(int key, double m, double r) {
             if (key < lo || key > hi) {
                 int nlo = hi < lo ? key - 8 : Math.min(lo, key - 8);
                 int nhi = hi < lo ? key + 8 : Math.max(hi, key + 8);
-                double[] n = new double[nhi - nlo + 1];
+                double[] nm = new double[nhi - nlo + 1];
+                double[] nr = new double[nm.length];
                 if (hi >= lo) {
-                    System.arraycopy(v, 0, n, lo - nlo, v.length);
+                    System.arraycopy(mass, 0, nm, lo - nlo, mass.length);
+                    System.arraycopy(rounds, 0, nr, lo - nlo, rounds.length);
                 }
-                v = n;
+                mass = nm;
+                rounds = nr;
                 lo = nlo;
                 hi = nhi;
             }
-            v[key - lo] += x;
+            mass[key - lo] += m;
+            rounds[key - lo] += r;
         }
 
-        double at(int key) {
-            return key < lo || key > hi ? 0 : v[key - lo];
-        }
-
-        void addAll(KeyLine o) {
+        void addAll(KeyMass o) {
             for (int k = o.lo; k <= o.hi; k++) {
-                if (o.v[k - o.lo] != 0) {
-                    add(k, o.v[k - o.lo]);
+                if (o.mass[k - o.lo] != 0 || o.rounds[k - o.lo] != 0) {
+                    add(k, o.mass[k - o.lo], o.rounds[k - o.lo]);
                 }
             }
         }
@@ -313,16 +324,21 @@ final class FullIndexFit {
      */
     static final class Acc {
         final KeyCells sums = new KeyCells();
-        final KeyLine mass = new KeyLine();
-        final KeyLine rounds = new KeyLine();
-        double valued;
+        final KeyMass mass = new KeyMass();
         final double[] gap;
         final double[] reach;
-        final double[] saa;
-        final double[] sab;
+        /**
+         * Per (group, cell), over shoes: the sums of c^2, c x b and b^2, where a and b are a
+         * shoe's gap and reach and c = sign x a - centre x b its residual about the gain the
+         * last pass found under the same play (Strategy.gainAndSe).
+         */
+        final double[] scc;
+        final double[] scb;
         final double[] sbb;
         final double[] checkGap;
         final double[] checkReach;
+        private final double[] sign;
+        private final double[] centre;
         // One shoe's sums by (group, cell), for the standard errors.
         private final double[] a;
         private final double[] b;
@@ -330,11 +346,13 @@ final class FullIndexFit {
         private final boolean[] on;
         private int n;
 
-        Acc(int cells) {
+        Acc(int cells, double[] sign, double[] centre) {
+            this.sign = sign;
+            this.centre = centre;
             gap = new double[cells];
             reach = new double[cells];
-            saa = new double[cells];
-            sab = new double[cells];
+            scc = new double[cells];
+            scb = new double[cells];
             sbb = new double[cells];
             checkGap = new double[cells];
             checkReach = new double[cells];
@@ -359,8 +377,9 @@ final class FullIndexFit {
                 int at = touched[k];
                 gap[at] += a[at];
                 reach[at] += b[at];
-                saa[at] += a[at] * a[at];
-                sab[at] += a[at] * b[at];
+                double c = sign[at] * a[at] - centre[at] * b[at];
+                scc[at] += c * c;
+                scb[at] += c * b[at];
                 sbb[at] += b[at] * b[at];
                 a[at] = 0;
                 b[at] = 0;
@@ -387,7 +406,10 @@ final class FullIndexFit {
         final boolean cleanUp;
         /** The training states' weighted EV per round under the play walked, insurance included. */
         final double ev;
-        /** First-decision and later cells the refit after the pass changed, or for a clean-up pass, flipped. */
+        /**
+         * For a fitting pass, the first-decision and later cells the refit after it changed; for
+         * a clean-up pass, none and the later cells flipped to make the play it walked.
+         */
         final int firstChanges;
         final int laterChanges;
         final double wallSeconds;
@@ -436,10 +458,16 @@ final class FullIndexFit {
         final int shoes;
         final SystemScorer.Groups groups;
         final int[] table;
+        /** Each deal's moves ranked as the chart plays them, which split hands read under a play without rankings. */
+        private final PlayerMove[][] chartRanks;
         /** What the fitted insurance adds to each state's round value: insurance is fitted once, as no later play moves it. */
         final double[] insurance;
         /** The Hit and Split values of every state of the penetration, under the play in force (finally, the play kept). */
         final SystemScorer.PlayValues values;
+
+        /** The most fitting passes and clean-up passes; tests lower them to reach the cap. */
+        int maxPasses = MAX_PASSES;
+        int cleanUpLimit = CLEAN_UPS;
 
         SystemScorer.Groups later;
         Policy now;
@@ -451,35 +479,47 @@ final class FullIndexFit {
         final List<PassRecord> history = new ArrayList<>();
         /** Later cells flipped in clean-up, in all. */
         int flipped;
+        /** The fitting pass whose play was kept at the cap, counting from 0. */
+        int bestPass = -1;
 
-        private int bestPass = -1;
         private double bestEv;
-        private Policy best;
+        /** The play of the fitting pass with the best training EV so far; at the cap, the play kept. */
+        Policy best;
         private double[][] bestSums;
         private double[][] lastSums;
         private long roundStart;
+        private int flipping;
 
         // The round in progress, added up from its threads' sums.
         private KeyCells sums;
-        private KeyLine mass;
-        private KeyLine rounds;
-        private double valued;
+        private KeyMass mass;
         private boolean firstPass;
 
         // The last round: per (group, cell), and per shoe for the standard errors.
         double[] finalGap;
         double[] finalReach;
-        double[] saa;
-        double[] sab;
+        double[] scc;
+        double[] scb;
         double[] sbb;
         double[] checkGap;
         double[] checkReach;
+        /** Each later cell's sign under the play kept, +1 standing, and the gain the last pass's sums give it there. */
+        private double[] sign;
+        private double[] centre;
         /** The largest difference between the last round's later sums and those of the pass that kept its play. */
         double finalAgreement;
         /** First decisions refitted from the last round's values that differ from the play kept (only at the cap). */
         int refitDiffers;
+        /**
+         * Under the play kept, by the last round's sums over the training states: the
+         * first-decision cells (group, deal) and later cells no training state reaches, and
+         * those whose best move ties with the chart's, or whose sum is exactly zero. Each plays
+         * the chart's move.
+         */
         int firstNoReach;
         int firstTies;
+        int laterNoReach;
+        int laterTies;
 
         Strategy(SystemScorer scorer, SystemScorer.Parts parts, SystemScorer.InsuranceParts ip, CountKeys.Count count,
                  int pen, int fold, boolean half, double[] w, double[] units, SystemScorer.PlayValues initial) {
@@ -530,7 +570,13 @@ final class FullIndexFit {
                 throw new IllegalArgumentException("values for " + values.hit.length + " parts, not " + parts.key.length);
             }
             SystemScorer.Fit f0 = scorer.fit(parts, p, use, groups, table, w);
-            now = new Policy(f0, rankings(st, scorer.rules(), f0), null, 0, 0);
+            now = new Policy(f0, null, null, 0, 0);
+            chartRanks = new PlayerMove[Deals.COUNT][];
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (!Deals.playerNatural(i)) {
+                    chartRanks[i] = chartRanking(scorer.rules(), i);
+                }
+            }
         }
 
         @Override
@@ -584,7 +630,7 @@ final class FullIndexFit {
             if (e == null) {
                 int r = Deals.P1[i];
                 int up = Deals.UP[i];
-                PlayerMove[][] rank = pol.ranking[g1];
+                PlayerMove[][] rank = pol.ranking == null ? chartRanks : pol.ranking[g1];
                 SplitPlay play = new SplitPlay(r, up, (total, soft) -> stands(pol, g2, total, soft, up), d -> rank[d]);
                 byte[] print = SplitValues.fingerprint(scorer.rules(), i, play);
                 e = new SplitEntry(play, print, Arrays.equals(print, chartPrint));
@@ -599,25 +645,29 @@ final class FullIndexFit {
             if (phase == Phase.FITTING || phase == Phase.CLEANUP) {
                 sums = new KeyCells();
                 if (firstPass) {
-                    mass = new KeyLine();
-                    rounds = new KeyLine();
-                    valued = 0;
+                    mass = new KeyMass();
                 }
             } else if (phase == Phase.FINAL) {
                 int cells = later.count() * CELLS;
                 finalGap = new double[cells];
                 finalReach = new double[cells];
-                saa = new double[cells];
-                sab = new double[cells];
+                scc = new double[cells];
+                scb = new double[cells];
                 sbb = new double[cells];
                 checkGap = new double[cells];
                 checkReach = new double[cells];
+                sign = new double[cells];
+                centre = new double[cells];
+                for (int at = 0; at < cells; at++) {
+                    sign[at] = now.stands[at] ? 1 : -1;
+                    centre[at] = lastSums == null || lastSums[1][at] == 0 ? 0 : sign[at] * lastSums[0][at] / lastSums[1][at];
+                }
             }
         }
 
         /** A new thread's sums for this round. */
         Acc acc() {
-            return new Acc(phase == Phase.FINAL ? later.count() * CELLS : 0);
+            return phase == Phase.FINAL ? new Acc(later.count() * CELLS, sign, centre) : new Acc(0, null, null);
         }
 
         /** Adds one thread's sums of the round. */
@@ -626,8 +676,8 @@ final class FullIndexFit {
                 for (int at = 0; at < finalGap.length; at++) {
                     finalGap[at] += acc.gap[at];
                     finalReach[at] += acc.reach[at];
-                    saa[at] += acc.saa[at];
-                    sab[at] += acc.sab[at];
+                    scc[at] += acc.scc[at];
+                    scb[at] += acc.scb[at];
                     sbb[at] += acc.sbb[at];
                     checkGap[at] += acc.checkGap[at];
                     checkReach[at] += acc.checkReach[at];
@@ -637,8 +687,6 @@ final class FullIndexFit {
             sums.addAll(acc.sums);
             if (firstPass) {
                 mass.addAll(acc.mass);
-                rounds.addAll(acc.rounds);
-                valued += acc.valued;
             }
         }
 
@@ -680,10 +728,8 @@ final class FullIndexFit {
                 }
                 if (total > 0) {
                     double u = units == null ? 1 : units[j];
-                    acc.valued += u;
                     for (int k = 0; k < wk.n; k++) {
-                        acc.mass.add(wk.keys[k], u * wk.reach[k] / total);
-                        acc.rounds.add(wk.keys[k], wk.reach[k]);
+                        acc.mass.add(wk.keys[k], u * wk.reach[k] / total, wk.reach[k]);
                     }
                 }
             }
@@ -760,11 +806,10 @@ final class FullIndexFit {
             passes++;
             sums = null;
             mass = null;
-            rounds = null;
             if (changes[0] == 0 && changes[1] == 0) {
                 converged = true;
                 phase = Phase.FINAL;
-            } else if (passes == MAX_PASSES) {
+            } else if (passes == maxPasses) {
                 capped = true;
                 now = best;
                 lastSums = bestSums;
@@ -779,14 +824,19 @@ final class FullIndexFit {
             double[][] gr = sums.byGroup(later);
             lastSums = gr;
             sums = null;
-            history.add(new PassRecord(true, ev, 0, losing(now, gr), seconds));
+            history.add(new PassRecord(true, ev, 0, flipping, seconds));
             cleanUpOrFinish(gr);
         }
 
-        /** Flips the later cells that lose under the play in force and walks again, unless the clean-ups are spent. */
+        /**
+         * Flips the later cells that lose under the play in force, by the sums of the pass that
+         * walked it, and walks again, unless none loses or the clean-ups are spent. Flipping one
+         * cell gains its loss exactly; flipping several at once can interact, which is why the
+         * play is walked again rather than taken as fixed.
+         */
         private void cleanUpOrFinish(double[][] gr) {
             int losing = losing(now, gr);
-            if (losing == 0 || cleanUps == CLEAN_UPS) {
+            if (losing == 0 || cleanUps == cleanUpLimit) {
                 phase = Phase.FINAL;
                 return;
             }
@@ -797,6 +847,7 @@ final class FullIndexFit {
                 }
             }
             flipped += losing;
+            flipping = losing;
             now = now.withStands(s);
             cleanUps++;
             phase = Phase.CLEANUP;
@@ -811,6 +862,21 @@ final class FullIndexFit {
                 }
             }
             finalAgreement = most;
+            // A state of weight zero, which a resample leaves out, is never walked; it takes the
+            // stored values, which count for nothing beside its weight but keep every sum a number.
+            for (int j = 0; j < w.length; j++) {
+                if (w[j] != 0) {
+                    continue;
+                }
+                double[] mv = st.move[p.states[j]];
+                for (int i = 0; i < Deals.COUNT; i++) {
+                    int cell = j * Deals.COUNT + i;
+                    for (int x = parts.from(cell); x < parts.to(cell); x++) {
+                        values.hit[x] = mv[i * MOVES + HIT];
+                        values.split[x] = mv[i * MOVES + SPLIT];
+                    }
+                }
+            }
             SystemScorer.Fit f = scorer.fit(parts, p, use, groups, table, w, values);
             int differ = 0;
             int noReach = 0;
@@ -831,6 +897,15 @@ final class FullIndexFit {
             refitDiffers = differ;
             firstNoReach = noReach;
             firstTies = ties;
+            laterNoReach = 0;
+            laterTies = 0;
+            for (int at = 0; at < finalReach.length; at++) {
+                if (finalReach[at] == 0) {
+                    laterNoReach++;
+                } else if (finalGap[at] == 0) {
+                    laterTies++;
+                }
+            }
             phase = Phase.DONE;
         }
 
@@ -864,7 +939,12 @@ final class FullIndexFit {
             return weight == 0 ? Double.NaN : num / weight;
         }
 
-        /** The later groups from pass 0's reach: each training state's mass spread over its later keys by its reach. */
+        /**
+         * The later groups from pass 0's reach: each training state's mass spread over its later
+         * keys by its reach, the walk starting at the key the most rounds reach, and a group
+         * closing at M_play = 5 sqrt(n), n the valued states of the training fold (each counted
+         * units[j] times), as the first-decision groups close.
+         */
         private SystemScorer.Groups laterGroups() {
             if (mass.hi < mass.lo) {
                 return new SystemScorer.Groups(new int[]{0}, new int[]{0});
@@ -872,9 +952,13 @@ final class FullIndexFit {
             int span = mass.hi - mass.lo + 1;
             boolean[] held = new boolean[span];
             for (int k = 0; k < span; k++) {
-                held[k] = rounds.v[k] > 0;
+                held[k] = mass.rounds[k] > 0;
             }
-            return SystemScorer.grow(mass.lo, mass.v.clone(), rounds.v.clone(), held, scorer.threshold(valued));
+            double valued = 0;
+            for (int j : use) {
+                valued += units == null ? 1 : units[j];
+            }
+            return SystemScorer.grow(mass.lo, mass.mass.clone(), mass.rounds.clone(), held, scorer.threshold(valued));
         }
 
         private static boolean[] chartStands(int groups) {
@@ -941,10 +1025,10 @@ final class FullIndexFit {
         }
 
         /** A split's answers to the two-card decisions of its split hands, read from a play's rankings at group g. */
-        private static byte[] firstPrint(RoundRules rules, Policy pol, int g, int i) {
+        private byte[] firstPrint(RoundRules rules, Policy pol, int g, int i) {
             int r = Deals.P1[i];
             int up = Deals.UP[i];
-            PlayerMove[][] rank = pol.ranking[g];
+            PlayerMove[][] rank = pol.ranking == null ? chartRanks : pol.ranking[g];
             return SplitValues.fingerprint(rules, i, new SplitPlay(r, up,
                     (total, soft) -> PlayerTree.CHART.stands(total, soft, up, 0), d -> rank[d]));
         }
@@ -956,15 +1040,24 @@ final class FullIndexFit {
             return now.stands[g * CELLS + cell];
         }
 
-        /** A later cell's one-flip gain per time it comes up, under the play kept, and its standard error. */
+        /**
+         * A later cell's one-flip gain per time it comes up, under the play kept, and its
+         * standard error: the gain is d = sign x G / R, with G and R the training states' summed
+         * gap and reach and sign +1 where the play stands; the SE is sqrt(n / (n - 1) x the sum
+         * over shoes of (sign x a - d x b)^2) / R, by the delta method with shoes as clusters,
+         * every shoe of the training fold counted, as SystemScorer.resolve takes a first
+         * decision's. The sum is kept about the gain the last pass found, which is d but for
+         * rounding, so the residuals are added up as they are and not as the difference of large
+         * squares, which loses every digit for a cell one shoe reaches.
+         */
         double[] gainAndSe(int at) {
             double r = finalReach[at];
             if (r == 0) {
                 return null;
             }
-            double sign = now.stands[at] ? 1 : -1;
-            double d = sign * finalGap[at] / r;
-            double e2 = saa[at] - 2 * d * sign * sab[at] + d * d * sbb[at];
+            double d = sign[at] * finalGap[at] / r;
+            double off = d - centre[at];
+            double e2 = scc[at] - 2 * off * scb[at] + off * off * sbb[at];
             double inflate = shoes > 1 ? (double) shoes / (shoes - 1) : 0;
             return new double[]{d, Math.sqrt(inflate * Math.max(0, e2)) / r};
         }
@@ -1026,9 +1119,79 @@ final class FullIndexFit {
             return new int[]{compared, disagree, settled, settledDisagree};
         }
 
-        /** Later cells of the play kept that the refit left to the chart: no reach, and a sum of exactly zero. */
-        int[] laterChartCells() {
-            return new int[]{now.laterNoReach, now.laterTies};
+        /** What the report needs of this strategy once it is done, without its values. */
+        Summary summary() {
+            if (phase != Phase.DONE) {
+                throw new IllegalStateException(this + " is not done");
+            }
+            return new Summary(this);
+        }
+    }
+
+    /**
+     * A finished strategy as the report reads it: how its passes went, its later groups and
+     * answers, each later cell's one-flip gain, standard error and frequency under the play
+     * kept (NaN where no training state reaches it), the cells left to the chart, and for a
+     * half fit the in-sample check. It holds none of the strategy's per-state values, so a
+     * batch's strategies can be let go once their counts are scored.
+     */
+    static final class Summary {
+        final String name;
+        final int pen;
+        final int fold;
+        final boolean half;
+        final int passes;
+        final boolean converged;
+        final boolean capped;
+        final int bestPass;
+        final int cleanUps;
+        final int flipped;
+        final List<PassRecord> history;
+        final SystemScorer.Groups later;
+        final boolean[] stands;
+        final double[] gain;
+        final double[] se;
+        final double[] frequency;
+        final int laterNoReach;
+        final int laterTies;
+        final int firstNoReach;
+        final int firstTies;
+        final int refitDiffers;
+        final double finalAgreement;
+        /** For a half fit, inSampleCheck's four counts; null otherwise. */
+        final int[] inSample;
+
+        private Summary(Strategy t) {
+            name = t.toString();
+            pen = t.pen;
+            fold = t.fold;
+            half = t.half;
+            passes = t.passes;
+            converged = t.converged;
+            capped = t.capped;
+            bestPass = t.bestPass;
+            cleanUps = t.cleanUps;
+            flipped = t.flipped;
+            history = new ArrayList<>(t.history);
+            later = t.later;
+            stands = t.now.stands.clone();
+            int cells = stands.length;
+            gain = new double[cells];
+            se = new double[cells];
+            frequency = new double[cells];
+            for (int at = 0; at < cells; at++) {
+                double[] ds = t.gainAndSe(at);
+                gain[at] = ds == null ? Double.NaN : ds[0];
+                se[at] = ds == null ? Double.NaN : ds[1];
+                frequency[at] = ds == null ? Double.NaN : t.finalReach[at] / t.weight;
+            }
+            laterNoReach = t.laterNoReach;
+            laterTies = t.laterTies;
+            firstNoReach = t.firstNoReach;
+            firstTies = t.firstTies;
+            refitDiffers = t.refitDiffers;
+            finalAgreement = t.finalAgreement;
+            inSample = t.half ? t.inSampleCheck() : null;
         }
     }
 
@@ -1484,5 +1647,65 @@ final class FullIndexFit {
             v += top;
         }
         return v;
+    }
+
+    // ------------------------------------------------------------------ batches
+
+    /** What scoreAll gives. */
+    static final class Scored {
+        /** Each count's Result, in the order the counts were given. */
+        final List<SystemScorer.Result> results = new ArrayList<>();
+        /** The full-scope perfect row's value of each state before insurance, NaN where not worked out; null if not asked for. */
+        double[] perfect;
+        /** Each batch's rounds, in order. */
+        final List<List<RoundStats>> rounds = new ArrayList<>();
+    }
+
+    /**
+     * Scores every count given both ways in one run of the scorer each, playing its first
+     * decisions only and playing its full-index fit, on the same resamples
+     * (SystemScorer.score), with its ace side-count variant where it has one.
+     *
+     * The counts go in batches of the size given. A batch's strategies, both folds and the
+     * learning curve's half fits at each penetration given, are fitted in one run of passes,
+     * each state's trees built from the trees given (afresh each round, for the full run) and
+     * set up once a round for every strategy of a count. Each count of the batch is then
+     * scored and its strategies let go, so the memory the values take is one batch's
+     * (FULL_INDEX_PLAYS.md section 3). A count's Result.widen is set from the map given, 1 where
+     * it has none. The full-scope perfect row is worked out in the first batch's run when asked.
+     * Split values are kept per state from round to round when keepSplits, which is worth it
+     * when the trees are kept too.
+     */
+    static Scored scoreAll(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens, int batch,
+                           int threads, boolean keepSplits, boolean perfect, Map<CountKeys.Count, Double> widen)
+            throws Exception {
+        if (batch < 1) {
+            throw new IllegalArgumentException("a batch holds at least one count");
+        }
+        Scored out = new Scored();
+        for (int from = 0; from < counts.size(); from += batch) {
+            List<CountKeys.Count> some = counts.subList(from, Math.min(counts.size(), from + batch));
+            List<Fits> fits = plan(scorer, some, pens, true);
+            List<Strategy> all = new ArrayList<>();
+            for (Fits f : fits) {
+                all.addAll(f.all());
+            }
+            boolean first = from == 0;
+            FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), trees, threads, keepSplits, perfect && first);
+            fit.run(all);
+            if (perfect && first) {
+                out.perfect = fit.perfect;
+            }
+            out.rounds.add(fit.rounds);
+            for (int k = 0; k < fits.size(); k++) {
+                CountKeys.Count c = some.get(k);
+                SystemScorer.Result r = scorer.score(c, CountKeys.sideCountVariant(c), fits.get(k));
+                Double ratio = widen == null ? null : widen.get(c);
+                r.widen = ratio == null ? 1 : ratio;
+                out.results.add(r);
+                fits.set(k, null);
+            }
+        }
+        return out;
     }
 }

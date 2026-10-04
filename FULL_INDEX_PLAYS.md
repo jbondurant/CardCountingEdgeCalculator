@@ -31,9 +31,14 @@ The last two are what this step adds. They are ceilings, which no count reaches.
 
 ## 1. Scope
 
-- **Later decisions of the dealt hand.** Every decision after the first is count-based.
-  Under these rules the only later choices are hit and stand: doubling, splitting and
-  surrender are first-decision moves (ROUND_CONTRACT.md; Montreal offers no surrender).
+- **Later decisions of the dealt hand.** Under these rules the only later choices are hit
+  and stand: doubling, splitting and surrender are first-decision moves (ROUND_CONTRACT.md;
+  Montreal offers no surrender). They are count-based at the contested spots: a hand of
+  three or more cards at hard 12 to 16 or soft 13 to 18, against each up-card, 110 spots
+  in all. Everywhere else a later decision plays the chart: it hits hard 11 or less and
+  stands on hard 17 or more and soft 19 or more. The contested walk of section 2 visits
+  only the nodes those spots can reach and plays the chart at every other node whatever it
+  is told, so a fit cannot leave the chart there by accident.
 - **First decisions and insurance** are count-based as now, refitted with the new values.
 - **Split hands** play by the system's own fitted plays, keyed on its count at the
   moment of the split, which is the deal's play key:
@@ -41,6 +46,11 @@ The last two are what this step adds. They are ceilings, which no count reaches.
   - the first-decision fit of deal (r, x, up) for a split hand's two-card decision,
     restricted to the moves legal after a split;
   - the fit of (r, r, up) for a resplit.
+
+  A first-decision fit is read as the deal's legal moves ranked best first by the
+  per-(group, deal) sums the fit chose its move from, and a split hand plays the first of
+  them that is legal after a split. A (group, deal) no training state reaches ranks its
+  moves as the chart plays them.
 
   The count does not move with the cards drawn to split hands, so this is a slight
   lower bound on count-based play after a split. Moving it would make a hand's play
@@ -167,26 +177,37 @@ the tree. At the end of the pass, both are refitted:
 
 Where a cell has no training reach, or a sum of exactly zero, it plays the chart's move,
 and the report counts such cells. Pass 0's policy is the stored first-decision fit with
-the chart after the first move.
+the chart after the first move, split hands included: its values are the stored ones, and
+its training EV is the first-decision-only play's.
 
-**Convergence.** Passes repeat until no first-decision or later cell changes, at most six.
-Simultaneous updates of pooled cells are not guaranteed to improve, so every pass records
-the training fold's actual weighted EV, and if the cap is reached the best pass's policy is
-kept and flagged, with the changes per pass printed. A final evaluation pass then computes
-every later cell's one-flip gain and its standard error under the policy actually scored.
-A cell whose fitted choice has a negative gain is flipped and the pass repeated, up to
-two clean-up passes. After that, its bound is charged with the negative gap.
+A first-decision cell counts as changed when its move changes, or, for a pair deal, when
+any answer its split hands read from the rankings changes.
+
+**Convergence.** Passes repeat until no first-decision or later cell changes, at most six,
+pass 0 among them. Simultaneous updates of pooled cells are not guaranteed to improve, so
+every pass records the training fold's actual weighted EV, and if the cap is reached the
+best pass's policy is kept and flagged, with the changes per pass printed. A final
+evaluation pass then computes every later cell's one-flip gain and its standard error under
+the policy actually scored. A cell whose fitted choice has a negative gain is flipped and
+the pass repeated, up to two clean-up passes; the cells are flipped together, by the sums of
+the pass that walked the play, and the clean-up records its own EV. After that, its bound is
+charged with the negative gap. A converged policy has no such cell: each of its later cells
+already takes the sign of its own sum. At the cap the first decisions the scorer refits from
+the kept policy's values can differ from the kept ones, and the strategy counts them.
 
 **Which Hit values a state gets.** For each (system, penetration), a state in fold φ needs
 two Hit arrays:
 - under L_φ, fitted on the other fold, for scoring it as a test state;
 - under L_{1−φ}, fitted on its own fold, for the training sums of strategy 1−φ.
 
-The arrays are kept per (penetration, fit), never pooled. Systems are scored in batches,
-with the trees rebuilt per batch, so memory stays bounded; at about 0.1 s of CPU a state,
-a rebuild is cheap. Tests fail if a test state is scored under the later plays fitted on
-its own fold, or if a fold's first decisions are fitted on Hit values from the other
-fold's later plays.
+The arrays, and the Split arrays beside them, are kept per (penetration, fit), never
+pooled. Systems are scored in batches, with the trees rebuilt per batch, so memory stays
+bounded; at about 0.1 s of CPU a state, a rebuild is cheap. A batch's strategies, both
+folds and the half fits at every penetration, run their passes together: a state's trees
+are built once a round for all of them and set up once for each count. Once they are done,
+each count of the batch is scored both ways and its arrays let go (FullIndexFit.scoreAll).
+Tests fail if a test state is scored under the later plays fitted on its own fold, or if a
+fold's first decisions are fitted on Hit values from the other fold's later plays.
 
 **Decision resolution** covers the later cells, and split hands through the
 first-decision cells they use. A later cell is settled when its one-flip gain under the
@@ -202,8 +223,10 @@ the whole file still includes the later cells.
 
 **In-sample gaps.** A training fold's Hit values include later plays fitted on that fold,
 so near-zero gaps lean slightly toward settled. The report states this. As a check, the
-later cells' signs are recomputed on the other half of the training fold and the number
-that disagree is printed.
+later cells' signs of each learning-curve half fit are recomputed on the other half of its
+training fold, where it was not fitted, under the half fit's play. The report prints the
+cells compared (reached in both halves, with a sum not zero on the other), the number that
+disagree, and the same two among the cells settled on the half fitted.
 
 ## 4. Scoring
 
@@ -222,8 +245,12 @@ What is reported:
 - **Two playing efficiencies.**
   - The first-decision PE, as now.
   - The full PE: (system − null) / (perfect − null), with the null count's full fit and
-    a new perfect row that plays every decision of the round, split hands included, from
-    each state's own composition.
+    a new perfect row. It plays every decision of the dealt hand best from each state's
+    own composition: each deal's best first move, Hit valued by a walk of every node that
+    takes the better of standing and hitting at each, and insurance exactly when it pays.
+    Its split hands play the chart, as the stored V(Split) has them, so it leaves out
+    perfect play on split hands, which the review's figures at the top put at 0.0097% a
+    round flat; the report says so.
 - **A check of what the indices would gain if fitted for the 1-8 schedule.** On one
   system, the plays are refitted with the training fold's schedule bet as a weight; the
   report gives how many cells change and what that is worth.
@@ -231,8 +258,8 @@ What is reported:
   resolution and sizing.
 
 **The bootstrap** refits the first decisions, insurance and bets per resample, as now. It
-holds the later-play fit fixed, since refitting it per resample would mean a pass of trees
-per resample. COUNTING_COMPARISON.md section 6 found that holding a play fit fixed
+holds the later-play fit fixed, and with it every Hit and Split value, the post-split play
+included, since refitting it per resample would mean a pass of trees per resample. COUNTING_COMPARISON.md section 6 found that holding a play fit fixed
 understates a difference's SE by 2 to 3 times. So the effect here is measured before the
 full run, as that section measured it:
 - the trees of the first 1,417 shoes are kept in memory, about 330 MB;
