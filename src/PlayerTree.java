@@ -221,9 +221,10 @@ final class PlayerTree {
         return 3 + 1 + 2 + smallest;
     }
 
-    /** V_stand of the hand holding p1 and p2 against up, unconditional; NaN if the state cannot deal them. */
+    /** V_stand of the hand holding p1 and p2 against up, unconditional; NaN if the state cannot deal them or they are a natural. */
     double standValue(int p1, int p2, int up) {
-        return stand[up][Hands.ALL.start(p1, p2)];
+        int h = Hands.ALL.start(p1, p2);
+        return h < 0 ? Double.NaN : stand[up][h];
     }
 
     /** The tree for one count, from the cards dealt before the round by kind (ShoeRun), which must leave this state. */

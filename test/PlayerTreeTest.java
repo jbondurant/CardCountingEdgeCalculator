@@ -69,6 +69,9 @@ public class PlayerTreeTest {
             for (int i = 0; i < Deals.COUNT; i++) {
                 double stored = r.values[StateValuer.slot(i, PlayerMove.Stand)];
                 if (Double.isNaN(stored)) {
+                    if (Deals.playerNatural(i)) {
+                        assertTrue(Double.isNaN(tree.standValue(Deals.P1[i], Deals.P2[i], Deals.UP[i])));
+                    }
                     continue;
                 }
                 double v = tree.standValue(Deals.P1[i], Deals.P2[i], Deals.UP[i]) / noNatural(shoe, i);
