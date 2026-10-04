@@ -489,6 +489,8 @@ public final class ExactRound implements RoundValuer {
         private final double[][][] fall = new double[11][][];
         private final double[][] inverseFall;
         private final int[] scratch = new int[11];
+        /** columns[r][k][c] = fall[r][c][k], made as they are needed. */
+        private final double[][][] columns = new double[11][][];
 
         private DealerOutcomes(DealerHands dealer, int[] state) {
             this.dealer = dealer;
@@ -535,6 +537,86 @@ public final class ExactRound implements RoundValuer {
                 won += settle[o] * outcomes[o];
             }
             return won;
+        }
+
+        /** stood for shoe s of the distributions outcomes(counts, cards, shoes, out) leaves in out[o][s]. */
+        static double stood(int total, double[][] outcomes, int s) {
+            double[] settle = SETTLE[total];
+            double won = 0;
+            for (int o = 0; o < OUTCOMES; o++) {
+                won += settle[o] * outcomes[o][s];
+            }
+            return won;
+        }
+
+        /**
+         * The most cards a shoe can hold and the dealer still run out of it: a shoe with more
+         * is one the dealer always finishes from.
+         */
+        int mostCardsToRunOutOf() {
+            return dealer.maxUnfinishedSize;
+        }
+
+        /**
+         * The dealer's distributions from many shoes at once, into out[o][s]: shoe s holds
+         * counts[r][s] cards of rank r and cards[s] in all, no more of any rank than the state,
+         * and more cards than the dealer can run out of. A player tree needs one for every hand
+         * against every up-card, about 30,000 a state, and going dealer hand by dealer hand across
+         * the shoes is several times faster than shoe by shoe. Each shoe's terms are still the
+         * ones outcomes(shoe) adds, multiplied and added in the same order, so every distribution
+         * is the one it gives, to the last bit: a dealer hand needing more of a rank than the shoe
+         * holds has a factor of 0 here where outcomes(shoe) stops at it, and adds nothing either way.
+         */
+        void outcomes(int[][] counts, int[] cards, int shoes, double[][] out) {
+            DealerHands d = dealer;
+            for (int s = 0; s < shoes; s++) {
+                if (cards[s] <= d.maxUnfinishedSize) {
+                    throw new IllegalArgumentException("a shoe of " + cards[s] + " cards may run the dealer out");
+                }
+                for (int r = 1; r <= 10; r++) {
+                    if (counts[r][s] < 0 || counts[r][s] > state[r]) {
+                        throw new IllegalArgumentException("shoe " + s + " holds " + counts[r][s] + " of rank " + r
+                                + ", the state " + state[r]);
+                    }
+                }
+            }
+            for (int o = 0; o < OUTCOMES; o++) {
+                Arrays.fill(out[o], 0, shoes, 0);
+            }
+            double[] p = new double[shoes];
+            for (int i = 0; i < d.entries; i++) {
+                Arrays.fill(p, 0, shoes, d.orders[i]);
+                for (int j = d.start[i]; j < d.start[i + 1]; j++) {
+                    double[] f = fallColumn(d.ranks[j], d.counts[j]);
+                    int[] c = counts[d.ranks[j]];
+                    for (int s = 0; s < shoes; s++) {
+                        p[s] *= f[c[s]];
+                    }
+                }
+                int size = d.size[i];
+                double[] into = out[d.outcome[i]];
+                for (int s = 0; s < shoes; s++) {
+                    if (p[s] != 0 && size <= cards[s]) {
+                        into[s] += p[s] * inverseFall[cards[s]][size];
+                    }
+                }
+            }
+        }
+
+        /** fallColumn(r, k)[c] = fall[r][c][k], the column kept apart so the loop across shoes reads one array. */
+        private double[] fallColumn(int r, int k) {
+            if (columns[r] == null) {
+                columns[r] = new double[fall[r][0].length][];
+            }
+            double[] col = columns[r][k];
+            if (col == null) {
+                col = new double[fall[r].length];
+                for (int c = 0; c < col.length; c++) {
+                    col[c] = fall[r][c][k];
+                }
+                columns[r][k] = col;
+            }
+            return col;
         }
     }
 

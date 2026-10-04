@@ -913,4 +913,68 @@ public class ExactRoundTest {
         }
         return null;
     }
+
+    /**
+     * The player tree asks for the dealer's distributions from thousands of shoes of one state
+     * at once, worked out dealer hand by dealer hand across them. Each must be the distribution
+     * outcomes gives that shoe alone, to the last bit, including where a shoe lacks the cards a
+     * dealer hand needs; a shoe the dealer could run out of is refused.
+     */
+    @Test
+    public void dealerOutcomesForManyShoesAreEachShoesOwn() {
+        RoundRules rules = montreal(2, 4);
+        java.util.Random rnd = new java.util.Random(20261007L);
+        ExactRound engine = new ExactRound(rules);
+        int compared = 0;
+        for (int c = 0; c < 20; c++) {
+            int[] state = new int[11];
+            for (int r = 1; r <= 10; r++) {
+                state[r] = c % 4 == 0 ? rnd.nextInt(5) + (r == 10 ? 12 : 0) : (r == 10 ? 40 + rnd.nextInt(89) : rnd.nextInt(33));
+            }
+            int up = 1 + rnd.nextInt(10);
+            ExactRound.DealerOutcomes dealer = engine.dealerOutcomes(state, up);
+            int shoes = 300;
+            int[][] counts = new int[11][shoes];
+            int[] cards = new int[shoes];
+            int[][] each = new int[shoes][];
+            int made = 0;
+            while (made < shoes) {
+                int[] shoe = new int[11];
+                int n = 0;
+                for (int r = 1; r <= 10; r++) {
+                    shoe[r] = Math.max(0, state[r] - rnd.nextInt(4));
+                    n += shoe[r];
+                }
+                if (n <= dealer.mostCardsToRunOutOf()) {
+                    int[] tiny = shoe;
+                    int size = n;
+                    assertThrows(IllegalArgumentException.class, () -> dealer.outcomes(new int[][]{
+                            null, {tiny[1]}, {tiny[2]}, {tiny[3]}, {tiny[4]}, {tiny[5]}, {tiny[6]}, {tiny[7]}, {tiny[8]},
+                            {tiny[9]}, {tiny[10]}}, new int[]{size}, 1, new double[ExactRound.DealerOutcomes.OUTCOMES][1]));
+                    break;
+                }
+                for (int r = 1; r <= 10; r++) {
+                    counts[r][made] = shoe[r];
+                }
+                cards[made] = n;
+                each[made] = shoe;
+                made++;
+            }
+            double[][] many = new double[ExactRound.DealerOutcomes.OUTCOMES][shoes];
+            dealer.outcomes(counts, cards, made, many);
+            double[] one = new double[ExactRound.DealerOutcomes.OUTCOMES];
+            for (int s = 0; s < made; s++) {
+                assertFalse(dealer.outcomes(each[s], one));
+                for (int o = 0; o < one.length; o++) {
+                    assertEquals(one[o], many[o][s], 0.0, "state " + c + " shoe " + s + " outcome " + o);
+                }
+                for (int total = 4; total <= 21; total++) {
+                    assertEquals(ExactRound.DealerOutcomes.stood(total, one),
+                            ExactRound.DealerOutcomes.stood(total, many, s), 0.0);
+                }
+                compared++;
+            }
+        }
+        assertTrue(compared > 3000, compared + " shoes compared");
+    }
 }
