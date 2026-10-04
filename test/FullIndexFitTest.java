@@ -913,11 +913,12 @@ public class FullIndexFitTest {
 
     /**
      * Stopped at the cap after pass 0, a strategy keeps pass 0's play, the stored first-decision
-     * fit with the chart after the first move, and is flagged. Its training EV is the stored
-     * values'. Its later cells that lose by its own sums are flipped and the training states
+     * fit with the chart after the first move, and is flagged. Its training EV is the test's: Hit
+     * at the stored values, which the chart's later play gives, and Split under the stored fit's
+     * ranked moves for split hands, which leave the stored values where they leave the chart's
+     * answers. Its later cells that lose by its own sums are flipped and the training states
      * walked again, and the same once more from that pass's sums, up to two clean-ups; the test
-     * walks each step itself and finds the same cells, EVs and final play. Where the passes reach
-     * the cap after several passes, the play kept is that of the pass with the best training EV.
+     * walks each step itself and finds the same cells, EVs and final play.
      */
     @Test
     public void atTheCapTheBestPassIsKeptAndItsLosingCellsAreFlipped() throws Exception {
@@ -925,11 +926,11 @@ public class FullIndexFitTest {
         Run r = new Run(fx, Arrays.asList(NULL, HI_LO), 1, FullIndexFit.CLEAN_UPS, false);
         int flips = 0;
         int cleanUps = 0;
+        int splitsMoved = 0;
         for (FullIndexFit.Strategy t : r.strategies()) {
             assertTrue(t.capped && !t.converged, t.toString());
             assertEquals(1, t.passes);
             assertEquals(0, t.bestPass);
-            assertNull(t.now.ranking);
             SystemScorer.Fit f0 = fx.scorer.fit(t.parts, t.p, t.use, t.groups, t.table, t.w);
             for (int g = 0; g < t.groups.count(); g++) {
                 assertArrayEquals(f0.move[g], t.now.first.move[g]);
@@ -945,11 +946,21 @@ public class FullIndexFitTest {
                     }
                 }
             }
-            assertEquals(ev(fx, t, t.use, f0.move, stored), t.history.get(0).ev, EXACT);
             boolean[] play = new boolean[t.later.count() * FullIndexFit.CELLS];
             for (int at = 0; at < play.length; at++) {
                 play[at] = FullIndexFit.chartStands(at % FullIndexFit.CELLS);
             }
+            double[][] pass0 = values(fx, t, t.use, t.later, play, t.now.ranking);
+            for (int j : t.use) {
+                int cell = j * Deals.COUNT;
+                for (int x = t.parts.from(cell); x < t.parts.to(cell + Deals.COUNT - 1); x++) {
+                    if (!Double.isNaN(pass0[0][x])) {
+                        assertEquals(stored[0][x], pass0[0][x], 1e-15);
+                    }
+                    splitsMoved += !Double.isNaN(pass0[1][x]) && Math.abs(pass0[1][x] - stored[1][x]) > 1e-15 ? 1 : 0;
+                }
+            }
+            assertEquals(ev(fx, t, t.use, f0.move, pass0), t.history.get(0).ev, EXACT);
             int k = 1;
             while (true) {
                 LaterSums ls = laterSums(fx, t, t.use, t.later, play, f0.move);
@@ -967,7 +978,7 @@ public class FullIndexFitTest {
                 FullIndexFit.PassRecord pr = t.history.get(k);
                 assertTrue(pr.cleanUp);
                 assertEquals(losing, pr.laterChanges, t + " clean-up " + k);
-                assertEquals(ev(fx, t, t.use, f0.move, values(fx, t, t.use, t.later, next, null)), pr.ev, EXACT);
+                assertEquals(ev(fx, t, t.use, f0.move, values(fx, t, t.use, t.later, next, t.now.ranking)), pr.ev, EXACT);
                 flips += losing;
                 play = next;
                 k++;
@@ -977,7 +988,8 @@ public class FullIndexFitTest {
             assertArrayEquals(play, t.now.stands, t.toString());
             cleanUps += k - 1;
         }
-        assertTrue(flips >= 20 && cleanUps >= 4, flips + " cells flipped in " + cleanUps + " clean-ups");
+        assertTrue(flips >= 20 && cleanUps >= 4 && splitsMoved >= 1, flips + " cells flipped in " + cleanUps
+                + " clean-ups; " + splitsMoved + " of pass 0's Split values away from the stored ones");
     }
 
     /**
@@ -1129,17 +1141,44 @@ public class FullIndexFitTest {
 
     /**
      * Full play and first-decision-only play are scored in one run on the same resamples, so the
-     * gain from full play has a paired interval. Where the play kept is pass 0's, the stored
-     * first-decision fit with the chart after, full play is first-decision-only play: on every
-     * resample the two agree to the bit, the gain is 0 with an SE of 0, and the decision
-     * resolution and the learning curve are the first-decision ones. Where the full fit moves
-     * the play, the gain's interval is the interval of the resample-by-resample differences, and
-     * widening it by a ratio spreads those differences by the ratio about their mean.
+     * gain from full play has a paired interval. With the fits' values replaced by the stored
+     * ones, full play is first-decision-only play, so on every resample the two must agree to the
+     * bit, the gain must be 0 with an SE of 0, and the decision resolution and learning curve must
+     * be the first-decision ones, the later cells added: a resample scored otherwise, or a fold
+     * fitted on other states, would show. Where the full fit moves the play, the gain's interval
+     * is the interval of the resample-by-resample differences, and widening it by a ratio spreads
+     * those differences by the ratio about their mean.
      */
     @Test
     public void theGainFromFullPlayIsPairedResampleByResample() throws Exception {
+        Run capped = capped();
+        Fixture fx = capped.fx;
         for (CountKeys.Count c : Arrays.asList(NULL, HI_LO)) {
-            SystemScorer.Result res = capped().results.get(c);
+            FullIndexFit.Fits fits = capped.fits.get(c);
+            List<double[][]> held = new ArrayList<>();
+            for (FullIndexFit.Strategy t : fits.all()) {
+                held.add(new double[][]{t.values.hit.clone(), t.values.split.clone()});
+                for (int j = 0; j < t.p.states.length; j++) {
+                    double[] mv = fx.st.move[t.p.states[j]];
+                    for (int i = 0; i < Deals.COUNT; i++) {
+                        int cell = j * Deals.COUNT + i;
+                        for (int x = t.parts.from(cell); x < t.parts.to(cell); x++) {
+                            t.values.hit[x] = mv[i * MOVES + HIT];
+                            t.values.split[x] = mv[i * MOVES + SPLIT];
+                        }
+                    }
+                }
+            }
+            SystemScorer.Result res;
+            try {
+                res = fx.scorer.score(c, null, fits);
+            } finally {
+                List<FullIndexFit.Strategy> all = fits.all();
+                for (int k = 0; k < all.size(); k++) {
+                    System.arraycopy(held.get(k)[0], 0, all.get(k).values.hit, 0, held.get(k)[0].length);
+                    System.arraycopy(held.get(k)[1], 0, all.get(k).values.split, 0, held.get(k)[1].length);
+                }
+            }
             SystemScorer.Entry full = res.fullEntries.get(0);
             SystemScorer.Entry first = res.entries.get(0);
             assertTrue(full.fullPlay && !first.fullPlay);
@@ -1180,6 +1219,36 @@ public class FullIndexFitTest {
         assertEquals(2 * got.se, wide.se, 1e-12 * got.se);
         assertEquals(got.bias, wide.bias, 1e-15);
         assertThrows(IllegalArgumentException.class, () -> SystemScorer.gain(first, full, PEN, SystemScorer.FLAT, 1));
+    }
+
+    /**
+     * SystemScorer.scoreWith scores one resample of a count's own play with whatever values it is
+     * given, which is how the pilot scores a resample with its later plays refitted. Given the
+     * fits' own values it must give what the bootstrap gave that resample of the full-play entry,
+     * and given none what it gave the first-decision-only entry: the same refits of first
+     * decisions, insurance and bets, made afresh rather than from the estimate's play.
+     */
+    @Test
+    public void aResampleScoredWithGivenValuesIsTheBootstrapsResample() throws Exception {
+        Run r = run();
+        SystemScorer sc = r.fx.scorer;
+        SystemScorer.Pen pen = sc.pen(PEN);
+        SystemScorer.Result res = r.results.get(HI_LO);
+        SystemScorer.PlayValues[] values = r.fits.get(HI_LO).values(PEN);
+        for (int rs = 0; rs < 4; rs++) {
+            double[] wm = new double[pen.states.length];
+            double[] um = new double[pen.states.length];
+            for (int j = 0; j < wm.length; j++) {
+                um[j] = sc.boot.mult(rs, r.fx.st.shoe[pen.states[j]]);
+                wm[j] = pen.weight[j] * um[j];
+            }
+            double[] full = sc.scoreWith(HI_LO, PEN, values, wm, um);
+            double[] first = sc.scoreWith(HI_LO, PEN, null, wm, um);
+            for (int m = 0; m < SystemScorer.METRICS; m++) {
+                assertEquals(res.fullEntries.get(0).boot[PEN][m][rs], full[m], 1e-12, "resample " + rs + " metric " + m);
+                assertEquals(res.entries.get(0).boot[PEN][m][rs], first[m], 1e-12, "resample " + rs + " metric " + m);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ the half fits

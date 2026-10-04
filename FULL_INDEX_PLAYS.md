@@ -177,8 +177,9 @@ the tree. At the end of the pass, both are refitted:
 
 Where a cell has no training reach, or a sum of exactly zero, it plays the chart's move,
 and the report counts such cells. Pass 0's policy is the stored first-decision fit with
-the chart after the first move, split hands included: its values are the stored ones, and
-its training EV is the first-decision-only play's.
+the chart after the first move. Its split hands play as section 1 says, their two-card
+decisions from the stored fit's ranked moves and hit or stand by the chart, so its Split
+values are the stored ones only where those answers are the chart's.
 
 A first-decision cell counts as changed when its move changes, or, for a pair deal, when
 any answer its split hands read from the rankings changes.

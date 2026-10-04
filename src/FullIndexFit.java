@@ -43,6 +43,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * move, the moves ranked best first for the split hands that read them. A cell no training
  * state reaches, or whose sum is exactly zero, plays the chart, and each such cell is counted.
  * Pass 0 plays the first-decision fit from the stored values and the chart after the first move.
+ * A split hand plays section 1's play there too, its two-card decisions from that fit's ranked
+ * moves and hit or stand by the chart, so a Split value is the stored one only where those
+ * answers are the chart's.
  *
  * Passes repeat until no cell changes, at most MAX_PASSES. Every pass records the training
  * states' weighted EV under the play it walked; at the cap the best of those plays is kept and
@@ -140,11 +143,6 @@ final class FullIndexFit {
      * One play of a strategy: its first moves (with the sums they were fitted from) and their
      * rankings, and its later cells, stands[g x CELLS + cell] over the strategy's later groups,
      * or null for the chart before those groups are formed. Never changed once made.
-     *
-     * Pass 0's play, and a clean-up of it, has no rankings: it is the stored first-decision fit
-     * with the chart after the first move, so a split hand's two-card decisions are the chart's
-     * there, as the stored V(Split) has them. Every refit gives rankings, which split hands read
-     * from then on.
      */
     static final class Policy {
         final SystemScorer.Fit first;
@@ -458,8 +456,6 @@ final class FullIndexFit {
         final int shoes;
         final SystemScorer.Groups groups;
         final int[] table;
-        /** Each deal's moves ranked as the chart plays them, which split hands read under a play without rankings. */
-        private final PlayerMove[][] chartRanks;
         /** What the fitted insurance adds to each state's round value: insurance is fitted once, as no later play moves it. */
         final double[] insurance;
         /** The Hit and Split values of every state of the penetration, under the play in force (finally, the play kept). */
@@ -570,13 +566,7 @@ final class FullIndexFit {
                 throw new IllegalArgumentException("values for " + values.hit.length + " parts, not " + parts.key.length);
             }
             SystemScorer.Fit f0 = scorer.fit(parts, p, use, groups, table, w);
-            now = new Policy(f0, null, null, 0, 0);
-            chartRanks = new PlayerMove[Deals.COUNT][];
-            for (int i = 0; i < Deals.COUNT; i++) {
-                if (!Deals.playerNatural(i)) {
-                    chartRanks[i] = chartRanking(scorer.rules(), i);
-                }
-            }
+            now = new Policy(f0, rankings(st, scorer.rules(), f0), null, 0, 0);
         }
 
         @Override
@@ -630,7 +620,7 @@ final class FullIndexFit {
             if (e == null) {
                 int r = Deals.P1[i];
                 int up = Deals.UP[i];
-                PlayerMove[][] rank = pol.ranking == null ? chartRanks : pol.ranking[g1];
+                PlayerMove[][] rank = pol.ranking[g1];
                 SplitPlay play = new SplitPlay(r, up, (total, soft) -> stands(pol, g2, total, soft, up), d -> rank[d]);
                 byte[] print = SplitValues.fingerprint(scorer.rules(), i, play);
                 e = new SplitEntry(play, print, Arrays.equals(print, chartPrint));
@@ -1028,7 +1018,7 @@ final class FullIndexFit {
         private byte[] firstPrint(RoundRules rules, Policy pol, int g, int i) {
             int r = Deals.P1[i];
             int up = Deals.UP[i];
-            PlayerMove[][] rank = pol.ranking == null ? chartRanks : pol.ranking[g];
+            PlayerMove[][] rank = pol.ranking[g];
             return SplitValues.fingerprint(rules, i, new SplitPlay(r, up,
                     (total, soft) -> PlayerTree.CHART.stands(total, soft, up, 0), d -> rank[d]));
         }
