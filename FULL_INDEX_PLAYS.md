@@ -281,6 +281,15 @@ values are computed per distinct post-split policy and cached.
 - the number of distinct post-split policies per (state, deal);
 - peak memory at the planned batch size.
 
+Stage 1's report (FullIndexTimingReport) gives the seconds a state for the trees and the
+walks, the CPU time of a split valued afresh under one play that is not the chart's, the
+heap's peak and the memory a state's trees hold. It cannot give the second figure: a
+post-split policy is read from a group's fitted first decisions and later plays, and
+stage 1 fits nothing. Stage 2 counts it before the run is sized, as the distinct
+SplitValues prints per (state, pair deal) over every system's groups: under pass 0's
+policy (the stored first-decision fits, the chart after the first move), and again after
+pass 1, when the later plays first leave the chart.
+
 The run's size and batch plan are set from those figures and the bootstrap measurement
 of section 4. The state file is read, never written.
 

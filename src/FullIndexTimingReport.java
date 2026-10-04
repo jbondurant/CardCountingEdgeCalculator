@@ -29,6 +29,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * reach either is valued afresh; the rest come from the stored values and are counted apart.
  * Splits are valued on every k-th state (5 by default), which gives thousands of calls.
  *
+ * It does not count the distinct post-split policies per (state, deal), which section 6 also
+ * lists. A post-split policy is read from a count group's fitted plays, which stage 1 does not
+ * have, so stage 2 counts them, from pass 0's policy and again after pass 1 (section 6).
+ *
  * CPU seconds are the thread's own (ThreadMXBean), wall seconds the clock's. On a shared
  * machine the CPU time also grows with what else runs, so the load average is printed at the
  * start and the end; compare figures only from one sitting (COUNTING_COMPARISON.md section 7).
