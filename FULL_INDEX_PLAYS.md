@@ -1,163 +1,294 @@
 # Full index plays
 
-COUNTING_COMPARISON.md lets each counting system vary only the first decision on the
-two cards dealt, plus insurance and the bet. Every later decision follows basic strategy:
-a three-card 16 against a 10, a soft 18 after hitting. So the comparison judges how well
-a count bets, and most of how well it plays, but not all of it. Counts built for playing
-(Omega II, Hi-Opt II, Uston APC, Zen) lose the most from the limit.
+COUNTING_COMPARISON.md lets each counting system vary only the first decision on the two
+cards dealt, plus insurance and the bet. Every later decision follows basic strategy: a
+three-card 16 against a 10, a soft 18 after hitting, every decision on a split hand. So
+the comparison judges how well a count bets, and most of how well it plays, but not all
+of it.
 
-This step gives every system count-based play on every decision of the dealt hand, fits
-those plays as carefully as the first decisions, and scores every system again on the
-same 60,000 stored shoes. The result is each system's best strategy for this game:
+This step gives every system count-based play on every decision of the round, fits it
+as carefully as the first decisions, and scores every system again on the same 60,000
+stored shoes. The result is each system's best strategy for this game:
 - first-decision plays;
 - later hit-or-stand plays;
+- play on split hands;
 - insurance;
 - bets.
 
 It is printed as an index table per system.
 
+**How much is at stake.** A design review measured, with its own scratch code on 84
+stored states, every value from ExactRound, the most that per-state perfect play adds at
+80%. The build replaces these figures with committed measurements:
+
+| | Flat bets | Weighted by Hi-Lo's 1-8 schedule |
+|---|---|---|
+| The first move | 0.094% a round | 0.33% |
+| Later decisions of the dealt hand | 0.028% | 0.092% |
+| Decisions on split hands | 0.0097% | 0.053% |
+
+The last two are what this step adds. They are ceilings, which no count reaches.
+
 ## 1. Scope
 
-- **Later decisions.** Every decision of the dealt hand after its first is count-based.
-  After the first decision the only choices left are hit and stand, since doubling,
-  splitting and surrender are first-decision moves under these rules.
-- **First decisions** (stand, hit, double, split, surrender where offered) and
-  **insurance** stay as in COUNTING_COMPARISON.md section 6, refitted. A hit's value now
-  includes the count-based play after it.
-- **Split hands play basic strategy after the split.** The split decision itself is
-  count-based, as now. Making split hands' later decisions count-based would break the
-  exact split valuation's reliance on a hand's play depending only on its own cards, and
-  the value at stake is small, since a split is a small share of rounds. This is the
-  one place play stays basic strategy, and the report says so.
+- **Later decisions of the dealt hand.** Every decision after the first is count-based.
+  Under these rules the only later choices are hit and stand: doubling, splitting and
+  surrender are first-decision moves (ROUND_CONTRACT.md; Montreal offers no surrender).
+- **First decisions and insurance** are count-based as now, refitted with the new values.
+- **Split hands** play by the system's own fitted plays, keyed on its count at the
+  moment of the split, which is the deal's play key:
+  - the later-play table for hit and stand;
+  - the first-decision fit of deal (r, x, up) for a split hand's two-card decision,
+    restricted to the moves legal after a split;
+  - the fit of (r, r, up) for a resplit.
+
+  The count does not move with the cards drawn to split hands, so this is a slight
+  lower bound on count-based play after a split. Moving it would make a hand's play
+  depend on the other split hand's cards, which ExactRound's exact split valuation
+  cannot take; the report says so.
 - **The count at a decision** is the system's count of every card the player has seen:
   the cards dealt before the round, the player's own cards, the up-card and every card
-  the player has drawn. Never the hole card.
+  the player has drawn, never the hole card.
   - A running-count system keys on that running count.
   - A true-count system keys on it, drift-free, over the decks not yet seen (the cards
     left before the round, less the cards seen this round, over 52), rounded as its play
     key is (nearest, ties toward zero).
-  - Side-count variants play on the plain count, as now.
+  - Side-count variants play on the plain count.
 - **An index play** is a rule per spot and count group. A spot is the hand's total,
   whether it is soft, and the up-card, for hands of three or more cards. Two-card hands
-  are first decisions, already fitted per deal. This is how real index tables are
-  written: one number per total and up-card, not per composition.
+  are first decisions, fitted per deal. This is how published index tables are written,
+  and the composition dependence it leaves out is small: the Wizard of Odds gives
+  0.0019% for composition-dependent over total-dependent basic strategy at 8 decks, H17,
+  DAS.
+- **Indices are fitted for flat bets**, as the first decisions are. The headline scores
+  them under the 1-8 schedule, where they are near-optimal but not refitted for it.
+  Section 4's check measures what refitting for the schedule would change.
 
-## 2. Exact values with count-based play: the player tree
+## 2. Exact values: the player tree
 
-For one state (the cards left at a round's start) and one up-card u, the **player tree**
-holds every hand H the player can hold after hitting: every multiset of ranks of two or
-more cards with a hard total of 21 or less, reached from a two-card start by hitting. That
-is about 3,000 hands per up-card, 30,000 a state.
+For one state (the cards left at a round's start, S) and one up-card u, the **player
+tree** holds every hand the player can hold after hitting. A hand is a multiset of ranks
+of two or more cards with a hard total of 21 or less, reached from a two-card start by
+hitting: about 3,060 per up-card, about 30,600 a state.
 
-**Values.** Each value is unconditional, carrying the indicator that the dealer has no
+**Values.** Values are unconditional, carrying the indicator that the dealer has no
 natural, as ExactRound's are before its final division.
-- **Stand.** V_stand(H) is the dealer's outcome distribution from the shoe S − H − u,
-  with the hole card dealt last from that shoe and a natural hole card counting for
-  nothing, compared with H's total. ExactRound already does this: the hole card dealt
-  last, the dealer's hands listed once per up-card, and its distributions kept within a
-  state. ExactRound gains one package-private method for it, `dealerOutcomes(shoe, up)`:
-  the dealer's chance of finishing on each of 17 to 21 or busting, with the indicator.
-- **Bust.** A bust is worth −P(no natural) from the shoe it leaves, the total mass of the
-  same distribution.
-- **Hit.** V_hit(H) = Σ_c P(c | S − H − u) × V(H + c), where V(H + c) is a bust, or the
-  policy's choice at H + c. Draws come from the shoe including the hole card's place:
-  the hole card is dealt last, by exchangeability, exactly as in ExactRound.
+- **Stand.** V_stand(H) is the dealer's outcome distribution from S − H − u, the hole
+  card dealt last from that shoe and a natural hole card counting for nothing, compared
+  with H's total. It is computed with ExactRound's dealer hands (package-private access),
+  in ExactRound's order of summation, so that under basic strategy the tree reproduces the
+  stored values.
+- **Bust.** −(n − nat)/n of the shoe it leaves (n cards, nat of them natural hole cards).
+- **Hit.** V_hit(H) = Σ_c (count of c in S − H − u)/n × V(H + c). The draw comes from the
+  shoe with the hole card's place still in it: the hole card is dealt last, by
+  exchangeability. That holds with count-based decisions too, since in contract order
+  every card's kind is exchangeable and no decision reads the hole card. The review
+  checked this in exact rational arithmetic.
 
-**The policy.** At H it sees H's total, softness and up-card, and the count of the seen
-cards. For Red Seven and the KISS counts, a seen card's tag depends on its colour or
-face, which the rank does not say. The tree then carries, at each hand, the distribution
-of the count's offset over the tag classes of its cards, drawn without replacement from
-the kinds left, and a decision is taken for each offset. That is the same exact split
-CountKeys makes for the first decision's three cards, carried on through the draws.
+**Reach** is forward propagation over the multiset graph, in the same unconditional
+units. The root of deal i gets (1/q) × P(i | S) × [the first move is Hit]. A child gets
+reach(H + c) += reach(H) × [the policy hits at H] × (count of c)/n, with no natural
+conditioning. reach × (V_stand − V_hit) is then the hand's contribution to
+P(i)(1 − P(nat|i)) × conditional value: the same units as the first-decision objective.
 
-**From the tree to the round.** The value of Hit as a first move is
-V_hit(p1, p2) / P(no natural | the deal). It replaces the stored V(Hit) for that system.
-Stand, Double, Split and Surrender keep their stored values, which no later decision
-changes, except that split hands keep basic strategy (section 1).
+**Colour and face counts.**
+- For Red Seven and KISS II and III one rank's tag depends on colour, so a hand's count
+  offset fixes the class composition.
+- For KISS I two ranks do: the 2 by colour, the ten-valued cards by face. The offset does
+  not then fix the composition, and once a count-based decision has been taken the
+  composition given the offset is not hypergeometric.
 
-**Checks.**
-- **Against the stored values.** With basic strategy as the policy, the tree's V(Hit) for
-  every deal of every stored state must equal the stored value within 1e-12. That holds
-  the tree to ExactRound on the run's own shoes.
-- **Against every card order.** With count-aware policies on shoes of a few cards, the
-  tree must equal ConcreteRound played on every order of the cards, with the count read
-  from the seen cards, within 1e-12. That checks the count at each decision, and that the
-  hole card is never in it. A test-only policy hook gives ConcreteRound the seen cards.
-- **Planted bugs.** For example, counting the hole card, or the true count's divisor
-  forgetting the seen cards. Each must fail a test.
+So for every kind-aware count, a tree node is (rank multiset, class counts of each split
+rank, the deal's three cards included). A draw's class comes from the kinds left less that
+composition. Values go backward and reach forward per node. A deal then has one Hit value
+per tag-class part, in the same partition CountKeys.tagSums produces. The scorer stores
+and uses Hit per part for these counts in fit, playValues, playValuesFrom and resolve.
 
-## 3. Fitting the later plays: policy iteration, without grading a system on its own shoes
+**From the tree to the round.** A Hit first move is worth V_hit(start) / P(no natural |
+deal), per part for kind-aware counts. Stand, Double and Surrender keep their stored
+values. Split is valued by ExactRound with the post-split policy of section 1, a
+deterministic function of the decision for a given (state, deal, count group). It is
+cached by the policy's answers to every decision a split of that deal can reach, since
+many systems and groups share them, and it is the stored value wherever those answers are
+the chart's.
 
-Folds, penetrations and the 1/q weights are as in COUNTING_COMPARISON.md section 6.
+**Edges.** The stored states always hold at least 85 cards, so no round can run out.
+The tree assumes this and checks it per state. The tests limit the every-order check to
+shoes that cannot run out, and check ExactRound's exceptions separately.
 
-**Iteration 0.** The continuation is basic strategy. For every training state, up-card,
-and three-or-more-card hand H, the tree gives:
-- the reach of H, the chance of holding it under the current policy, summed over the
-  first moves that lead there by hitting;
-- V_stand(H) − V_hit(H) under the current continuation;
-- H's play key.
+**Checks, each required to pass and to fail on a planted bug:**
+- **Against the stored values.** With basic strategy, the tree's V(Hit) for every deal of
+  every stored state equals the stored value within 1e-12. The review's scratch code
+  measured 4.4e-16 over 21,600 deals of 40 states.
+- **Against every card order, by kind.** ConcreteRound gains a test-only hook that deals
+  kinds in parallel with ranks and tells a test policy each kind it is shown, in order.
+  On shoes big enough that no order runs out, with depth set so the true-count divisor
+  (416 − depth − seen) is exercised, the tree's values per part must equal the average
+  over every order within 1e-12. The cases cover:
+  - random thresholds at hard 12-16 and soft 13-18, for Hi-Lo, Red Seven and KISS I;
+  - deals of A,A, A,2 and pairs, and ace and ten up-cards;
+  - split hands under a count-group policy.
+- **Reach.** On stored states, with count-aware policies,
+  Σ_H reach(H) × terminal(H) = Σ_i (1/q) P(i) V_hit(i) within 1e-12, where terminal is
+  the stand value, or the bust value.
+- **Planted bugs:**
+  - counting the hole card;
+  - the divisor forgetting the seen cards;
+  - carrying the offset without the composition;
+  - one Hit value per deal for a kind-aware count;
+  - draws taken from the shoe with the natural hole removed;
+  - reach conditioned on no natural;
+  - reach double-counting a hand reached two ways;
+  - a test state scored with the later plays fitted on its own fold.
 
-For each (spot, play-key group), the play is stand when Σ (1/q) × reach × (V_stand −
-V_hit) > 0 over the training (state, hand) pairs in it, and hit otherwise. Groups are
-formed as for the first decision: grown from the most-populated key, closing at M_play.
+## 3. Fitting: joint policy iteration, without grading a system on its own shoes
 
-**Later iterations.** The continuation is the previous iteration's fitted policy, and
-the reach is under the current policy. Stop when no (spot, group) changes, at most four
-passes; the report gives the number of changes per pass.
+Folds, penetrations and 1/q weights are as in COUNTING_COMPARISON.md section 6. Every fit
+below exists once per (system, penetration, fold), plus the learning curve's half fits,
+which run as extra policies in the same passes.
 
-**The first decisions** are then refitted per deal as now, with V(Hit) from the tree
-under the final later-decision policy, and insurance and bets after them.
+**Groups.** Later-play groups are grown, as first-decision groups are, from the play key
+holding the most rounds at the decision, closing at M_play = 5 √n valued states. Each
+valued state contributes mass 1, spread over its later-decision keys by its reach
+normalised to 1. The groups are formed once, from pass 0's reach on the training fold,
+and held fixed through the passes.
 
-**Decision resolution** extends to the later plays. Each (spot, group) gap gets a
-standard error from per-shoe sums of the weighted contributions. A play is settled when
-the gap exceeds 2 SE; otherwise it is a close call bounded by frequency × (2 SE − gap).
-The bound is summed with the first-decision and insurance bounds into the system's
-decision bound, under the same 0.005% target. The learning curve refits the later plays
-on half the training fold too.
+**A pass** walks every training state's trees under the current joint policy. It
+accumulates, per (spot, group), Σ (1/q) × reach × (V_stand − V_hit), with per-shoe Σ and
+Σ² for standard errors. Per (group, deal) it accumulates the first-decision sums, Hit from
+the tree. At the end of the pass, both are refitted:
+- every later (spot, group) takes stand if its sum is positive, hit if negative;
+- every first-decision (group, deal) takes its best move;
+- insurance is refitted as now.
 
-**The bootstrap.** It refits the first decisions, insurance and bets per resample, as
-now. It keeps the later-play fit fixed: refitting it per resample would mean a pass of
-trees per resample. The decision-resolution check answers whether those plays are right;
-the report says the intervals hold them fixed.
+Where a cell has no training reach, or a sum of exactly zero, it plays the chart's move,
+and the report counts such cells. Pass 0's policy is the stored first-decision fit with
+the chart after the first move.
+
+**Convergence.** Passes repeat until no first-decision or later cell changes, at most six.
+Simultaneous updates of pooled cells are not guaranteed to improve, so every pass records
+the training fold's actual weighted EV, and if the cap is reached the best pass's policy is
+kept and flagged, with the changes per pass printed. A final evaluation pass then computes
+every later cell's one-flip gain and its standard error under the policy actually scored.
+A cell whose fitted choice has a negative gain is flipped and the pass repeated, up to
+two clean-up passes. After that, its bound is charged with the negative gap.
+
+**Which Hit values a state gets.** For each (system, penetration), a state in fold φ needs
+two Hit arrays:
+- under L_φ, fitted on the other fold, for scoring it as a test state;
+- under L_{1−φ}, fitted on its own fold, for the training sums of strategy 1−φ.
+
+The arrays are kept per (penetration, fit), never pooled. Systems are scored in batches,
+with the trees rebuilt per batch, so memory stays bounded; at about 0.1 s of CPU a state,
+a rebuild is cheap. Tests fail if a test state is scored under the later plays fitted on
+its own fold, or if a fold's first decisions are fitted on Hit values from the other
+fold's later plays.
+
+**Decision resolution** covers the later cells, and split hands through the
+first-decision cells they use. A later cell is settled when its one-flip gain under the
+final policy exceeds 2 SE. Otherwise it is a close call bounded by frequency ×
+(2 SE − gain). The SEs come from per-shoe sums, with whole shoes per thread. The bound is
+added to the first-decision and insurance bounds into the system's decision bound, under
+the same 0.005% target. The learning curve's half fits include the later plays.
+
+**Section 8's decision-bound scaling** on quarters and halves of the file holds the whole
+file's later-play fit fixed in the parts. Its fitted exponent therefore measures how the
+first-decision and insurance bounds fall, and the report says so. The decision bound on
+the whole file still includes the later cells.
+
+**In-sample gaps.** A training fold's Hit values include later plays fitted on that fold,
+so near-zero gaps lean slightly toward settled. The report states this. As a check, the
+later cells' signs are recomputed on the other half of the training fold and the number
+that disagree is printed.
 
 ## 4. Scoring
 
-Per system, the scorer runs exactly as now on a copy of the states whose Hit values are
-that system's tree values. Every system is compared with Hi-Lo playing its own full fit,
-and with its own first-decision-only score, so the gain from later index plays is printed
-per system. The headline, spreads, own ramp, efficiencies, decision resolution and sizing
-sections are as before. The perfect reference row stays first-move-only; a new reference
-row gives perfect play on every decision of the dealt hand, from each state's own
-composition: the most any count can reach with this scope.
+Per system, the scorer runs as now, with these changes:
+- each fold's test states use the Hit values (per part for kind-aware counts) and Split
+  values under the other fold's fit;
+- each fold's training states use their own.
+
+What is reported:
+- **The full-play score.** Every system is compared with Hi-Lo playing its own full fit.
+- **The gain from full play.** Each system's full-play score less its own first-decision-
+  only score, scored in the same run on the same resamples, so the gain has a paired
+  interval. The null count, refitted with later plays in one group, gains from
+  total-dependent corrections with no count at all. That is printed once as the
+  count-free part, and each system's gain is also printed net of it.
+- **Two playing efficiencies.**
+  - The first-decision PE, as now.
+  - The full PE: (system − null) / (perfect − null), with the null count's full fit and
+    a new perfect row that plays every decision of the round, split hands included, from
+    each state's own composition.
+- **A check of what the indices would gain if fitted for the 1-8 schedule.** On one
+  system, the plays are refitted with the training fold's schedule bet as a weight; the
+  report gives how many cells change and what that is worth.
+- Everything else as before: the headline, every spread, the own ramp, decision
+  resolution and sizing.
+
+**The bootstrap** refits the first decisions, insurance and bets per resample, as now. It
+holds the later-play fit fixed, since refitting it per resample would mean a pass of trees
+per resample. COUNTING_COMPARISON.md section 6 found that holding a play fit fixed
+understates a difference's SE by 2 to 3 times. So the effect here is measured before the
+full run, as that section measured it:
+- the trees of the first 1,417 shoes are kept in memory, about 330 MB;
+- the later plays are refitted per resample by walks alone;
+- five counts are compared over 200 resamples: Hi-Lo, KO, Red Seven, Omega II and Wong
+  Halves.
+
+The SE of each difference from Hi-Lo is printed with the later plays held and refitted.
+If the ratio is near 1 the run goes as planned. If not, the full run's intervals are
+widened by the measured ratio per count, and the report says how.
 
 ## 5. The index tables
 
-For each system: its play-key groups and, per spot, the count from which it stands or
-hits (or doubles, splits, surrenders on the first two cards), from the final fit pooled
-over the folds. It is given as an index number per spot, as published tables are,
-wherever the fitted play changes once along the count. A spot whose play changes more
-than once is printed as its group-by-group table and flagged. The bet ramp and insurance
-index come with it. For Hi-Lo, the table is set beside the Illustrious 18, as a check
-that the fit lands where published indices do, allowing for this game's rules.
+For each system, from each fold's final fit, printed per fold with the spots where the
+folds disagree flagged:
+- its play-key groups;
+- per spot, the count from which it stands rather than hits;
+- per deal, its first-decision indices;
+- its insurance index;
+- its bet ramp.
+
+A spot whose play changes more than once along the count is printed as its
+group-by-group table. Tail groups span several keys, so an index is printed with its
+group's span.
+
+**The check against the Illustrious 18** needs like-for-like figures. For it, a per-total
+index is pooled over every hand of that total, two-card and multi-card, reach-weighted,
+and set beside a named published Hi-Lo table, with its count convention. The expected
+differences, given this game's rules and conventions:
+- H17 moves 11 v A;
+- no surrender here, so no Fab 4;
+- our keys round to nearest, where most published tables floor;
+- pair indices here keep the count fixed after the split (section 1).
 
 ## 6. Cost and run
 
-**Cost.**
-- About 30,000 dealer distributions per state.
-- Sharing distributions within a state, as ExactRound already does, is expected to cost
-  well under a second of CPU a state.
-- A pass over the 60,000 stored states runs every system at once, since the trees'
-  values do not depend on the system, and each system's policy is a walk over them.
-- There are three to five passes: the iterations and the final scoring.
-- No new shoes are dealt and nothing is stored beyond the per-system sums. The existing
-  state file is read, never written.
+**Measured by the review's scratch code, to be confirmed by the committed timing
+report:**
+- the trees of one state take 0.085 to 0.112 s of CPU, single-threaded;
+- walking only the nodes where any decision is contested (hard 12-16, soft 13-18, and
+  the two-card starts) gives the same gap sums as walking every node, to within 9.4e-16;
+- stored states never run out, holding at least 85 cards.
 
-Measured on the first states before the full run, by a committed timing report.
+**Passes:** up to six fitting passes, two clean-up passes and a final evaluation, each a
+walk of every training state per (system, penetration, fit), the half fits included. Split
+values are computed per distinct post-split policy and cached.
+
+**Before the full run,** a committed timing report measures, on the first 1,000 states:
+- seconds a state for the trees, the walks and the split values;
+- the number of distinct post-split policies per (state, deal);
+- peak memory at the planned batch size.
+
+The run's size and batch plan are set from those figures and the bootstrap measurement
+of section 4. The state file is read, never written.
 
 ## 7. What it does not do
 
-- **Count-based play after a split** (section 1).
-- **Composition-dependent play beyond the count.** An index depends on total, softness,
-  up-card and count, not on which cards make the total.
-- **Refitting later plays inside the bootstrap** (section 3).
+- **The count moving within a split.** Section 1 explains why this makes the result a
+  lower bound.
+- **Composition-dependent play beyond the count** (section 1).
+- **Refitting the later plays inside the full run's bootstrap.** The pilot measures the
+  effect and the intervals are widened by it (section 4).
 - **Risk.** There is still no round variance, so no SCORE.
