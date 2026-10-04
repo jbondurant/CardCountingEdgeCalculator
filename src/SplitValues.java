@@ -36,7 +36,7 @@ final class SplitValues {
     private final ExactRound engine;
     private final RoundPolicy chart = BasicStrategy.chart();
     private final byte[][] chartPrint = new byte[Deals.COUNT][];
-    private final Map<String, Double> kept = new HashMap<>();
+    private final Map<String, Double> kept;
 
     /** Splits valued with ExactRound, taken from the stored values, and found already valued. */
     int valued;
@@ -49,13 +49,23 @@ final class SplitValues {
      *               split, the chart's included
      */
     SplitValues(RoundRules rules, int[] state, double[] stored) {
+        this(rules, state, stored, new HashMap<>(), new ExactRound(rules));
+    }
+
+    /**
+     * The same, keeping values in the map given, which may come from an earlier SplitValues of
+     * the same state and rules so that a play valued once is not valued again, and valuing with
+     * the engine given, which a thread may reuse from state to state.
+     */
+    SplitValues(RoundRules rules, int[] state, double[] stored, Map<String, Double> kept, ExactRound engine) {
         if (stored != null && stored.length != StateStore.VALUES) {
             throw new IllegalArgumentException("a state stores " + StateStore.VALUES + " values");
         }
         this.rules = rules;
         this.state = state.clone();
         this.stored = stored;
-        this.engine = new ExactRound(rules);
+        this.kept = kept;
+        this.engine = engine;
     }
 
     /**
@@ -75,7 +85,16 @@ final class SplitValues {
         if (Deals.probability(state, deal) == 0) {
             return Double.NaN;
         }
-        byte[] print = fingerprint(rules, deal, play);
+        return value(deal, play, fingerprint(rules, deal, play));
+    }
+
+    /**
+     * The same, given the play's fingerprint for the deal, which the caller has worked out
+     * already; the caller has checked the deal can be split with this play and dealt.
+     */
+    double value(int deal, SplitPlay play, byte[] print) {
+        int r = Deals.P1[deal];
+        int up = Deals.UP[deal];
         if (stored != null) {
             if (chartPrint[deal] == null) {
                 chartPrint[deal] = fingerprint(rules, deal, chart);

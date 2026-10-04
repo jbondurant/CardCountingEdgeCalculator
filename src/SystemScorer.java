@@ -183,6 +183,10 @@ final class SystemScorer {
         return pens[p];
     }
 
+    RoundRules rules() {
+        return st.rules;
+    }
+
     // ------------------------------------------------------------------ play keys
 
     /**
@@ -371,6 +375,22 @@ final class SystemScorer {
                 }
             }
         }
+        double valued = 0;
+        for (int j : use) {
+            valued += units == null ? 1 : units[j];
+        }
+        return grow(parts.minKey, massAll, roundsAll, held, threshold(valued));
+    }
+
+    /**
+     * Groups grown over the keys from minKey up, key minKey + k holding mass[k] valued states
+     * and rounds[k] rounds, held[k] saying whether any state has the key: from the key holding
+     * the most rounds, walking outward each way, a group closes once it holds threshold of
+     * mass, and a partial group at either end joins its neighbour. Keys no state holds at
+     * either end are left out of the walk; the end groups take everything beyond them.
+     */
+    static Groups grow(int minKey, double[] massAll, double[] roundsAll, boolean[] held, double threshold) {
+        int span = held.length;
         int first = 0;
         while (first < span && !held[first]) {
             first++;
@@ -382,14 +402,9 @@ final class SystemScorer {
         while (!held[last]) {
             last--;
         }
-        int min = parts.minKey + first;
+        int min = minKey + first;
         double[] mass = Arrays.copyOfRange(massAll, first, last + 1);
         double[] rounds = Arrays.copyOfRange(roundsAll, first, last + 1);
-        double valued = 0;
-        for (int j : use) {
-            valued += units == null ? 1 : units[j];
-        }
-        double threshold = threshold(valued);
         int mode = 0;
         for (int k = 1; k < rounds.length; k++) {
             if (rounds[k] > rounds[mode]) {
@@ -454,6 +469,62 @@ final class SystemScorer {
 
     // ------------------------------------------------------------------------ play
 
+    /** The move slots of Hit and Split, whose values a full-index fit replaces (StateValuer.MOVES). */
+    static final int HIT = 1;
+    static final int SPLIT = 3;
+
+    /**
+     * What Hit and Split are worth in each (state, deal) part of a penetration under one
+     * full-index fit (FULL_INDEX_PLAYS.md, sections 2 to 4), in the units of
+     * ScoringStates.move: P(i) x (-P(nat|i) + (1 - P(nat|i)) x V). Hit is valued by the
+     * player tree under the fit's later plays, a value per tag-class part for a count that
+     * tags by colour or face; Split by ExactRound under the fit's post-split play at the
+     * part's key. Indexed like Parts.key; NaN where a part is not valued. Stand, Double and
+     * Surrender keep their stored values, which no later play changes.
+     *
+     * A fit's values are its own: the states it is scored on and the states it is fitted on
+     * both take them, and no fit reads another's.
+     */
+    static final class PlayValues {
+        final double[] hit;
+        final double[] split;
+
+        PlayValues(int parts) {
+            hit = new double[parts];
+            split = new double[parts];
+            Arrays.fill(hit, Double.NaN);
+            Arrays.fill(split, Double.NaN);
+        }
+
+        PlayValues(double[] hit, double[] split) {
+            if (hit.length != split.length) {
+                throw new IllegalArgumentException("a Hit and a Split value for every part");
+            }
+            this.hit = hit;
+            this.split = split;
+        }
+
+        PlayValues copy() {
+            return new PlayValues(hit.clone(), split.clone());
+        }
+    }
+
+    /**
+     * What move m of deal i adds to a state's round value in part x: the stored entry, or
+     * under a full-index fit's values the part's own Hit or Split value.
+     */
+    static double value(PlayValues pv, double[] stored, int i, int x, int m) {
+        if (pv != null) {
+            if (m == HIT) {
+                return pv.hit[x];
+            }
+            if (m == SPLIT) {
+                return pv.split[x];
+            }
+        }
+        return stored[i * ScoringStates.MOVES + m];
+    }
+
     /** A fitted play: the move for each (group, deal), and the sums it was chosen from. */
     static final class Fit {
         final Groups groups;
@@ -477,6 +548,11 @@ final class SystemScorer {
 
     /** The move for each (group, deal) that maximises the value over the states given, each weighted w[j]. */
     Fit fit(Parts parts, Pen pen, int[] use, Groups groups, int[] table, double[] w) {
+        return fit(parts, pen, use, groups, table, w, null);
+    }
+
+    /** The same, with Hit and Split valued under a full-index fit's values when pv is given. */
+    Fit fit(Parts parts, Pen pen, int[] use, Groups groups, int[] table, double[] w, PlayValues pv) {
         int g0 = groups.count();
         double[][] sum = new double[g0][Deals.COUNT * ScoringStates.MOVES];
         double[][] reach = new double[g0][Deals.COUNT];
@@ -505,7 +581,7 @@ final class SystemScorer {
                     double[] row = sum[g];
                     for (int m = 0; m < ScoringStates.MOVES; m++) {
                         if (legal[base + m]) {
-                            row[base + m] += ws * mv[base + m];
+                            row[base + m] += ws * value(pv, mv, i, x, m);
                         }
                     }
                 }
@@ -540,6 +616,11 @@ final class SystemScorer {
      * them when null), at out[j]; the others are left as they are.
      */
     void playValues(Parts parts, Pen pen, Fit fit, int[] table, int[] which, double[] out) {
+        playValues(parts, pen, fit, table, which, out, null);
+    }
+
+    /** The same, with Hit and Split valued under a full-index fit's values when pv is given. */
+    void playValues(Parts parts, Pen pen, Fit fit, int[] table, int[] which, double[] out, PlayValues pv) {
         int n = which == null ? pen.states.length : which.length;
         for (int k = 0; k < n; k++) {
             int j = which == null ? k : which[k];
@@ -554,7 +635,7 @@ final class SystemScorer {
                 int cell = j * Deals.COUNT + i;
                 for (int x = parts.from(cell); x < parts.to(cell); x++) {
                     int g = table[parts.key[x] - parts.minKey];
-                    v += parts.share(x) * mv[i * ScoringStates.MOVES + fit.move[g][i]];
+                    v += parts.share(x) * value(pv, mv, i, x, fit.move[g][i]);
                 }
             }
             out[j] = v;
@@ -624,6 +705,7 @@ final class SystemScorer {
      * cost of valuing every state again, and it gives the same sums up to rounding.
      */
     void playValuesFrom(Parts parts, Pen pen, ByKey byKey, FoldPlay earlier, Fit fit, int[] table, double[] out) {
+        PlayValues pv = earlier.values;
         System.arraycopy(earlier.base, 0, out, 0, out.length);
         int keys = parts.maxKey - parts.minKey + 1;
         for (int k = 0; k < keys; k++) {
@@ -637,8 +719,8 @@ final class SystemScorer {
                 for (int y = byKey.from[pair]; y < byKey.from[pair + 1]; y++) {
                     int j = byKey.state[y];
                     double[] mv = st.move[pen.states[j]];
-                    out[j] += parts.share(byKey.part[y])
-                            * (mv[i * ScoringStates.MOVES + now[i]] - mv[i * ScoringStates.MOVES + was[i]]);
+                    int x = byKey.part[y];
+                    out[j] += parts.share(x) * (value(pv, mv, i, x, now[i]) - value(pv, mv, i, x, was[i]));
                 }
             }
         }
@@ -762,13 +844,20 @@ final class SystemScorer {
         final int[] table;
         final int[] insuranceGroup;
         final double[] base;
+        /** The Hit and Split values the play was fitted and valued with; null for the stored ones. */
+        final PlayValues values;
 
         FoldPlay(Groups groups, Fit fit, int[] table, int[] insuranceGroup, double[] base) {
+            this(groups, fit, table, insuranceGroup, base, null);
+        }
+
+        FoldPlay(Groups groups, Fit fit, int[] table, int[] insuranceGroup, double[] base, PlayValues values) {
             this.groups = groups;
             this.fit = fit;
             this.table = table;
             this.insuranceGroup = insuranceGroup;
             this.base = base;
+            this.values = values;
         }
     }
 
@@ -784,16 +873,28 @@ final class SystemScorer {
     /** The same, valuing every state from an earlier play's values (playValuesFrom) when earlier is given. */
     FoldPlay foldPlay(Parts parts, Pen pen, InsuranceParts ip, int[] use, double[] w, double[] units, int[] valueOn,
                       ByKey byKey, FoldPlay earlier) {
+        return foldPlay(parts, pen, ip, use, w, units, valueOn, byKey, earlier, earlier == null ? null : earlier.values);
+    }
+
+    /**
+     * The same under a full-index fit's Hit and Split values when pv is given. An earlier
+     * play whose values are given must have been fitted with the same ones.
+     */
+    FoldPlay foldPlay(Parts parts, Pen pen, InsuranceParts ip, int[] use, double[] w, double[] units, int[] valueOn,
+                      ByKey byKey, FoldPlay earlier, PlayValues pv) {
+        if (earlier != null && earlier.values != pv) {
+            throw new IllegalArgumentException("an earlier play is valued from with the values it was fitted with");
+        }
         Groups groups = groups(parts, pen, use, w, units);
         int[] table = groups.table(parts);
-        Fit fit = fit(parts, pen, use, groups, table, w);
+        Fit fit = fit(parts, pen, use, groups, table, w, pv);
         double[] base = new double[pen.states.length];
         if (earlier == null) {
-            playValues(parts, pen, fit, table, valueOn, base);
+            playValues(parts, pen, fit, table, valueOn, base, pv);
         } else {
             playValuesFrom(parts, pen, byKey, earlier, fit, table, base);
         }
-        return new FoldPlay(groups, fit, table, ip.groups(parts, table), base);
+        return new FoldPlay(groups, fit, table, ip.groups(parts, table), base, pv);
     }
 
     /** The states of use whose weight in w is not zero: a resample leaves out the shoes it did not draw. */
@@ -850,6 +951,40 @@ final class SystemScorer {
         }
     }
 
+    /**
+     * One later cell of a full-index fit (FULL_INDEX_PLAYS.md section 3) the data do not settle:
+     * hit or stand at one contested spot for the count keys loKey to hiKey.
+     */
+    static final class LaterCall {
+        final int fold;
+        final int loKey;
+        final int hiKey;
+        /** PlayerTree.spot of the cell: its total, softness and up-card. */
+        final int spot;
+        final boolean stands;
+        /** The one-flip gain of the fitted answer per time the cell comes up, and its standard error. */
+        final double gain;
+        final double se;
+        /** How often the cell comes up per round of the training states. */
+        final double frequency;
+
+        LaterCall(int fold, int loKey, int hiKey, int spot, boolean stands, double gain, double se, double frequency) {
+            this.fold = fold;
+            this.loKey = loKey;
+            this.hiKey = hiKey;
+            this.spot = spot;
+            this.stands = stands;
+            this.gain = gain;
+            this.se = se;
+            this.frequency = frequency;
+        }
+
+        /** What keeping the fitted answer can cost per round, at most, as CloseCall.bound. */
+        double bound() {
+            return frequency * Math.max(0, 2 * se - gain);
+        }
+    }
+
     /** How well the data settle a count's decisions at one penetration, both folds' fits together. */
     static final class Resolution {
         int decisions;
@@ -860,8 +995,13 @@ final class SystemScorer {
         int insuranceUnsettled;
         /** The same for insurance. */
         double insuranceBound;
+        /** The same for a full-index fit's later cells; nothing for first-decision-only play. */
+        int laterDecisions;
+        int laterUnsettled;
+        double laterBound;
         /** The close calls with the largest bounds, largest first. */
         final List<CloseCall> closest = new ArrayList<>();
+        final List<LaterCall> closestLater = new ArrayList<>();
         static final int KEEP = 12;
 
         void keep(CloseCall c) {
@@ -872,9 +1012,17 @@ final class SystemScorer {
             }
         }
 
-        /** The decision bound: every fitted decision's, the first move's and insurance's added. */
+        void keepLater(LaterCall c) {
+            closestLater.add(c);
+            closestLater.sort((a, b) -> Double.compare(b.bound(), a.bound()));
+            if (closestLater.size() > KEEP) {
+                closestLater.remove(closestLater.size() - 1);
+            }
+        }
+
+        /** The decision bound: every fitted decision's, the first move's, insurance's and the later cells' added. */
         double total() {
-            return bound + insuranceBound;
+            return bound + insuranceBound + laterBound;
         }
     }
 
@@ -891,6 +1039,7 @@ final class SystemScorer {
     void resolve(Parts parts, Pen pen, int fold, int[] use, FoldPlay play, InsuranceParts ip, double[] insSum,
                  double testWeight, double[] foldBound, Resolution out) {
         Fit fit = play.fit;
+        PlayValues pv = play.values;
         int moves = ScoringStates.MOVES;
         int groups = fit.groups.count();
         int cells = groups * Deals.COUNT;
@@ -956,10 +1105,10 @@ final class SystemScorer {
                             touched[nt++] = c;
                         }
                         double ws = w * parts.share(x);
-                        double top = mv[i * moves + best[c]];
+                        double top = value(pv, mv, i, x, best[c]);
                         for (int m = 0; m < moves; m++) {
                             if (m != best[c] && st.legal[i * moves + m]) {
-                                a[c * moves + m] += ws * (top - mv[i * moves + m]);
+                                a[c * moves + m] += ws * (top - value(pv, mv, i, x, m));
                             }
                         }
                         b[c] += ws * p[i];
@@ -1291,11 +1440,18 @@ final class SystemScorer {
          * over folds by test weight.
          */
         final double[][][] keys = new double[CUTS.length][][];
+        /** Whether it plays a full-index fit, count-based on every decision of the dealt hand. */
+        final boolean fullPlay;
 
         Entry(String name, CountKeys.Count count, boolean bettingOnly) {
+            this(name, count, bettingOnly, false);
+        }
+
+        Entry(String name, CountKeys.Count count, boolean bettingOnly, boolean fullPlay) {
             this.name = name;
             this.count = count;
             this.bettingOnly = bettingOnly;
+            this.fullPlay = fullPlay;
         }
     }
 
@@ -1310,6 +1466,22 @@ final class SystemScorer {
         final double[][] halfFitBoot = new double[CUTS.length][];
         /** [pen][fold]: the play groups of each fold's fit. */
         final Groups[][] groups = new Groups[CUTS.length][2];
+        /**
+         * Full-index play (FULL_INDEX_PLAYS.md section 4), at the penetrations it was fitted at:
+         * the count and its side-count variant playing their full-index fit, scored on the same
+         * resamples as the entries above, so each one's gain over its first-decision-only entry is
+         * paired; the decision resolution with the later cells; the learning curve with later plays.
+         */
+        final List<Entry> fullEntries = new ArrayList<>();
+        final Resolution[] fullResolution = new Resolution[CUTS.length];
+        final double[] fullHalfFitFlat = new double[CUTS.length];
+        final double[][] fullHalfFitBoot = new double[CUTS.length][];
+        /**
+         * What the full-play intervals are widened by: the bootstrap holds the later plays as
+         * fitted, and the pilot measures how much that narrows a difference's SE (FullIndexPilot).
+         * 1 until a ratio is set. Applied to resamples with Bootstrap.widen.
+         */
+        double widen = 1;
         double seconds;
 
         Result(CountKeys.Count count) {
@@ -1318,10 +1490,45 @@ final class SystemScorer {
     }
 
     /**
+     * The gain of one way of playing over another for the same count, full play over
+     * first-decision-only: the difference of the estimates, with its interval taken resample by
+     * resample, which pairs the two because they are scored on the same resamples.
+     */
+    static Bootstrap.Interval gain(Entry a, Entry b, int p, int m) {
+        double[] da = a.boot[p][m];
+        double[] db = b.boot[p][m];
+        double[] d = new double[da.length];
+        for (int r = 0; r < d.length; r++) {
+            d[r] = da[r] - db[r];
+        }
+        return Bootstrap.interval(a.estimate[p][m] - b.estimate[p][m], d);
+    }
+
+    /**
      * Scores a count, as itself and betting only, and, given its ace side-count variant, that
      * too as itself and betting only, at every penetration, with the bootstrap.
      */
     Result score(CountKeys.Count count, CountKeys.Count sideCounted) {
+        return score(count, sideCounted, null);
+    }
+
+    /**
+     * The same, and given the count's full-index fits, the count and its variant playing them
+     * too, at every penetration fitted, in the same run on the same resamples (Result.fullEntries).
+     *
+     * Each fold's full play is fitted as the first-decision play is, on the other fold's states,
+     * with Hit and Split valued under the fold's own full-index fit: its test states take the
+     * values of the play they are scored with, fitted on the other fold, and its training states
+     * the same play's values, so no state is scored with later plays fitted on its own fold and no
+     * fold's first decisions are fitted on another fold's later plays. The bootstrap refits the
+     * first decisions, insurance and bets on every resample, as it does for first-decision-only
+     * play, and holds the later plays and the values they give as fitted (FULL_INDEX_PLAYS.md
+     * section 4); Result.widen carries what that is measured to leave out.
+     */
+    Result score(CountKeys.Count count, CountKeys.Count sideCounted, FullIndexFit.Fits fits) {
+        if (fits != null && fits.count != count) {
+            throw new IllegalArgumentException("the fits of " + fits.count + " cannot score " + count);
+        }
         long start = System.nanoTime();
         Result result = new Result(count);
         List<CountKeys.Count> betting = new ArrayList<>();
@@ -1335,6 +1542,9 @@ final class SystemScorer {
         for (CountKeys.Count c : betting) {
             result.entries.add(new Entry(c.name, c, false));
             result.entries.add(new Entry(c.name + ", betting only", c, true));
+            if (fits != null) {
+                result.fullEntries.add(new Entry(c.name + ", full play", c, false, true));
+            }
         }
         for (int p = 0; p < CUTS.length; p++) {
             Pen pen = pens[p];
@@ -1343,6 +1553,33 @@ final class SystemScorer {
             BetKeys[] bk = new BetKeys[result.entries.size()];
             for (int e = 0; e < bk.length; e++) {
                 bk[e] = e % 2 == 1 ? bk[e - 1] : betKeys(result.entries.get(e).count, pen);
+            }
+            boolean full = fits != null && fits.has(p);
+            BetKeys[] bkFull = new BetKeys[result.fullEntries.size()];
+            for (int e = 0; e < bkFull.length; e++) {
+                bkFull[e] = bk[2 * e];
+            }
+            FoldPlay[] fullPlays = null;
+            FoldPlay[] fullHalf = null;
+            PlayValues[] halfValues = null;
+            if (full) {
+                PlayValues[] values = fits.values(p);
+                fullPlays = new FoldPlay[2];
+                for (int f = 0; f < 2; f++) {
+                    fullPlays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null, null, null, values[f]);
+                }
+                result.fullResolution[p] = resolution(parts, pen, ip, fullPlays, fits, p);
+                halfValues = fits.halfValues(p);
+                if (halfValues != null) {
+                    fullHalf = halfPlays(parts, pen, ip, pen.weight, null, null, null, halfValues, null);
+                    result.fullHalfFitFlat[p] = halfFlat(pen, ip, fullHalf, pen.weight);
+                    result.fullHalfFitBoot[p] = new double[boot.resamples];
+                }
+                double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true);
+                for (int e = 0; e < sums.length; e++) {
+                    result.fullEntries.get(e).estimate[p] = sums[e];
+                    result.fullEntries.get(e).boot[p] = new double[METRICS][boot.resamples];
+                }
             }
             FoldPlay[] plays = new FoldPlay[2];
             for (int f = 0; f < 2; f++) {
@@ -1377,16 +1614,61 @@ final class SystemScorer {
                     }
                 }
                 result.halfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, plays);
+                if (full) {
+                    for (int f = 0; f < 2; f++) {
+                        refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
+                    }
+                    rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false);
+                    for (int e = 0; e < rs.length; e++) {
+                        for (int m = 0; m < METRICS; m++) {
+                            result.fullEntries.get(e).boot[p][m][r] = rs[e][m];
+                        }
+                    }
+                    if (fullHalf != null) {
+                        result.fullHalfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, fullHalf, halfValues, null);
+                    }
+                }
             }
         }
         result.seconds = (System.nanoTime() - start) / 1e9;
         return result;
     }
 
+    /**
+     * One count's own-play figures at penetration p under the weights given, each fold's play
+     * fitted afresh on its training states of weight not zero, with Hit and Split valued under
+     * values[f] for fold f's play (the stored values when values is null), insurance and bets
+     * fitted in its groups: what one bootstrap resample of score gives the count's entry when the
+     * values are the ones it holds. FullIndexPilot scores resamples with their own refitted
+     * values this way.
+     */
+    double[] scoreWith(CountKeys.Count count, int p, PlayValues[] values, double[] w, double[] units) {
+        Pen pen = pens[p];
+        Parts parts = parts(count, pen);
+        InsuranceParts ip = insuranceParts(parts, pen);
+        FoldPlay[] plays = new FoldPlay[2];
+        for (int f = 0; f < 2; f++) {
+            plays[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], w), w, units, null, null, null,
+                    values == null ? null : values[f]);
+        }
+        List<Entry> one = new ArrayList<>();
+        one.add(new Entry(count.name, count, false, values != null));
+        return scoreOnce(pen, ip, plays, new BetKeys[]{betKeys(count, pen)}, one, w, p, false)[0];
+    }
+
     /** Both folds' decision resolution at one penetration, the bounds averaged over the folds by test weight. */
     private Resolution resolution(Parts parts, Pen pen, InsuranceParts ip, FoldPlay[] plays) {
+        return resolution(parts, pen, ip, plays, null, -1);
+    }
+
+    /**
+     * The same for full-index play: the first decisions and insurance resolved under each fold's
+     * values, and each fold's later cells added (FullIndexFit.Strategy.resolveLater).
+     */
+    private Resolution resolution(Parts parts, Pen pen, InsuranceParts ip, FoldPlay[] plays, FullIndexFit.Fits fits,
+                                  int p) {
         Resolution res = new Resolution();
-        double[] bounds = new double[2];
+        double[] bounds = new double[3];
         double testWeight = 0;
         for (int f = 0; f < 2; f++) {
             double[] insSum = insuranceSums(ip, plays[f].insuranceGroup, plays[f].groups.count(), pen.train[f],
@@ -1397,9 +1679,13 @@ final class SystemScorer {
             }
             testWeight += tw;
             resolve(parts, pen, f, pen.train[f], plays[f], ip, insSum, tw, bounds, res);
+            if (fits != null) {
+                fits.fold[p][f].resolveLater(tw, bounds, res);
+            }
         }
         res.bound = testWeight == 0 ? 0 : bounds[0] / testWeight;
         res.insuranceBound = testWeight == 0 ? 0 : bounds[1] / testWeight;
+        res.laterBound = testWeight == 0 ? 0 : bounds[2] / testWeight;
         return res;
     }
 
@@ -1505,14 +1791,51 @@ final class SystemScorer {
      */
     double halfFit(Parts parts, Pen pen, InsuranceParts ip, double[] w, double[] units, ByKey byKey,
                    FoldPlay[] full) {
+        return halfFit(parts, pen, ip, w, units, byKey, full, null, pen.test);
+    }
+
+    /**
+     * The same with each fold's half fit valued under its own full-index values, values[f]
+     * (the stored ones when values is null). An earlier play given for a fold must have been
+     * fitted with that fold's values; it is then valued from, and valueOn[f] says which states
+     * a play made afresh values.
+     */
+    double halfFit(Parts parts, Pen pen, InsuranceParts ip, double[] w, double[] units, ByKey byKey,
+                   FoldPlay[] earlier, PlayValues[] values, int[][] valueOn) {
+        FoldPlay[] plays = halfPlays(parts, pen, ip, w, units, byKey, earlier, values, valueOn);
+        return halfFlat(pen, ip, plays, w);
+    }
+
+    /** Each fold's half fit: play fitted on the half's drawn training states (see halfFit). */
+    FoldPlay[] halfPlays(Parts parts, Pen pen, InsuranceParts ip, double[] w, double[] units, ByKey byKey,
+                         FoldPlay[] earlier, PlayValues[] values, int[][] valueOn) {
+        FoldPlay[] out = new FoldPlay[2];
+        for (int f = 0; f < 2; f++) {
+            int[] half = half(pen, f, w);
+            out[f] = foldPlay(parts, pen, ip, half, w, units, valueOn == null ? null : valueOn[f], byKey,
+                    earlier == null ? null : earlier[f], values == null ? null : values[f]);
+        }
+        return out;
+    }
+
+    /** The half of fold f's training states the learning curve fits on, those of weight w not zero. */
+    int[] half(Pen pen, int f, double[] w) {
+        return Arrays.stream(pen.train[f]).filter(j -> inHalf(st.shoe[pen.states[j]]) && w[j] != 0).toArray();
+    }
+
+    /** Whether a shoe is in the half of its fold the learning curve fits on: its index halved is even. */
+    static boolean inHalf(int shoe) {
+        return ((shoe >> 1) & 1) == 0;
+    }
+
+    /** The flat EV on each fold's test states of the half fits given, insurance fitted on the same half. */
+    double halfFlat(Pen pen, InsuranceParts ip, FoldPlay[] plays, double[] w) {
         double num = 0;
         double den = 0;
         for (int f = 0; f < 2; f++) {
-            int[] half = Arrays.stream(pen.train[f])
-                    .filter(j -> ((st.shoe[pen.states[j]] >> 1) & 1) == 0 && w[j] != 0).toArray();
-            FoldPlay play = foldPlay(parts, pen, ip, half, w, units, pen.test[f], byKey, full == null ? null : full[f]);
+            FoldPlay play = plays[f];
             double[] ins = insuranceValues(ip, play.insuranceGroup,
-                    insuranceSums(ip, play.insuranceGroup, play.groups.count(), half, w));
+                    insuranceSums(ip, play.insuranceGroup, play.groups.count(), half(pen, f, w), w));
             for (int j : pen.test[f]) {
                 num += w[j] * (play.base[j] + ins[j]);
                 den += w[j];

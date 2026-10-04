@@ -118,6 +118,25 @@ final class Bootstrap {
     }
 
     /**
+     * Resamples spread ratio times as far from their mean: what an estimate's resamples would be
+     * if its SE were ratio times larger with its bias unchanged. The full-index scoring holds the
+     * later plays as fitted on every resample, and the pilot measures how much that understates
+     * each difference's SE; the full run's intervals are widened by that ratio this way.
+     */
+    static double[] widen(double[] boot, double ratio) {
+        double mean = 0;
+        for (double b : boot) {
+            mean += b;
+        }
+        mean /= boot.length;
+        double[] out = new double[boot.length];
+        for (int r = 0; r < out.length; r++) {
+            out[r] = mean + ratio * (boot[r] - mean);
+        }
+        return out;
+    }
+
+    /**
      * The multiplier c of the maximum-|t| simultaneous 95% intervals, estimate +- c x SE,
      * over several estimates at once: the 0.95 quantile over resamples of the largest
      * |resample - estimate| / SE among them. Estimates with no spread are left out, as they

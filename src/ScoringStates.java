@@ -32,6 +32,8 @@ final class ScoringStates {
     /** Deals are numbered up-card first, so deals 0 to 54 are the ones with the ace up. */
     static final int ACE_UP = 55;
 
+    /** The rules the states were dealt and valued under. */
+    final RoundRules rules;
     /** Shoes 0 to shoes - 1 were dealt, valued states or not; a shoe's fold is its parity. */
     final int shoes;
     final int size;
@@ -65,6 +67,7 @@ final class ScoringStates {
      * twice.
      */
     ScoringStates(List<StateStore.Record> records, int shoes, RoundRules rules) {
+        this.rules = rules;
         this.shoes = shoes;
         this.size = records.size();
         shoe = new int[size];
@@ -119,6 +122,7 @@ final class ScoringStates {
 
     /** The states given of another run, dealt from shoes 0 to shoes - 1 once renumbered; nothing is copied. */
     private ScoringStates(ScoringStates of, int[] states, int[] renumbered, int shoes) {
+        this.rules = of.rules;
         this.shoes = shoes;
         this.size = states.length;
         shoe = renumbered;

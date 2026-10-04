@@ -80,6 +80,12 @@ final class PlayerTree {
         void add(int spot, int key, double gap);
     }
 
+    /** Receives a walk's reach and gap at each decision it reaches. */
+    interface DecisionSink {
+        /** At one node, a hand at this spot and count key: weight x reach, and weight x reach x (V_stand - V_hit). */
+        void add(int spot, int key, double reach, double gap);
+    }
+
     /** Basic strategy after the first move: hit or stand by total, softness and up-card, whatever the count. */
     static final LaterPlay CHART = chartLaterPlay();
 
@@ -782,7 +788,19 @@ final class PlayerTree {
 
         /** Walks the tree under a later play, in one mode, valuing every node backward. */
         Walk walk(LaterPlay later, Mode mode) {
+            if (later == null) {
+                throw new IllegalArgumentException("a walk needs a later play; perfect() takes the best at every node");
+            }
             return new Walk(this, later, mode);
+        }
+
+        /**
+         * Walks every node taking the better of standing and hitting at each, from the state's
+         * own composition: the most any play of the dealt hand after its first move can make
+         * (FULL_INDEX_PLAYS.md section 4's perfect row). A tie stands.
+         */
+        Walk perfect() {
+            return new Walk(this, null, Mode.EVERY_NODE);
         }
     }
 
@@ -804,6 +822,13 @@ final class PlayerTree {
         final boolean[][] stands;
         /** Each part's Hit value, conditional on no natural, as a stored value is; NaN where the deal cannot be dealt. */
         final double[] partHit;
+        /**
+         * Whether hitting some start of the part leads, by the play's own hits, to a decision
+         * the play answers otherwise than the chart. Where it does not, the part's Hit value is
+         * the chart's, which the stored V(Hit) holds exactly; the tree gives it to within the
+         * last bit or so.
+         */
+        final boolean[] partDeparts;
         private double[][] reach;
 
         private Walk(Counted c, LaterPlay later, Mode mode) {
@@ -817,6 +842,7 @@ final class PlayerTree {
             value = new double[c.trees][];
             hit = new double[c.trees][];
             stands = new boolean[c.trees][];
+            boolean[][] departs = new boolean[c.trees][];
             for (int t = 0; t < c.trees; t++) {
                 int u = c.treeUp[t];
                 int upSlot = c.treeUpSlot[t];
@@ -828,6 +854,7 @@ final class PlayerTree {
                 double[] v = new double[size];
                 double[] h = new double[size];
                 boolean[] st = new boolean[size];
+                boolean[] dep = new boolean[size];
                 for (int j = size - 1; j >= 0; j--) {
                     int node = live.node[j];
                     if (!ok[node]) {
@@ -835,6 +862,7 @@ final class PlayerTree {
                         h[j] = Double.NaN;
                         continue;
                     }
+                    boolean below = false;
                     int hand = g.hand[node];
                     int n = cards - hands.cards[hand] - 1;
                     int nat = natural == 0 ? 0 : naturalsLeft - hands.held[hand * 11 + natural];
@@ -850,6 +878,7 @@ final class PlayerTree {
                         double after;
                         if (to >= 0) {
                             after = v[to];
+                            below |= dep[to];
                         } else if (to == Graph.BUST) {
                             int n1 = n - 1;
                             int nat1 = nat - (g.slotRank[s] == natural ? 1 : 0);
@@ -863,27 +892,36 @@ final class PlayerTree {
                     switch (live.role[j]) {
                         case START:
                             v[j] = Double.NaN;   // a start's first move is the deal's, not the later play's
+                            dep[j] = below;
                             break;
                         case HITS:
                             v[j] = sum;
+                            dep[j] = below;
                             break;
                         default:
-                            boolean stay = later.stands(hands.total(hand), hands.soft(hand), u, keys[node]);
+                            int total = hands.total(hand);
+                            boolean soft = hands.soft(hand);
+                            boolean stay = later == null ? standOf[hand] >= sum : later.stands(total, soft, u, keys[node]);
                             st[j] = stay;
                             v[j] = stay ? standOf[hand] : sum;
+                            dep[j] = stay != CHART.stands(total, soft, u, 0) || (!stay && below);
                     }
                 }
                 value[t] = v;
                 hit[t] = h;
                 stands[t] = st;
+                departs[t] = dep;
             }
 
             partHit = new double[c.partTagSum.length];
+            partDeparts = new boolean[c.partTagSum.length];
             Arrays.fill(partHit, Double.NaN);
             double[] sums = new double[partHit.length];
             for (int i = 0; i < Deals.COUNT; i++) {
                 for (int q = c.compFrom[i]; q < c.compFrom[i + 1]; q++) {
-                    sums[c.compPart[q]] += c.compChance[q] * hit[c.compTree[q]][live.position[c.compNode[q]]];
+                    int at = live.position[c.compNode[q]];
+                    sums[c.compPart[q]] += c.compChance[q] * hit[c.compTree[q]][at];
+                    partDeparts[c.compPart[q]] |= departs[c.compTree[q]][at];
                 }
                 for (int p = c.partFrom[i]; p < c.partFrom[i + 1]; p++) {
                     partHit[p] = sums[p] / c.partShare[p] / c.noNatural[i];
@@ -956,6 +994,11 @@ final class PlayerTree {
          * node, the contested ones in a contested walk.
          */
         void gaps(GapSink sink) {
+            decisions((spot, key, reach, gap) -> sink.add(spot, key, gap));
+        }
+
+        /** The same nodes as gaps, each with its reach as well as its gap. */
+        void decisions(DecisionSink sink) {
             Counted c = counted;
             Graph g = c.graph;
             Hands hands = Hands.ALL;
@@ -968,7 +1011,7 @@ final class PlayerTree {
                     }
                     int node = live.node[j];
                     int h = g.hand[node];
-                    sink.add(spot(hands.total(h), hands.soft(h), u), c.key[t][node], r[j] * (stand[u][h] - hit[t][j]));
+                    sink.add(spot(hands.total(h), hands.soft(h), u), c.key[t][node], r[j], r[j] * (stand[u][h] - hit[t][j]));
                 }
             }
         }
