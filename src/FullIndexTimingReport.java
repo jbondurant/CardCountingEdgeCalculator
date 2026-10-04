@@ -287,7 +287,7 @@ public final class FullIndexTimingReport {
         return rt.totalMemory() - rt.freeMemory();
     }
 
-    private static void resetPeaks() {
+    static void resetPeaks() {
         System.gc();
         for (MemoryPoolMXBean p : ManagementFactory.getMemoryPoolMXBeans()) {
             if (p.getType() == MemoryType.HEAP) {
@@ -296,7 +296,7 @@ public final class FullIndexTimingReport {
         }
     }
 
-    private static long peakHeap() {
+    static long peakHeap() {
         long sum = 0;
         for (MemoryPoolMXBean p : ManagementFactory.getMemoryPoolMXBeans()) {
             if (p.getType() == MemoryType.HEAP) {
@@ -306,7 +306,7 @@ public final class FullIndexTimingReport {
         return sum;
     }
 
-    private static double loadAverage() {
+    static double loadAverage() {
         return ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
     }
 
