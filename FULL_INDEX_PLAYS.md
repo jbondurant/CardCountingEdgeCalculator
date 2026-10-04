@@ -119,7 +119,11 @@ shoes that cannot run out, and check ExactRound's exceptions separately.
 **Checks, each required to pass and to fail on a planted bug:**
 - **Against the stored values.** With basic strategy, the tree's V(Hit) for every deal of
   every stored state equals the stored value within 1e-12. The review's scratch code
-  measured 4.4e-16 over 21,600 deals of 40 states.
+  measured 4.4e-16 over 21,600 deals of 40 states. PlayerTreeTest checks 40 states spread
+  through the file on every test run; PlayerTreeStoredCheck checks every state, once. On
+  all 60,743 states, each holding 85 cards or more, it compared 320,392,174 Hit values
+  (every part, both walks, Hi-Lo, Red Seven, KISS I and BRH-I) and 32,789,360 Stand values:
+  largest difference 7.8e-16, none over 1e-12.
 - **Against every card order, by kind.** ConcreteRound gains a test-only hook that deals
   kinds in parallel with ranks and tells a test policy each kind it is shown, in order.
   On shoes big enough that no order runs out, with depth set so the true-count divisor
