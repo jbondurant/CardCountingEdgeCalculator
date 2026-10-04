@@ -216,6 +216,53 @@ final class StateStore {
         return (int) readProgress(progressFile(data))[0];
     }
 
+    /** How many records the progress file vouches for. */
+    static int records(Path data) throws IOException {
+        long limit = readProgress(progressFile(data))[1];
+        return (int) ((limit - header(data).bytes().length) / RECORD_BYTES);
+    }
+
+    /**
+     * Records from..from + count - 1 of those the progress file vouches for, read without
+     * reading the rest of the file. The file is opened for reading only, so a state file that
+     * must not change is safe to sample.
+     */
+    static List<Record> read(Path data, int from, int count) throws IOException {
+        int records = records(data);
+        if (from < 0 || count < 0 || from + count > records) {
+            throw new IllegalArgumentException("records " + from + " to " + (from + count - 1) + " of " + records);
+        }
+        long start = header(data).bytes().length + (long) from * RECORD_BYTES;
+        List<Record> out = new ArrayList<>(count);
+        try (FileChannel ch = FileChannel.open(data, StandardOpenOption.READ)) {
+            ByteBuffer b = ByteBuffer.allocate(RECORD_BYTES);
+            for (int i = 0; i < count; i++) {
+                b.clear();
+                long at = start + (long) i * RECORD_BYTES;
+                while (b.hasRemaining()) {
+                    if (ch.read(b, at + b.position()) < 0) {
+                        throw new IOException(data + " ends inside record " + (from + i));
+                    }
+                }
+                b.flip();
+                int shoe = b.getInt();
+                int round = b.getInt();
+                int depth = b.getInt();
+                double q = b.getDouble();
+                int[] dealt = new int[ShoeRun.KINDS];
+                for (int k = 0; k < dealt.length; k++) {
+                    dealt[k] = b.getShort();
+                }
+                double[] values = new double[VALUES];
+                for (int v = 0; v < VALUES; v++) {
+                    values[v] = b.getDouble();
+                }
+                out.add(new Record(shoe, round, depth, q, dealt, values));
+            }
+        }
+        return out;
+    }
+
     /** Every record the progress file vouches for. */
     static List<Record> readAll(Path data) throws IOException {
         long limit = readProgress(progressFile(data))[1];

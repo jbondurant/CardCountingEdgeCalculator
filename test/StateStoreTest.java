@@ -70,6 +70,21 @@ public class StateStoreTest {
         read = StateStore.readAll(data);
         assertEquals(written.size() + 1, read.size());
         same(more, read.get(read.size() - 1));
+
+        // Any run of records reads back alone, as readAll gives it, and the file is not changed.
+        byte[] before = Files.readAllBytes(data);
+        assertEquals(read.size(), StateStore.records(data));
+        for (int from = 0; from <= read.size(); from++) {
+            for (int count = 0; from + count <= read.size(); count++) {
+                List<StateStore.Record> part = StateStore.read(data, from, count);
+                assertEquals(count, part.size());
+                for (int i = 0; i < count; i++) {
+                    same(read.get(from + i), part.get(i));
+                }
+            }
+        }
+        assertThrows(IllegalArgumentException.class, () -> StateStore.read(data, 1, StateStore.records(data)));
+        assertArrayEquals(before, Files.readAllBytes(data));
     }
 
     @Test
