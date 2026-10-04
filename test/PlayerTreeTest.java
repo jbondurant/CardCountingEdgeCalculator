@@ -222,6 +222,125 @@ public class PlayerTreeTest {
         assertTrue(cells > 1000 && elsewhere > 1000, cells + " cells, " + elsewhere + " elsewhere");
     }
 
+    /** Random thresholds at every spot around this centre key: the chart's answer nowhere in particular. */
+    private static PlayerTree.LaterPlay thresholdsEverywhere(Random rnd, int centre, int spread) {
+        int[] at = new int[PlayerTree.SPOTS];
+        for (int s = 0; s < at.length; s++) {
+            at[s] = centre - spread + rnd.nextInt(2 * spread + 1);
+        }
+        return (total, soft, up, key) -> key >= at[PlayerTree.spot(total, soft, up)];
+    }
+
+    /** A (spot, key) cell as one number. */
+    private static long cell(int spot, int key) {
+        return ((long) spot << 32) | (key & 0xffffffffL);
+    }
+
+    /** What the deals whose first move hits are worth together: the sum over them of (1/q) P(i) (1 - P(nat|i)) V_hit, by part. */
+    private static double hitting(PlayerTree.Counted counted, PlayerTree.Walk walk, PlayerTree.FirstHits first,
+                                  double weight) {
+        double sum = 0;
+        for (int i = 0; i < Deals.COUNT; i++) {
+            for (int q = 0; q < counted.parts(i); q++) {
+                if (first.hits(i, q)) {
+                    sum += weight * counted.chance[i] * counted.partShare[counted.partFrom[i] + q] * counted.noNatural[i]
+                            * walk.hit(i, q);
+                }
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * A cell's gap is what flipping its play changes, which holds the gaps to something the
+     * walks do not compute the same way. The hard total only grows along a path and a hand's
+     * total and softness fix its hard total, so no path meets a spot twice, and the nodes of one
+     * (spot, key) cell lie on no path through each other. Flipping the play at one cell then
+     * changes the play at those nodes alone, each reached as before and worth after the flip
+     * what the other answer was worth before it: the hitting deals' worth moves by the cell's
+     * gap sum where the play hit there, and by minus it where it stood.
+     *
+     * On stored states, for the four counts and both walks, cells are flipped one at a time:
+     * cells the walk gave gaps for, and cells it asked about and gave none for, whose flip must
+     * change nothing. The contested walk's play is the chart outside the contested spots; the
+     * walk of every node's has random thresholds at every spot, so the cells it flips include
+     * hard 11 or less, hard 17 to 20 and soft 19 and 20, both stood on and hit.
+     */
+    @Test
+    public void flippingACellChangesTheHittingDealsByItsGap() throws Exception {
+        Random rnd = new Random(20261007L);
+        int flips = 0;
+        int stood = 0;
+        int outside = 0;
+        int without = 0;
+        double largest = 0;
+        for (StateStore.Record r : StoredStates.spread(6)) {
+            PlayerTree tree = new PlayerTree(new ExactRound(RULES), r.ranksLeft());
+            double weight = 1 / r.q;
+            for (CountKeys.Count c : COUNTS) {
+                PlayerTree.Counted counted = tree.count(c, r.dealt);
+                int centre = centre(c, counted);
+                int spread = c.trueCounted ? 3 : 5;
+                PlayerTree.FirstHits first = firstMoves(rnd, counted);
+                for (PlayerTree.Mode mode : PlayerTree.Mode.values()) {
+                    PlayerTree.LaterPlay later = mode == PlayerTree.Mode.EVERY_NODE
+                            ? thresholdsEverywhere(rnd, centre, spread) : thresholds(rnd, centre, spread);
+                    java.util.Set<Long> asked = new java.util.HashSet<>();
+                    PlayerTree.LaterPlay asking = (total, soft, up, key) -> {
+                        asked.add(cell(PlayerTree.spot(total, soft, up), key));
+                        return later.stands(total, soft, up, key);
+                    };
+                    PlayerTree.Walk walk = counted.walk(asking, mode);
+                    walk.reach(first, weight);
+                    Map<Long, Double> gaps = new HashMap<>();
+                    walk.gaps((spot, key, gap) -> gaps.merge(cell(spot, key), gap, Double::sum));
+                    for (long k : gaps.keySet()) {
+                        assertTrue(asked.contains(k), "a gap at a cell the walk never asked about");
+                    }
+                    double before = hitting(counted, walk, first, weight);
+                    List<Long> with = new java.util.ArrayList<>(new java.util.TreeSet<>(gaps.keySet()));
+                    List<Long> none = new java.util.ArrayList<>();
+                    for (long k : new java.util.TreeSet<>(asked)) {
+                        if (!gaps.containsKey(k)) {
+                            none.add(k);
+                        }
+                    }
+                    java.util.Collections.shuffle(with, rnd);
+                    java.util.Collections.shuffle(none, rnd);
+                    List<Long> cells = new java.util.ArrayList<>(with.subList(0, Math.min(20, with.size())));
+                    cells.addAll(none.subList(0, Math.min(4, none.size())));
+                    for (long k : cells) {
+                        int spot = (int) (k >>> 32);
+                        int key = (int) k;
+                        int total = PlayerTree.spotTotal(spot);
+                        boolean soft = PlayerTree.spotSoft(spot);
+                        int up = PlayerTree.spotUp(spot);
+                        boolean stands = later.stands(total, soft, up, key);
+                        PlayerTree.LaterPlay flipped = (t, s, u, kk) -> (PlayerTree.spot(t, s, u) == spot && kk == key)
+                                != later.stands(t, s, u, kk);
+                        double after = hitting(counted, counted.walk(flipped, mode), first, weight);
+                        double gap = gaps.getOrDefault(k, 0.0);
+                        String at = "shoe " + r.shoe + " round " + r.round + " " + c.name + " " + mode + ": "
+                                + (soft ? "soft " : "hard ") + total + " v " + up + " at key " + key
+                                + (stands ? ", stood" : ", hit");
+                        assertEquals(stands ? -gap : gap, after - before, 1e-12, at);
+                        largest = Math.max(largest, Math.abs((stands ? -gap : gap) - (after - before)));
+                        flips++;
+                        stood += stands ? 1 : 0;
+                        outside += PlayerTree.contested(total, soft) ? 0 : 1;
+                        without += gaps.containsKey(k) ? 0 : 1;
+                    }
+                }
+            }
+        }
+        System.out.printf("PlayerTreeTest: %d one-cell flips (%d stood, %d outside the contested spots, %d of cells "
+                + "with no gap), largest |change - gap| %.1e%n", flips, stood, outside, without, largest);
+        assertTrue(flips > 6 * 4 * 2 * 20, flips + " flips");
+        assertTrue(stood > flips / 5 && flips - stood > flips / 5, stood + " of " + flips + " flips stood");
+        assertTrue(outside > flips / 5, outside + " of " + flips + " flips outside the contested spots");
+        assertTrue(without > 0, "no cell without a gap was flipped");
+    }
+
     /**
      * A play that differs from the chart outside the contested spots changes the walk of every
      * node and not the contested walk, which plays the chart there whatever it is told.
