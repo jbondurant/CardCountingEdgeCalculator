@@ -361,9 +361,9 @@ public class PlayerTreeOrderTest {
     /** The largest difference any comparison here has found. */
     private static double largest;
 
-    /** The tree's Hit values against the average over every order, part by part, in both walks. */
+    /** The tree's Hit values against the average over every order, part by part, in these walks. */
     private static int checkHit(Small st, int p1, int p2, int up, PlayerTree.LaterPlay later,
-                                Map<Integer, Integer> answers, String what) {
+                                Map<Integer, Integer> answers, String what, PlayerTree.Mode... modes) {
         PlayerTree tree = new PlayerTree(new ExactRound(RULES), st.shoe);
         PlayerTree.Counted counted = tree.count(st.count, st.dealt);
         int deal = Deals.index(p1, p2, up);
@@ -375,7 +375,7 @@ public class PlayerTreeOrderTest {
         }
         int parts = counted.parts(deal);
         assertEquals(orders.size(), parts, what + ": parts");
-        for (PlayerTree.Mode mode : PlayerTree.Mode.values()) {
+        for (PlayerTree.Mode mode : modes) {
             PlayerTree.Walk walk = counted.walk(later, mode);
             for (int q = 0; q < parts; q++) {
                 int tag = counted.partTagSum[counted.partFrom[deal] + q];
@@ -408,7 +408,7 @@ public class PlayerTreeOrderTest {
                     PlayerTree.LaterPlay later = thresholds(rnd, keysMet(st, d[0], d[1], d[2], PlayerMove.Hit, NO_SPLIT));
                     Map<Integer, Integer> answers = new HashMap<>();
                     String what = count.name + " " + d[0] + "," + d[1] + " vs " + d[2] + " on " + Arrays.toString(st.left);
-                    compared += checkHit(st, d[0], d[1], d[2], later, answers, what);
+                    compared += checkHit(st, d[0], d[1], d[2], later, answers, what, PlayerTree.Mode.values());
                     for (int a : answers.values()) {
                         both += a == 3 ? 1 : 0;
                     }
@@ -421,6 +421,81 @@ public class PlayerTreeOrderTest {
         // The count has to change decisions for the check to mean anything: spots where the
         // same thresholds both stood and hit, at different keys.
         assertTrue(both > 40, "only " + both + " spots played both ways");
+    }
+
+    /**
+     * Random thresholds at every spot the chart's play meets, the chart's answer at the rest: a
+     * play that leaves the chart outside the contested spots too, hitting a hard 18 at some keys
+     * and standing on a hard 9 or a soft 15 at others.
+     */
+    static PlayerTree.LaterPlay thresholdsEverywhere(Random rnd, Map<Integer, int[]> keys) {
+        int[] at = new int[PlayerTree.SPOTS];
+        boolean[] met = new boolean[PlayerTree.SPOTS];
+        for (int s = 0; s < at.length; s++) {
+            int[] range = keys.get(s);
+            met[s] = range != null;
+            at[s] = range == null ? 0 : range[0] + 1 + rnd.nextInt(Math.max(1, range[1] - range[0]));
+        }
+        return (total, soft, up, key) -> met[PlayerTree.spot(total, soft, up)]
+                ? key >= at[PlayerTree.spot(total, soft, up)]
+                : PlayerTree.CHART.stands(total, soft, up, key);
+    }
+
+    /**
+     * The walk of every node asks the play at every hand of three or more cards below 21, so
+     * its values must follow a play that leaves the chart anywhere, not only at the contested
+     * spots: hard 11 or less, hard 17 to 20, and soft 19 and 20 included. Under random
+     * thresholds at every spot the chart meets, its Hit values are the average over every order,
+     * part by part. The contested walk plays the chart outside the contested spots whatever it
+     * is told (PlayerTreeTest), so it is not held to these plays.
+     */
+    @Test
+    public void theWalkOfEveryNodeFollowsAPlayAwayFromTheChart() {
+        Random rnd = new Random(20261008L);
+        Object[][] cases = {
+                {"Hi-Lo", new int[][]{{2, 3, 6}, {10, 6, 10}, {1, 6, 1}, {1, 2, 1}, {4, 5, 10}, {1, 1, 10}, {2, 2, 9}}},
+                {"Red Seven (Red 7)", new int[][]{{1, 7, 1}, {5, 2, 7}, {7, 9, 7}, {6, 7, 10}, {3, 2, 10}}},
+                {"KISS I", new int[][]{{2, 4, 2}, {1, 2, 10}, {6, 2, 10}, {3, 10, 7}, {2, 3, 4}}},
+        };
+        int compared = 0;
+        int lowHard = 0;
+        int highHard = 0;
+        int highSoft = 0;
+        for (Object[] c : cases) {
+            CountKeys.Count count = named((String) c[0]);
+            for (int[] d : (int[][]) c[1]) {
+                Small st = state(rnd, count, d[0], d[1], d[2], false);
+                PlayerTree.LaterPlay later = thresholdsEverywhere(rnd, keysMet(st, d[0], d[1], d[2], PlayerMove.Hit,
+                        NO_SPLIT));
+                Map<Integer, Integer> answers = new HashMap<>();
+                String what = count.name + " " + d[0] + "," + d[1] + " vs " + d[2] + " on " + Arrays.toString(st.left)
+                        + ", away from the chart";
+                compared += checkHit(st, d[0], d[1], d[2], later, answers, what, PlayerTree.Mode.EVERY_NODE);
+                // Spots outside the contested ones where some order got the answer the chart does not give.
+                for (Map.Entry<Integer, Integer> e : answers.entrySet()) {
+                    int spot = e.getKey();
+                    int total = PlayerTree.spotTotal(spot);
+                    boolean soft = PlayerTree.spotSoft(spot);
+                    boolean chartStands = PlayerTree.CHART.stands(total, soft, PlayerTree.spotUp(spot), 0);
+                    if (PlayerTree.contested(total, soft) || (e.getValue() & (chartStands ? 2 : 1)) == 0) {
+                        continue;
+                    }
+                    if (soft) {
+                        highSoft++;
+                    } else if (total <= 11) {
+                        lowHard++;
+                    } else {
+                        highHard++;
+                    }
+                }
+            }
+        }
+        System.out.printf("PlayerTreeOrderTest: %d parts of %d deals compared under plays away from the chart, "
+                        + "largest difference so far %.1e; the chart left at %d spots of hard 11 or less, %d of hard 17 "
+                        + "to 20 and %d of soft 19 or 20%n", compared, 17, largest, lowHard, highHard, highSoft);
+        assertTrue(compared > 17, compared + " parts compared");
+        assertTrue(lowHard >= 3 && highHard >= 3 && highSoft >= 3,
+                "the plays left the chart too rarely: " + lowHard + ", " + highHard + ", " + highSoft);
     }
 
     /**
