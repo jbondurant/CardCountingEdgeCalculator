@@ -819,4 +819,98 @@ public class ExactRoundTest {
             }
         }
     }
+
+    /**
+     * The player tree settles every hand it stands on against DealerOutcomes, so a stand value
+     * worked out there must be the engine's own, to the last bit: the dealer counted by the
+     * same hands and tables and added in the same order. The tables are built for the state,
+     * and each shoe is the state less the deal and some cards the player drew, so they reach
+     * further than the shoe needs, as they do in the tree. The seven outcomes must also add up
+     * to the chance that the hole card is not a natural.
+     */
+    @Test
+    public void dealerOutcomesGiveTheEnginesOwnStandValue() {
+        RoundRules rules = montreal(2, 4);
+        RoundPolicy chart = BasicStrategy.chart();
+        java.util.Random rnd = new java.util.Random(20261003L);
+        int compared = 0;
+        for (int c = 0; c < 300; c++) {
+            int[] state = new int[11];
+            boolean small = c % 3 == 0;
+            for (int r = 1; r <= 10; r++) {
+                state[r] = small ? rnd.nextInt(4) : (r == 10 ? 60 + rnd.nextInt(69) : 10 + rnd.nextInt(23));
+            }
+            int up = 1 + rnd.nextInt(10);
+            int p1 = 1 + rnd.nextInt(10);
+            int p2 = 1 + rnd.nextInt(10);
+            int[] shoe = state.clone();
+            shoe[up]--;
+            shoe[p1]--;
+            shoe[p2]--;
+            int drawn = rnd.nextInt(3);
+            int hard = p1 + p2;
+            boolean ace = p1 == 1 || p2 == 1;
+            for (int d = 0; d < drawn; d++) {
+                int y = 1 + rnd.nextInt(10);
+                shoe[y]--;
+                hard += y;
+                ace |= y == 1;
+            }
+            int cards = 0;
+            boolean possible = true;
+            for (int r = 1; r <= 10; r++) {
+                possible &= shoe[r] >= 0;
+                cards += Math.max(shoe[r], 0);
+            }
+            int natural = ExactRound.naturalHoleRank(up);
+            int naturals = natural == 0 ? 0 : Math.max(shoe[natural], 0);
+            boolean playerNatural = drawn == 0 && hard == 11 && ace;
+            if (!possible || hard > 21 || cards < 2 || naturals == cards || playerNatural) {
+                continue;
+            }
+            // The engine standing at once on two cards of the same total is settled on the
+            // shoe it is given, whatever cards made the total, so its value is this stand value
+            // made conditional on no natural.
+            int total = ace && hard <= 11 ? hard + 10 : hard;
+            int[] two = two(total, ace && hard <= 11);
+            if (two == null) {
+                continue;
+            }
+            ExactRound engine = new ExactRound(rules);
+            double[] out = new double[ExactRound.DealerOutcomes.OUTCOMES];
+            boolean runsOut = engine.dealerOutcomes(state, up).outcomes(shoe, out);
+            double viaEngine;
+            try {
+                viaEngine = engine.valueOfFirstMove(shoe, two[0], two[1], up, PlayerMove.Stand, chart);
+            } catch (IllegalStateException e) {
+                assertTrue(runsOut, "the engine ran out where the outcomes say the dealer cannot");
+                continue;
+            }
+            double stood = ExactRound.DealerOutcomes.stood(total, out);
+            assertEquals(viaEngine, stood / ((cards - naturals) / (double) cards), 0.0,
+                    "case " + c + ": " + total + " vs " + up + " on " + Arrays.toString(shoe));
+            double sum = 0;
+            for (double o : out) {
+                sum += o;
+            }
+            assertEquals((cards - naturals) / (double) cards, sum, 1e-15, "case " + c);
+            compared++;
+        }
+        assertTrue(compared > 150, compared + " compared");
+    }
+
+    /** Two cards making this total, soft or hard, that are not a natural; null if none. */
+    private static int[] two(int total, boolean soft) {
+        if (soft) {
+            int other = total - 11;
+            return other >= 1 && other <= 9 ? new int[]{1, other} : null;
+        }
+        for (int a = 2; a <= 10; a++) {
+            int b = total - a;
+            if (b >= 2 && b <= 10) {
+                return new int[]{a, b};
+            }
+        }
+        return null;
+    }
 }

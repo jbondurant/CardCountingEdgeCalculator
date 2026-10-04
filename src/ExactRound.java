@@ -227,7 +227,7 @@ public final class ExactRound implements RoundValuer {
     }
 
     /** The hole card that would give the dealer a natural with this up-card, or 0 if none can. */
-    private static int naturalHoleRank(int up) {
+    static int naturalHoleRank(int up) {
         return up == 1 ? 10 : up == 10 ? 1 : 0;
     }
 
@@ -379,6 +379,162 @@ public final class ExactRound implements RoundValuer {
                 key |= (long) held[r] << (4 * (r - 1));
             }
             return key;
+        }
+    }
+
+    /** fall[c][k] = c (c - 1) ... (c - k + 1), zero when k > c, for c up to most and k up to maxK. */
+    private static double[][] fallTable(int most, int maxK) {
+        double[][] fall = new double[most + 1][maxK + 1];
+        for (int c = 0; c <= most; c++) {
+            double f = 1;
+            for (int k = 0; k <= maxK; k++) {
+                fall[c][k] = f;
+                f *= Math.max(c - k, 0);
+            }
+        }
+        return fall;
+    }
+
+    /** inverse[n][k] = 1 / (n (n - 1) ... (n - k + 1)), zero when k > n, for n up to cards and k up to maxSize. */
+    private static double[][] inverseFallTable(int cards, int maxSize) {
+        double[][] inverse = new double[cards + 1][maxSize + 1];
+        for (int n = 0; n <= cards; n++) {
+            double f = 1;
+            for (int k = 0; k <= maxSize; k++) {
+                inverse[n][k] = f == 0 ? 0 : 1 / f;
+                f *= Math.max(n - k, 0);
+            }
+        }
+        return inverse;
+    }
+
+    /**
+     * The dealer's distribution from a shoe of n cards, c[r] of rank r, counting only hole
+     * cards that are not a natural, into out[at .. at + 6] in M's order. Returns whether the
+     * dealer can run out of cards here. Every round and DealerOutcomes work it out here, so
+     * both add the same terms in the same order.
+     */
+    private static boolean dealerDistribution(DealerHands d, int[] c, int n, double[][][] fall,
+                                              double[][] inverseFall, double[] out, int at) {
+        Arrays.fill(out, at, at + OUTCOMES, 0);
+        for (int i = 0; i < d.entries; i++) {
+            int size = d.size[i];
+            if (size > n) {
+                continue;
+            }
+            double p = d.orders[i];
+            for (int j = d.start[i]; j < d.start[i + 1]; j++) {
+                int r = d.ranks[j];
+                int k = d.counts[j];
+                if (k > c[r]) {
+                    p = 0;
+                    break;
+                }
+                p *= fall[r][c[r]][k];
+            }
+            if (p != 0) {
+                out[at + d.outcome[i]] += p * inverseFall[n][size];
+            }
+        }
+        // The dealer runs out only by taking every card left and still needing one. Every
+        // multiset it can be holding then extends to one of its finished hands, so the
+        // tables reach far enough to price it.
+        boolean runsOut = false;
+        if (n <= d.maxUnfinishedSize) {
+            boolean fits = true;
+            for (int r = 1; r <= 10; r++) {
+                fits &= c[r] <= 15;
+            }
+            Long orders = fits ? d.unfinished.get(DealerHands.pack(c)) : null;
+            if (orders != null) {
+                double p = orders;
+                for (int r = 1; r <= 10; r++) {
+                    p *= fall[r][c[r]][c[r]];
+                }
+                out[at + RAN_OUT] = p * inverseFall[n][n];
+                runsOut = true;
+            }
+        }
+        return runsOut;
+    }
+
+    // ------------------------------------------------------------------ the dealer, for the player tree
+
+    /**
+     * The dealer's outcomes from the shoes left by one state, for one up-card: the
+     * distributions a player standing on some hand is settled against.
+     *
+     * PlayerTree values every hand a player can hold after hitting, and it must give the
+     * values this engine gives, so that under basic strategy it reproduces the stored ones.
+     * So it does not work the dealer out again: it asks the engine, which counts the dealer
+     * by the same dealer hands, the same tables of falling factorials and the same order of
+     * summation as a round of its own. The tables are built once, for the state's shoe; a
+     * shoe the player's cards leave holds no more of any rank, and the tables' entries do not
+     * depend on how far they reach.
+     */
+    DealerOutcomes dealerOutcomes(int[] state, int up) {
+        if (state == null || state.length != 11 || !isRank(up)) {
+            throw new IllegalArgumentException("a state is an int[11] and an up-card a rank from 1 to 10");
+        }
+        return new DealerOutcomes(dealerHandsFor(up), state);
+    }
+
+    /** The dealer's distributions from shoes within one state, for one up-card (dealerOutcomes). */
+    static final class DealerOutcomes {
+        /** The outcomes in order: 17, 18, 19, 20, 21, bust, and the dealer needing a card from an empty shoe. */
+        static final int OUTCOMES = ExactRound.OUTCOMES;
+
+        private final DealerHands dealer;
+        private final int[] state;
+        private final double[][][] fall = new double[11][][];
+        private final double[][] inverseFall;
+        private final int[] scratch = new int[11];
+
+        private DealerOutcomes(DealerHands dealer, int[] state) {
+            this.dealer = dealer;
+            this.state = state.clone();
+            int cards = 0;
+            for (int r = 1; r <= 10; r++) {
+                if (state[r] < 0) {
+                    throw new IllegalArgumentException("the state holds " + state[r] + " cards of rank " + r);
+                }
+                cards += state[r];
+                fall[r] = fallTable(state[r], dealer.maxCount[r]);
+            }
+            inverseFall = inverseFallTable(cards, dealer.maxSize);
+        }
+
+        /**
+         * The dealer's distribution from this shoe into out[0..6], unconditional: each outcome's
+         * chance with the hole card dealt last from the shoe and a hole card that gives the
+         * dealer a natural counted for nothing, so the seven add up to the chance of no natural.
+         * The shoe holds no more of any rank than the state. Returns whether the dealer can run
+         * out of cards here; out[6] is then the chance it does.
+         */
+        boolean outcomes(int[] shoe, double[] out) {
+            int n = 0;
+            for (int r = 1; r <= 10; r++) {
+                if (shoe[r] < 0 || shoe[r] > state[r]) {
+                    throw new IllegalArgumentException("the shoe holds " + shoe[r] + " of rank " + r
+                            + ", the state " + state[r]);
+                }
+                scratch[r] = shoe[r];
+                n += shoe[r];
+            }
+            return dealerDistribution(dealer, scratch, n, fall, inverseFall, out, 0);
+        }
+
+        /**
+         * What a stake of 1 standing on this total wins against these outcomes, added up as
+         * the engine adds it when a hand stands.
+         */
+        static double stood(int total, double[] outcomes) {
+            double[] settle = SETTLE[total];
+            double won = 0;
+            for (int o = 0; o < OUTCOMES; o++) {
+                won += settle[o] * outcomes[o];
+            }
+            return won;
         }
     }
 
@@ -563,24 +719,9 @@ public final class ExactRound implements RoundValuer {
             int cards = 0;
             for (int r = 1; r <= 10; r++) {
                 cards += shoe[r];
-                int maxK = dealer.maxCount[r];
-                fall[r] = new double[shoe[r] + 1][maxK + 1];
-                for (int c = 0; c <= shoe[r]; c++) {
-                    double f = 1;
-                    for (int k = 0; k <= maxK; k++) {
-                        fall[r][c][k] = f;
-                        f *= Math.max(c - k, 0);
-                    }
-                }
+                fall[r] = fallTable(shoe[r], dealer.maxCount[r]);
             }
-            inverseFall = new double[cards + 1][dealer.maxSize + 1];
-            for (int n = 0; n <= cards; n++) {
-                double f = 1;
-                for (int k = 0; k <= dealer.maxSize; k++) {
-                    inverseFall[n][k] = f == 0 ? 0 : 1 / f;
-                    f *= Math.max(n - k, 0);
-                }
-            }
+            inverseFall = inverseFallTable(cards, dealer.maxSize);
         }
 
         private long pack(int[] shoe) {
@@ -707,46 +848,7 @@ public final class ExactRound implements RoundValuer {
             for (int r = 1; r <= 10; r++) {
                 c[r] = count(comp, r);
             }
-            Arrays.fill(out, 1, WIDTH, 0);
-            DealerHands d = dealer;
-            for (int i = 0; i < d.entries; i++) {
-                int size = d.size[i];
-                if (size > n) {
-                    continue;
-                }
-                double p = d.orders[i];
-                for (int j = d.start[i]; j < d.start[i + 1]; j++) {
-                    int r = d.ranks[j];
-                    int k = d.counts[j];
-                    if (k > c[r]) {
-                        p = 0;
-                        break;
-                    }
-                    p *= fall[r][c[r]][k];
-                }
-                if (p != 0) {
-                    out[1 + d.outcome[i]] += p * inverseFall[n][size];
-                }
-            }
-            // The dealer runs out only by taking every card left and still needing one. Every
-            // multiset it can be holding then extends to one of its finished hands, so the
-            // tables above reach far enough to price it.
-            boolean runsOut = false;
-            if (n <= d.maxUnfinishedSize) {
-                boolean fits = true;
-                for (int r = 1; r <= 10; r++) {
-                    fits &= c[r] <= 15;
-                }
-                Long orders = fits ? d.unfinished.get(DealerHands.pack(c)) : null;
-                if (orders != null) {
-                    double p = orders;
-                    for (int r = 1; r <= 10; r++) {
-                        p *= fall[r][c[r]][c[r]];
-                    }
-                    out[1 + RAN_OUT] = p * inverseFall[n][n];
-                    runsOut = true;
-                }
-            }
+            boolean runsOut = dealerDistribution(dealer, c, n, fall, inverseFall, out, 1);
             finals.put(comp, up, out, 1, runsOut);
             return runsOut;
         }

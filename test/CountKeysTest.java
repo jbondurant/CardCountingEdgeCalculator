@@ -327,4 +327,43 @@ public class CountKeysTest {
         assertFalse(none.kindAware);
         assertTrue(none.balanced());
     }
+
+    /**
+     * The key at a later decision: the running count of every card seen, or, for a true
+     * count, its drift-free value over the cards not yet seen, the hole card among them,
+     * rounded to nearest with ties toward zero. Worked out here in whole numbers, for every
+     * count, depths through the shoe and three to eleven cards seen, deep enough that the
+     * divisor is a handful of cards and exact ties come up.
+     */
+    @Test
+    public void laterKeysCountEverySeenCardAndOnlyThose() {
+        Random rnd = new Random(20261003L);
+        int ties = 0;
+        for (CountKeys.Count c : CountKeys.catalog()) {
+            for (int t = 0; t < 400; t++) {
+                int depth = t % 4 == 0 ? 390 + rnd.nextInt(12) : rnd.nextInt(333);
+                int seen = 3 + rnd.nextInt(9);
+                int rc = rnd.nextInt(61) - 30;
+                int tagSum = rnd.nextInt(41) - 20;
+                int key = c.keyAfter(rc, depth, tagSum, seen);
+                if (!c.trueCounted) {
+                    assertEquals(rc + tagSum, key, c.name);
+                    continue;
+                }
+                long num = 52L * (rc + tagSum) - (long) c.deckSum * (depth + seen);
+                long den = 416 - depth - seen;
+                long whole = Math.abs(num) / den;
+                long twice = 2 * (Math.abs(num) - whole * den);
+                if (twice > den) {
+                    whole++;
+                }
+                ties += twice == den ? 1 : 0;
+                assertEquals(Long.signum(num) * whole, key, c.name + " rc " + rc + " depth " + depth + " seen " + seen);
+                if (seen == 3) {
+                    assertEquals(c.playKey(rc, depth, tagSum), key);
+                }
+            }
+        }
+        assertTrue(ties > 10, "only " + ties + " ties");
+    }
 }

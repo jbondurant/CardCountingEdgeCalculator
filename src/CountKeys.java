@@ -178,10 +178,37 @@ final class CountKeys {
 
         /** The play key when the deal's three cards add tagSum to a running count of rc. */
         int playKey(int rc, int depth, int tagSum) {
+            return keyAfter(rc, depth, tagSum, 3);
+        }
+
+        /**
+         * The key at a decision once seen cards of the round have been seen, adding tagSum to a
+         * running count of rc: the player's cards, the up-card and every card drawn, never the
+         * hole card. A running count keys on the count itself. A true count keys on it drift-free
+         * over the decks not yet seen, the cards left before the round less the seen ones, so the
+         * hole card is counted among the cards not seen; it is rounded as the play key is. With
+         * the deal's three cards seen this is the play key.
+         */
+        int keyAfter(int rc, int depth, int tagSum, int seen) {
             if (!trueCounted) {
                 return rc + tagSum;
             }
-            return roundedRatio(driftFree52(rc + tagSum, depth + 3), ShoeRun.CARDS - depth - 3);
+            return roundedRatio(driftFree52(rc + tagSum, depth + seen), ShoeRun.CARDS - depth - seen);
+        }
+
+        /** How many tag classes rank r's kinds fall into: 1 unless the count tags the rank by colour or face. */
+        int classes(int r) {
+            return classTag[r].length;
+        }
+
+        /** The tag of class c of rank r, as classesLeft numbers the classes. */
+        int classTag(int r, int c) {
+            return classTag[r][c];
+        }
+
+        /** The tag class of a kind (ShoeRun), within its rank. */
+        int classOf(int kind) {
+            return classOfKind[kind];
         }
 
         /**
