@@ -230,4 +230,121 @@ public class ConcreteRoundTest {
                 return false;
         }
     }
+
+    /** A kind of each rank: the black one, ten-spots for the tens. */
+    private static int kindOf(int rank) {
+        return 2 * (rank - 1);
+    }
+
+    /**
+     * The kind hook shows the player each card as it comes out, and the hole card only once
+     * every hand has ended, before the dealer's draws. Player 8, up 6, player 8, hole 10:
+     * the eights split, the first takes the 3 and the second the 2, both double on a ten,
+     * and the dealer turns the ten and draws the 9. A red 3 and a red 2 are dealt, so the
+     * kinds are told apart from the ranks.
+     */
+    @Test
+    public void theKindHookShowsTheCardsInTheOrderThePlayerSeesThem() {
+        RoundRules rules = ExactRoundTimingReport.montreal(2, 4);
+        int[] cards = {8, 6, 8, 10, 3, 2, 10, 10, 9};
+        int[] kinds = new int[cards.length];
+        for (int i = 0; i < cards.length; i++) {
+            kinds[i] = kindOf(cards[i]);
+        }
+        kinds[4] = kindOf(3) + 1;
+        kinds[5] = kindOf(2) + 1;
+        java.util.List<Integer> shown = new java.util.ArrayList<>();
+        java.util.List<Integer> shownAtDecisions = new java.util.ArrayList<>();
+        RoundPolicy watching = d -> {
+            shownAtDecisions.add(shown.size());
+            return BASIC.choose(d);
+        };
+        ConcreteRound.Result r = ConcreteRound.play(cards, kinds, 0, rules, watching, shown::add);
+        ConcreteRound.Result plain = ConcreteRound.play(cards, 0, rules, BASIC);
+        assertEquals(plain.payoff, r.payoff);
+        assertEquals(plain.next, r.next);
+        // Split with 3 shown; both split hands have their second card before either plays, so
+        // the first doubles with 5 shown and the second, after the first's double card, with 6.
+        assertEquals(java.util.Arrays.asList(3, 5, 6), shownAtDecisions);
+        assertEquals(java.util.Arrays.asList(kinds[0], kinds[1], kinds[2], kinds[4], kinds[5], kinds[6], kinds[7],
+                kinds[3], kinds[8]), shown);
+
+        // A dealer natural ends the round before any decision, and then the hole card is shown.
+        int[] natural = {9, 1, 7, 10, 5};
+        int[] naturalKinds = {kindOf(9), kindOf(1) + 1, kindOf(7), kindOf(10) + 7, kindOf(5)};
+        java.util.List<Integer> seen = new java.util.ArrayList<>();
+        ConcreteRound.Result n = ConcreteRound.play(natural, naturalKinds, 0, rules, d -> {
+            throw new AssertionError("asked " + d);
+        }, seen::add);
+        assertTrue(n.dealerNatural);
+        assertEquals(java.util.Arrays.asList(naturalKinds[0], naturalKinds[1], naturalKinds[2], naturalKinds[3]), seen);
+
+        // A kind of another rank is refused.
+        int[] wrong = kinds.clone();
+        wrong[2] = kindOf(7);
+        assertThrows(IllegalArgumentException.class,
+                () -> ConcreteRound.play(cards, wrong, 0, rules, BASIC, k -> { }));
+    }
+
+    /**
+     * With the hook, a round plays and pays exactly as without it: random orders of small
+     * shoes under every policy here, each card given a random kind of its rank, and the hole
+     * card never among the kinds shown before the last decision.
+     */
+    @Test
+    public void theKindHookChangesNothingAboutTheRound() {
+        Random rnd = new Random(20261003L);
+        RoundPolicy[] policies = {BASIC, HIT_BELOW_17, SPLIT_THEN_DOUBLE, SURRENDER_FIRST};
+        int played = 0;
+        for (int c = 0; c < 3000; c++) {
+            RoundRules rules = ExactRoundTimingReport.montreal(1 + rnd.nextInt(2), 1 + rnd.nextInt(4));
+            int[] cards = new int[6 + rnd.nextInt(10)];
+            int[] kinds = new int[cards.length];
+            for (int i = 0; i < cards.length; i++) {
+                cards[i] = rnd.nextInt(3) == 0 ? 10 : 1 + rnd.nextInt(10);
+                kinds[i] = cards[i] == 10 ? 18 + rnd.nextInt(8) : kindOf(cards[i]) + rnd.nextInt(2);
+            }
+            RoundPolicy policy = policies[rnd.nextInt(policies.length)];
+            ConcreteRound.Result plain;
+            try {
+                plain = ConcreteRound.play(cards, 0, rules, policy);
+            } catch (IllegalStateException e) {
+                assertThrows(IllegalStateException.class,
+                        () -> ConcreteRound.play(cards, kinds, 0, rules, policy, k -> { }));
+                continue;
+            }
+            java.util.List<Integer> shown = new java.util.ArrayList<>();
+            int[] shownAtLastDecision = {-1};
+            RoundPolicy counting = d -> {
+                shownAtLastDecision[0] = shown.size();
+                return policy.choose(d);
+            };
+            ConcreteRound.Result hooked = ConcreteRound.play(cards, kinds, 0, rules, counting, shown::add);
+            assertEquals(plain.payoff, hooked.payoff);
+            assertEquals(plain.next, hooked.next);
+            assertEquals(plain.hands, hooked.hands);
+            // Shown: the deal's three cards, the player's draws (cards 4 to k - 1), the hole
+            // card, then the dealer's draws (k onward), with every decision before the hole.
+            boolean fits = false;
+            for (int k = 4; k <= plain.next && !fits; k++) {
+                java.util.List<Integer> expected = new java.util.ArrayList<>();
+                expected.add(kinds[0]);
+                expected.add(kinds[1]);
+                expected.add(kinds[2]);
+                for (int i = 4; i < k; i++) {
+                    expected.add(kinds[i]);
+                }
+                int holeAt = expected.size();
+                expected.add(kinds[3]);
+                for (int i = k; i < plain.next; i++) {
+                    expected.add(kinds[i]);
+                }
+                fits = expected.equals(shown) && shownAtLastDecision[0] <= holeAt;
+            }
+            assertTrue(fits, "shown " + shown + " of " + java.util.Arrays.toString(kinds) + ", last decision after "
+                    + shownAtLastDecision[0]);
+            played++;
+        }
+        assertTrue(played > 2000, played + " rounds played");
+    }
 }

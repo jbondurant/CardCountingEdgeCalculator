@@ -14,6 +14,13 @@ import java.util.List;
  * makes every decision, the first included. A dealer natural ends the round before any
  * decision, and the rules of splitting, doubling, surrendering and the dealer's draw are
  * the contract's.
+ *
+ * For tests, a round can also be dealt with each card's kind (ShoeRun) beside its rank, and
+ * a watcher told each kind as the player is shown it, in order: the player's first card, the
+ * up-card, the second card, every card drawn, and the hole card only when the dealer turns it
+ * once every hand has ended, before the dealer's own draws. A test policy that keeps its own
+ * count from the watcher then sees what a player at the table sees, colour and face included,
+ * which is how FULL_INDEX_PLAYS.md checks count-based play by kind.
  */
 final class ConcreteRound {
 
@@ -37,9 +44,17 @@ final class ConcreteRound {
         }
     }
 
+    /** Told each card's kind as the player is shown it (for tests). */
+    interface KindWatcher {
+        void shown(int kind);
+    }
+
     private final RoundRules rules;
     private final RoundPolicy policy;
     private final int[] ranks;
+    /** Each card's kind beside its rank, and who is told them; both null when the round deals ranks only. */
+    private final int[] kinds;
+    private final KindWatcher watcher;
     private int next;
     private final int up;
     private int handsInRound = 1;
@@ -67,10 +82,13 @@ final class ConcreteRound {
         }
     }
 
-    private ConcreteRound(RoundRules rules, RoundPolicy policy, int[] ranks, int from) {
+    private ConcreteRound(RoundRules rules, RoundPolicy policy, int[] ranks, int from, int[] kinds,
+                          KindWatcher watcher) {
         this.rules = rules;
         this.policy = policy;
         this.ranks = ranks;
+        this.kinds = kinds;
+        this.watcher = watcher;
         this.next = from + 4;
         this.up = ranks[from + 1];
     }
@@ -89,23 +107,64 @@ final class ConcreteRound {
                 throw new IllegalArgumentException("rank " + ranks[i] + " at " + i);
             }
         }
-        ConcreteRound round = new ConcreteRound(rules, policy, ranks, from);
-        return round.play(ranks[from], ranks[from + 2], ranks[from + 3]);
+        ConcreteRound round = new ConcreteRound(rules, policy, ranks, from, null, null);
+        return round.play(from);
     }
 
-    private Result play(int p1, int p2, int hole) {
+    /**
+     * Plays the round that starts at ranks[from] as play does, with kinds[i] the kind of the
+     * card ranks[i], telling the watcher each kind as the player is shown it (see the class
+     * comment). For tests: it plays and pays exactly as play does.
+     */
+    static Result play(int[] ranks, int[] kinds, int from, RoundRules rules, RoundPolicy policy,
+                       KindWatcher watcher) {
+        if (from < 0 || from + 4 > ranks.length) {
+            throw new IllegalStateException("not enough cards to deal a round");
+        }
+        if (kinds == null || watcher == null || kinds.length != ranks.length) {
+            throw new IllegalArgumentException("a kind is needed beside every rank, and a watcher to tell");
+        }
+        for (int i = from; i < ranks.length; i++) {
+            if (ranks[i] < 1 || ranks[i] > 10) {
+                throw new IllegalArgumentException("rank " + ranks[i] + " at " + i);
+            }
+            if (kinds[i] < 0 || kinds[i] >= ShoeRun.KINDS || ShoeRun.rankOf(kinds[i]) != ranks[i]) {
+                throw new IllegalArgumentException("kind " + kinds[i] + " at " + i + " is not of rank " + ranks[i]);
+            }
+        }
+        ConcreteRound round = new ConcreteRound(rules, policy, ranks, from, kinds, watcher);
+        return round.play(from);
+    }
+
+    private void show(int at) {
+        if (watcher != null) {
+            watcher.shown(kinds[at]);
+        }
+    }
+
+    private Result play(int from) {
+        int p1 = ranks[from];
+        int p2 = ranks[from + 2];
+        int hole = ranks[from + 3];
+        show(from);
+        show(from + 1);
+        show(from + 2);
         boolean playerNatural = (p1 == 1 && p2 == 10) || (p1 == 10 && p2 == 1);
         boolean dealerNatural = (up == 1 && hole == 10) || (up == 10 && hole == 1);
         if (dealerNatural) {
+            show(from + 3);
             return new Result(playerNatural ? 0 : -1, next, true, playerNatural, 1);
         }
         if (playerNatural) {
+            show(from + 3);
             return new Result(rules.blackjackPayout, next, false, true, 1);
         }
         Hand dealt = new Hand(0);
         dealt.cards.add(p1);
         dealt.cards.add(p2);
         playHand(dealt);
+        // Every hand has ended: the dealer turns the hole card.
+        show(from + 3);
 
         double payoff = 0;
         boolean dealerNeeded = false;
@@ -138,6 +197,7 @@ final class ConcreteRound {
         if (next >= ranks.length) {
             throw new IllegalStateException("the round needs a card and none are left");
         }
+        show(next);
         return ranks[next++];
     }
 
