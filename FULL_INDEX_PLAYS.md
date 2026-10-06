@@ -220,8 +220,11 @@ Once every strategy is fitted, the scoring goes in items: each count's fold fits
 its half fits, at each penetration in turn, scored apart (SystemScorer.Part) and put
 together once all of a count's are scored (SystemScorer.merge). As many items go to a batch
 as the heap holds. A batch's strategies are given their last round, which fills the values
-they are scored with, Split held for the parts of the 100 pair deals alone, and each item's
-bootstrap resamples are shared among the threads. Every state's trees are built once, in
+they are scored with, Split held for the parts of the 100 pair deals alone; then its items
+are scored one after another, each item's bootstrap resamples shared among all the threads.
+(Scoring a batch's items at once on a share of the threads each waited for the slowest, a
+fold fit costing about five times a half fit, while the others' threads sat idle.) Every
+state's trees are built once, in
 the first round, and kept on disk (TreeStore, 245 KB a state); every later round and every
 batch reads them back, bit for bit the trees built.
 
@@ -382,10 +385,12 @@ makes that possible is the joint run of section 3:
   again for each round and each scoring batch would cost about half an hour of the wall a
   time;
 - the scoring goes one count's fold fits, or half fits, at one penetration at a time, one to
-  three of these to a batch at the file's size, each item's resamples shared among the
-  threads, since one count's values at every penetration would hold 4.4 GB (9 GB for
-  KISS I);
-- the run checks before its passes that its largest scoring item will fit in the heap;
+  three of these to a batch at the file's size, scored one after another, each item's
+  resamples shared among all the threads, since one count's values at every penetration
+  would hold 4.4 GB (9 GB for KISS I);
+- the run checks before its passes that its largest scoring item will fit in the heap, and
+  again after them; a run resumed past its passes counts the split values its last rounds
+  will keep again, which it starts without;
 - checkpoints after every round of the passes and every item scored, resumed to the bit.
 
 **The dry runs (FullIndexDryRun, 73df32c)** run exactly this on the first 300, 2,000 and
@@ -426,6 +431,11 @@ values as n^0.05, so the passes' figure is likely high.
 |---|---|---|---|---|
 | 200 | 11.3 | 2.5 | 2.0 | 15.8 |
 | 1,000 | 11.3 | 2.5 | 10.0 | 23.7 |
+
+The scoring is charged as the dry runs scored it, an item at a time on every thread, which
+is how the run scores a batch's items from the commit after 6efe316 on. At 6efe316 a batch's
+items were scored at once on a share of the threads each, which this projection did not
+charge; a run started from 6efe316 was stopped in its first round for that reason.
 
 So the run is scored at 1,000 resamples, as the first-decision report was: about 24 hours,
 under the 30 allowed; 200 would save about 8 hours. The memory fits: once fitted the run

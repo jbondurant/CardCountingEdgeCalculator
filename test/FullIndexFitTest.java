@@ -1544,6 +1544,29 @@ public class FullIndexFitTest {
         assertSameResults(batched, joint, counts, pens);
     }
 
+    /**
+     * The whole file's run puts several scoring items in a batch: their last round is walked
+     * together, then they are scored one after another. Every item in one batch gives, to the
+     * bit, the Results of one item to a batch, as the tests and dry runs score them.
+     */
+    @Test
+    public void scoringItemsTogetherInABatchChangesNothing() throws Exception {
+        Fixture fx = standard();
+        SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 5, 1), 1);
+        List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
+        int[] pens = {0, PEN};
+        FullIndexFit.Scored alone = FullIndexFit.scoreJoint(scorer, fx.trees, FullIndexFit.built(fx.st), counts, pens,
+                1, THREADS, true, true, null, null, null);
+        FullIndexFit.Scored together = FullIndexFit.scoreJoint(scorer, fx.trees, FullIndexFit.built(fx.st), counts,
+                pens, 1e15, THREADS, true, true, null, null, null);
+        assertEquals(counts.size() * pens.length * 2, alone.batches.size());
+        assertEquals(1, together.batches.size());
+        assertArrayEquals(alone.perfect, together.perfect, 0.0);
+        for (int k = 0; k < counts.size(); k++) {
+            sameResult(alone.results.get(k), together.results.get(k), pens, 0.0);
+        }
+    }
+
     /** Two runs' Results for the same counts, as theJointRunFitsAndScoresAsTheBatchedRunDoes compares them. */
     static void assertSameResults(FullIndexFit.Scored a, FullIndexFit.Scored b, List<CountKeys.Count> counts, int[] pens) {
         for (int k = 0; k < counts.size(); k++) {

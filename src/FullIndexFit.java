@@ -2355,12 +2355,15 @@ final class FullIndexFit {
             if (room <= 0) {
                 double heap = heapFill * Runtime.getRuntime().maxMemory();
                 double held = FullIndexPilot.usedAfterGc();
-                room = heap - held;
+                // A run resumed past its passes starts with no split values kept, and its last rounds
+                // keep them again; the room is what is left once they are back, as for a run never stopped.
+                double refill = fitted && keepSplits ? splitAllowance * scorer.st.size : 0;
+                room = heap - held - refill;
                 Item big = largest(fits, items(fits));
                 if (big.bytes > room && keepSplits) {
                     log("the largest scoring item, %s, holds %.2f GB, more than the %.2f GB left beside the %.2f GB the run "
                             + "holds; the split values kept are let go to make room, and the last rounds value theirs "
-                            + "afresh", big.name, big.bytes / 1e9, room / 1e9, held / 1e9);
+                            + "afresh", big.name, big.bytes / 1e9, room / 1e9, (held + refill) / 1e9);
                     fit.dropSplitCache();
                     held = FullIndexPilot.usedAfterGc();
                     room = heap - held;
@@ -2427,26 +2430,24 @@ final class FullIndexFit {
                     see.finalRound(batchFits);
 
                     long s0 = System.nanoTime();
-                    int each = Math.max(1, threads / batch.size());
-                    List<Future<SystemScorer.Result>> jobs = new ArrayList<>();
+                    // A batch's items are scored one after another, each on every thread. Scored at
+                    // once on a share of the threads each, a batch waited for its slowest item, a
+                    // fold fit costing about five times a half fit in the 6,130-state dry run, while
+                    // the others' threads sat idle.
                     for (int[] it : batch) {
                         Fits f = fits.get(it[0]);
                         int[] only = {it[1]};
                         SystemScorer.Part part = it[2] == 0 ? SystemScorer.Part.FOLDS : SystemScorer.Part.HALVES;
-                        jobs.add(pool.submit(() -> {
+                        SystemScorer.Result r = pool.submit(() -> {
                             ThreadMXBean bean = ManagementFactory.getThreadMXBean();
                             long c0 = bean.getCurrentThreadCpuTime();
-                            SystemScorer.Result r = scorer.score(f.count, CountKeys.sideCountVariant(f.count), f, only,
-                                    each, part);
+                            SystemScorer.Result one = scorer.score(f.count, CountKeys.sideCountVariant(f.count), f, only,
+                                    threads, part);
                             synchronized (out) {
                                 out.scoreCpu[it[0]] += (bean.getCurrentThreadCpuTime() - c0) / 1e9;
                             }
-                            return r;
-                        }));
-                    }
-                    for (int b = 0; b < batch.size(); b++) {
-                        int[] it = batch.get(b);
-                        SystemScorer.Result r = jobs.get(b).get();
+                            return one;
+                        }).get();
                         if (checkpoint != null) {
                             checkpoint.writePart(key(it), r);
                         }
