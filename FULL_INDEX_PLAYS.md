@@ -388,9 +388,52 @@ makes that possible is the joint run of section 3:
 - the run checks before its passes that its largest scoring item will fit in the heap;
 - checkpoints after every round of the passes and every item scored, resumed to the bit.
 
-DRYRUNS
+**The dry runs (FullIndexDryRun, 73df32c)** run exactly this on the first 300, 2,000 and
+6,000 shoes, at 200 resamples on 6 threads, every item a batch of its own, as the file's
+batches hold one to three (runs/full-index/dry-run-*-73df32c.txt):
 
-PROJECTION
+| | 293 states | 2,071 states | 6,130 states |
+|---|---|---|---|
+| First-decision groups a strategy, on average | 1.17 | 3.55 | 6.30 |
+| Rounds of the passes; strategies capped | 3; 0 | 6; 7 | 6; 27 |
+| Strategies still fitting after pass 1 | 1 | 163 | 272 |
+| Split values valued a state over the passes | 93 | 177 | 195 |
+| Distinct post-split plays a pair deal, pass 1 | 1.85 | 2.54 | 2.66 |
+| The passes, wall s (s a state) | 49 (0.168) | 652 (0.315) | 2,075 (0.338) |
+| of which split values, by CPU | 57% | 67% | 66% |
+| The last rounds, wall s (s a state) | 33 (0.112) | 266 (0.129) | 788 (0.129) |
+| The scoring, wall s (s a state and resample) | 34 (0.00059) | 247 (0.00060) | 718 (0.00059) |
+| Split values kept a state | 93, 6.9 KB | 177, 11.0 KB | 195, 11.8 KB |
+| Held after the passes, before trimming | 54 MB | 253 MB | 562 MB |
+| The largest scoring item, a state | 41.7 KB | 41.7 KB | 41.7 KB |
+| Everything, wall s | 117 | 1,170 | 3,593 |
+
+Pass 0 of every run built every state's trees (0.15 to 0.19 s of CPU a state); every later
+round read them back, at 0.1 ms a state. The scoring's wall time a state and resample is
+the same at every size, the last rounds' nearly so; the passes' grows with the play groups,
+which hold more distinct post-split plays and keep more strategies fitting past pass 1, but
+it grew 7% from 2,071 to 6,130 states where it nearly doubled from 293 to 2,071.
+
+**The whole file, projected** by FullIndexDryRun project from the three runs
+(runs/full-index/projection-73df32c.txt). Each figure is fitted as a x n^b over the three
+runs and carried to 60,743 states: the passes' trees (b = 0.01), walks (0.25) and split
+values (0.29) apart, the last rounds (0.05), the scoring (0.00), the split values kept a
+state (0.18) and the plays held (0.66). The fits lean on the 293-state run, whose strategies
+hold a group or two; from 2,071 to 6,130 states alone the walks grew as n^0.17 and the split
+values as n^0.05, so the passes' figure is likely high.
+
+| Resamples | Passes h | Last rounds h | Scoring h | Total h |
+|---|---|---|---|---|
+| 200 | 11.3 | 2.5 | 2.0 | 15.8 |
+| 1,000 | 11.3 | 2.5 | 10.0 | 23.7 |
+
+So the run is scored at 1,000 resamples, as the first-decision report was: about 24 hours,
+under the 30 allowed; 200 would save about 8 hours. The memory fits: once fitted the run
+holds about 4.4 GB (the states 1.6 GB and the plays and split values kept by their fits,
+the plays measured before trimming, so this is high), leaving 4.2 GB of 80% of the 10 GiB
+heap for a batch, and the largest item, KISS I's fits at 80%, holds 2.5 GB; the 186 items
+go in about 66 batches. On disk the tree store takes 14.9 GB and the checkpoints about a
+gigabyte; 22 GB were free on 6 October.
 
 **Running it.** The run is FullIndexRun, from classes frozen from one commit, with the commit
 written beside them (it names the code in every checkpoint) and the catalog it reads from its
@@ -410,12 +453,13 @@ T=$(mktemp -d) && git -C $W archive HEAD src counting-systems.json | tar -x -C $
 # The run: checkpoints and the tree store in runs/full-index/full-$SHA, progress in the log.
 cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
   FullIndexRun --states $R/runs/montreal-80.states --out $R/runs/full-index/full-$SHA \
-  --resamples RESAMPLES --threads 6 > $R/runs/full-index/full-$SHA.log 2>&1 &
-# After an interruption: the same command with --resume, appending to the log. It refuses
-# unless the classes, the state file and the settings are the run's own.
+  --resamples 1000 --threads 6 > $R/runs/full-index/full-$SHA.log 2>&1 &
+# After an interruption: the same command with --resume, appending to the log, SHA set to
+# the run's own commit if the branch has moved on since. It refuses unless the classes, the
+# state file and the settings, the threads among them, are the run's own.
 cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
   FullIndexRun --states $R/runs/montreal-80.states --out $R/runs/full-index/full-$SHA \
-  --resamples RESAMPLES --threads 6 --resume >> $R/runs/full-index/full-$SHA.log 2>&1 &
+  --resamples 1000 --threads 6 --resume >> $R/runs/full-index/full-$SHA.log 2>&1 &
 ```
 
 The log takes a line as the first thread gets through each tenth of a round, one after each
