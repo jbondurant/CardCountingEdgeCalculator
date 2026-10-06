@@ -36,7 +36,7 @@ final class SplitValues {
     private final ExactRound engine;
     private final RoundPolicy chart = BasicStrategy.chart();
     private final byte[][] chartPrint = new byte[Deals.COUNT][];
-    private final Map<String, Double> kept;
+    private final Kept kept;
 
     /** Splits valued with ExactRound, taken from the stored values, and found already valued. */
     int valued;
@@ -58,6 +58,11 @@ final class SplitValues {
      * the engine given, which a thread may reuse from state to state.
      */
     SplitValues(RoundRules rules, int[] state, double[] stored, Map<String, Double> kept, ExactRound engine) {
+        this(rules, state, stored, byString(kept), engine);
+    }
+
+    /** The same, keeping values in the store given (Packed holds them compactly). */
+    SplitValues(RoundRules rules, int[] state, double[] stored, Kept kept, ExactRound engine) {
         if (stored != null && stored.length != StateStore.VALUES) {
             throw new IllegalArgumentException("a state stores " + StateStore.VALUES + " values");
         }
@@ -104,16 +109,154 @@ final class SplitValues {
                 return stored[StateValuer.slot(deal, PlayerMove.Split)];
             }
         }
-        String key = deal + ":" + new String(print, StandardCharsets.ISO_8859_1);
-        Double v = kept.get(key);
-        if (v != null) {
+        double v = kept.get(deal, print);
+        if (!Double.isNaN(v)) {
             fromKept++;
             return v;
         }
         double value = engine.valueOfFirstMove(Deals.after(state, deal), r, r, up, PlayerMove.Split, play);
         valued++;
-        kept.put(key, value);
+        kept.put(deal, print, value);
         return value;
+    }
+
+    // ------------------------------------------------------------------ where values are kept
+
+    /**
+     * Split values kept for one state between calls, by deal and fingerprint. A value is never
+     * NaN for a deal the state can deal, so NaN says none is kept.
+     */
+    interface Kept {
+        double get(int deal, byte[] print);
+
+        void put(int deal, byte[] print, double value);
+    }
+
+    /** A map keyed by the deal and the fingerprint as text, as the tests share theirs. */
+    static Kept byString(Map<String, Double> map) {
+        return new Kept() {
+            @Override
+            public double get(int deal, byte[] print) {
+                Double v = map.get(deal + ":" + new String(print, StandardCharsets.ISO_8859_1));
+                return v == null ? Double.NaN : v;
+            }
+
+            @Override
+            public void put(int deal, byte[] print, double value) {
+                map.put(deal + ":" + new String(print, StandardCharsets.ISO_8859_1), value);
+            }
+        };
+    }
+
+    /**
+     * One state's split values held compactly, for a run that keeps them for tens of thousands
+     * of states: per pair deal a list of entries, each the fingerprint packed four bits an answer
+     * into four longs (an answer is 0 to 5) and the value's bits, 40 bytes, where a map keyed by
+     * text takes about 176. A deal has a few plays at most, so a list is searched in order. Not
+     * shared between threads at once, as one state is visited by one thread at a time.
+     */
+    static final class Packed implements Kept {
+        private static final int WORDS = PRINT / 16;
+        private static final int ENTRY = WORDS + 1;
+        private static final int[] PAIR = new int[Deals.COUNT];
+
+        static {
+            java.util.Arrays.fill(PAIR, -1);
+            int n = 0;
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (Deals.P1[i] == Deals.P2[i]) {
+                    PAIR[i] = n++;
+                }
+            }
+            if (PRINT % 16 != 0) {
+                throw new AssertionError("a fingerprint of " + PRINT + " answers does not pack into whole longs");
+            }
+        }
+
+        private final long[][] byPair = new long[100][];
+        private final int[] count = new int[100];
+        private int entries;
+
+        @Override
+        public double get(int deal, byte[] print) {
+            int p = pair(deal);
+            long[] list = byPair[p];
+            if (list == null) {
+                return Double.NaN;
+            }
+            long[] w = new long[WORDS];
+            for (int k = 0; k < WORDS; k++) {
+                w[k] = word(print, k);
+            }
+            for (int e = 0; e < count[p]; e++) {
+                int at = e * ENTRY;
+                boolean same = true;
+                for (int k = 0; k < WORDS && same; k++) {
+                    same = list[at + k] == w[k];
+                }
+                if (same) {
+                    return Double.longBitsToDouble(list[at + WORDS]);
+                }
+            }
+            return Double.NaN;
+        }
+
+        @Override
+        public void put(int deal, byte[] print, double value) {
+            int p = pair(deal);
+            long[] list = byPair[p];
+            int n = count[p];
+            if (list == null) {
+                list = new long[2 * ENTRY];
+            } else if ((n + 1) * ENTRY > list.length) {
+                list = java.util.Arrays.copyOf(list, list.length + Math.max(ENTRY, list.length / 2 / ENTRY * ENTRY));
+            }
+            int at = n * ENTRY;
+            for (int k = 0; k < WORDS; k++) {
+                list[at + k] = word(print, k);
+            }
+            list[at + WORDS] = Double.doubleToRawLongBits(value);
+            byPair[p] = list;
+            count[p] = n + 1;
+            entries++;
+        }
+
+        int entries() {
+            return entries;
+        }
+
+        /** The bytes the lists take, their headers included. */
+        long bytes() {
+            long b = 16 + 8 * 100 + 16 + 4 * 100;
+            for (long[] l : byPair) {
+                b += l == null ? 0 : 16 + 8L * l.length;
+            }
+            return b;
+        }
+
+        private static int pair(int deal) {
+            int p = PAIR[deal];
+            if (p < 0) {
+                throw new IllegalArgumentException("deal " + deal + " is not a pair");
+            }
+            return p;
+        }
+
+        /** Answers 16k to 16k + 15, four bits each. */
+        private static long word(byte[] print, int k) {
+            if (print.length != PRINT) {
+                throw new IllegalArgumentException("a fingerprint holds " + PRINT + " answers");
+            }
+            long w = 0;
+            for (int j = 0; j < 16; j++) {
+                int a = print[16 * k + j];
+                if (a < 0 || a > 15) {
+                    throw new IllegalArgumentException("an answer " + a + " does not pack into four bits");
+                }
+                w |= (long) a << (4 * j);
+            }
+            return w;
+        }
     }
 
     /**

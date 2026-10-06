@@ -288,7 +288,9 @@ final class SystemScorer {
      * every key below and the last every key above, so a test key outside the training range
      * joins the end group.
      */
-    static final class Groups {
+    static final class Groups implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final int[] upper;
         /** The lowest and highest training key in each group, for the report. */
         final int[] lo;
@@ -593,7 +595,9 @@ final class SystemScorer {
     }
 
     /** A fitted play: the move for each (group, deal), and the sums it was chosen from. */
-    static final class Fit {
+    static final class Fit implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final Groups groups;
         /** [g][deal]: the move slot, or -1 for a player natural. */
         final int[][] move;
@@ -993,7 +997,9 @@ final class SystemScorer {
     // ------------------------------------------------------------ decision resolution
 
     /** One decision the data do not settle. */
-    static final class CloseCall {
+    static final class CloseCall implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final int fold;
         final int loKey;
         final int hiKey;
@@ -1032,7 +1038,9 @@ final class SystemScorer {
      * One later cell of a full-index fit (FULL_INDEX_PLAYS.md section 3) the data do not settle:
      * hit or stand at one contested spot for the count keys loKey to hiKey.
      */
-    static final class LaterCall {
+    static final class LaterCall implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final int fold;
         final int loKey;
         final int hiKey;
@@ -1063,7 +1071,9 @@ final class SystemScorer {
     }
 
     /** How well the data settle a count's decisions at one penetration, both folds' fits together. */
-    static final class Resolution {
+    static final class Resolution implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         int decisions;
         int unsettled;
         /** Per round: the test-weighted mean over folds of the summed bound on the play's close calls. */
@@ -1500,7 +1510,9 @@ final class SystemScorer {
     // ----------------------------------------------------------------- the scoring
 
     /** One row of the report: a count scored one way, at every penetration. */
-    static final class Entry {
+    static final class Entry implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final String name;
         /** The count whose bet key it bets on. */
         final CountKeys.Count count;
@@ -1533,7 +1545,9 @@ final class SystemScorer {
     }
 
     /** Everything scored for one count: its entries, its decision resolution and learning curve. */
-    static final class Result {
+    static final class Result implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final CountKeys.Count count;
         final List<Entry> entries = new ArrayList<>();
         final Resolution[] resolution = new Resolution[CUTS.length];
@@ -1631,6 +1645,36 @@ final class SystemScorer {
      * section 4); Result.widen carries what that is measured to leave out.
      */
     Result score(CountKeys.Count count, CountKeys.Count sideCounted, FullIndexFit.Fits fits) {
+        return score(count, sideCounted, fits, null, 1, Part.WHOLE);
+    }
+
+    /**
+     * What one call to score works out at each penetration it scores: all of it; everything
+     * but the full-index half fits, which needs only the fold fits' values; or the full-index
+     * half fits alone, which needs only the half fits' values. The full run holds one of the two
+     * sets of values at a time and puts the parts together (merge).
+     */
+    enum Part {
+        WHOLE, FOLDS, HALVES
+    }
+
+    /**
+     * The same at the penetrations given alone (every one when null), the others left unscored
+     * (null), and each penetration's bootstrap resamples worked out on threads threads. A
+     * resample's figures depend on its own weights alone, and each is written to its own slot,
+     * so they are the same on any number of threads. The full run scores a count a penetration
+     * at a time, to hold one penetration's values at once, and puts the parts together (merge).
+     */
+    Result score(CountKeys.Count count, CountKeys.Count sideCounted, FullIndexFit.Fits fits, int[] only, int threads) {
+        return score(count, sideCounted, fits, only, threads, Part.WHOLE);
+    }
+
+    /** The same, working out only the part given (Part). */
+    Result score(CountKeys.Count count, CountKeys.Count sideCounted, FullIndexFit.Fits fits, int[] only, int threads,
+                 Part part) {
+        if (part == Part.HALVES && fits == null) {
+            throw new IllegalArgumentException("the full-index half fits need the fits");
+        }
         if (fits != null && fits.count != count) {
             throw new IllegalArgumentException("the fits of " + fits.count + " cannot score " + count);
         }
@@ -1652,102 +1696,284 @@ final class SystemScorer {
             }
         }
         for (int p = 0; p < CUTS.length; p++) {
-            Pen pen = pens[p];
-            Parts parts = parts(count, pen);
-            InsuranceParts ip = insuranceParts(parts, pen);
-            BetKeys[] bk = new BetKeys[result.entries.size()];
-            for (int e = 0; e < bk.length; e++) {
-                bk[e] = e % 2 == 1 ? bk[e - 1] : betKeys(result.entries.get(e).count, pen);
+            if (only != null && !contains(only, p)) {
+                continue;
             }
-            boolean full = fits != null && fits.has(p);
-            BetKeys[] bkFull = new BetKeys[result.fullEntries.size()];
-            for (int e = 0; e < bkFull.length; e++) {
-                bkFull[e] = bk[2 * e];
-            }
-            FoldPlay[] fullPlays = null;
-            FoldPlay[] fullHalf = null;
-            PlayValues[] halfValues = null;
-            if (full) {
-                PlayValues[] values = fits.values(p);
-                fullPlays = new FoldPlay[2];
-                for (int f = 0; f < 2; f++) {
-                    fullPlays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null, null, null, values[f]);
-                    result.fullFirst[p][f] = fullPlays[f].fit;
-                    result.fullFit[p][f] = fits.fold[p][f].summary();
-                }
-                result.fullResolution[p] = resolution(parts, pen, ip, fullPlays, fits, p);
-                halfValues = fits.halfValues(p);
-                if (halfValues != null) {
-                    fullHalf = halfPlays(parts, pen, ip, pen.weight, null, null, null, halfValues, null);
-                    result.fullHalfFitFlat[p] = halfFlat(pen, ip, fullHalf, pen.weight);
-                    result.fullHalfFitBoot[p] = new double[boot.resamples];
-                    int[] check = new int[4];
-                    for (int f = 0; f < 2; f++) {
-                        result.fullHalfFit[p][f] = fits.half[p][f].summary();
-                        int[] c = result.fullHalfFit[p][f].inSample;
-                        for (int k = 0; k < 4; k++) {
-                            check[k] += c[k];
-                        }
-                    }
-                    result.fullInSample[p] = check;
-                }
-                double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true);
-                for (int e = 0; e < sums.length; e++) {
-                    result.fullEntries.get(e).estimate[p] = sums[e];
-                    result.fullEntries.get(e).boot[p] = new double[METRICS][boot.resamples];
-                }
-            }
-            FoldPlay[] plays = new FoldPlay[2];
-            for (int f = 0; f < 2; f++) {
-                plays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null);
-                result.groups[p][f] = plays[f].groups;
-            }
-            result.resolution[p] = resolution(parts, pen, ip, plays);
-            result.halfFitFlat[p] = halfFit(parts, pen, ip, pen.weight, null, null, null);
-            result.halfFitBoot[p] = new double[boot.resamples];
-
-            double[][] sums = scoreOnce(pen, ip, plays, bk, result.entries, pen.weight, p, true);
-            for (int e = 0; e < sums.length; e++) {
-                result.entries.get(e).estimate[p] = sums[e];
-                result.entries.get(e).boot[p] = new double[METRICS][boot.resamples];
-            }
-            double[] wm = new double[pen.states.length];
-            double[] um = new double[pen.states.length];
-            FoldPlay[] refit = new FoldPlay[2];
-            ByKey byKey = boot.resamples > 0 ? byKey(parts, pen) : null;
-            for (int r = 0; r < boot.resamples; r++) {
-                for (int j = 0; j < wm.length; j++) {
-                    um[j] = boot.mult(r, st.shoe[pen.states[j]]);
-                    wm[j] = pen.weight[j] * um[j];
-                }
-                for (int f = 0; f < 2; f++) {
-                    refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, plays[f]);
-                }
-                double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false);
-                for (int e = 0; e < rs.length; e++) {
-                    for (int m = 0; m < METRICS; m++) {
-                        result.entries.get(e).boot[p][m][r] = rs[e][m];
-                    }
-                }
-                result.halfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, plays);
-                if (full) {
-                    for (int f = 0; f < 2; f++) {
-                        refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
-                    }
-                    rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false);
-                    for (int e = 0; e < rs.length; e++) {
-                        for (int m = 0; m < METRICS; m++) {
-                            result.fullEntries.get(e).boot[p][m][r] = rs[e][m];
-                        }
-                    }
-                    if (fullHalf != null) {
-                        result.fullHalfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, fullHalf, halfValues, null);
-                    }
-                }
+            if (part == Part.HALVES) {
+                scoreHalves(result, count, fits, p, threads);
+            } else {
+                scorePen(result, count, fits, p, threads, part == Part.WHOLE);
             }
         }
         result.seconds = (System.nanoTime() - start) / 1e9;
         return result;
+    }
+
+    private static boolean contains(int[] a, int x) {
+        for (int y : a) {
+            if (y == x) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Penetration p of score, the full-index half fits included when halves. */
+    private void scorePen(Result result, CountKeys.Count count, FullIndexFit.Fits fits, int p, int threads,
+                          boolean halves) {
+        Pen pen = pens[p];
+        Parts parts = partsFor(count, fits, p);
+        InsuranceParts ip = insuranceParts(parts, pen);
+        BetKeys[] bk = new BetKeys[result.entries.size()];
+        for (int e = 0; e < bk.length; e++) {
+            bk[e] = e % 2 == 1 ? bk[e - 1] : betKeys(result.entries.get(e).count, pen);
+        }
+        boolean full = fits != null && fits.has(p);
+        BetKeys[] bkFull = new BetKeys[result.fullEntries.size()];
+        for (int e = 0; e < bkFull.length; e++) {
+            bkFull[e] = bk[2 * e];
+        }
+        FoldPlay[] fullPlays = null;
+        FoldPlay[] fullHalf = null;
+        PlayValues[] halfValues = null;
+        if (full) {
+            PlayValues[] values = fits.values(p);
+            fullPlays = new FoldPlay[2];
+            for (int f = 0; f < 2; f++) {
+                fullPlays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null, null, null, values[f]);
+                result.fullFirst[p][f] = fullPlays[f].fit;
+                result.fullFit[p][f] = fits.fold[p][f].summary();
+            }
+            result.fullResolution[p] = resolution(parts, pen, ip, fullPlays, fits, p);
+            halfValues = halves ? fits.halfValues(p) : null;
+            if (halfValues != null) {
+                fullHalf = halfPlays(parts, pen, ip, pen.weight, null, null, null, halfValues, null);
+                result.fullHalfFitFlat[p] = halfFlat(pen, ip, fullHalf, pen.weight);
+                result.fullHalfFitBoot[p] = new double[boot.resamples];
+                int[] check = new int[4];
+                for (int f = 0; f < 2; f++) {
+                    result.fullHalfFit[p][f] = fits.half[p][f].summary();
+                    int[] c = result.fullHalfFit[p][f].inSample;
+                    for (int k = 0; k < 4; k++) {
+                        check[k] += c[k];
+                    }
+                }
+                result.fullInSample[p] = check;
+            }
+            double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true);
+            for (int e = 0; e < sums.length; e++) {
+                result.fullEntries.get(e).estimate[p] = sums[e];
+                result.fullEntries.get(e).boot[p] = new double[METRICS][boot.resamples];
+            }
+        }
+        FoldPlay[] plays = new FoldPlay[2];
+        for (int f = 0; f < 2; f++) {
+            plays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null);
+            result.groups[p][f] = plays[f].groups;
+        }
+        result.resolution[p] = resolution(parts, pen, ip, plays);
+        result.halfFitFlat[p] = halfFit(parts, pen, ip, pen.weight, null, null, null);
+        result.halfFitBoot[p] = new double[boot.resamples];
+
+        double[][] sums = scoreOnce(pen, ip, plays, bk, result.entries, pen.weight, p, true);
+        for (int e = 0; e < sums.length; e++) {
+            result.entries.get(e).estimate[p] = sums[e];
+            result.entries.get(e).boot[p] = new double[METRICS][boot.resamples];
+        }
+        ByKey byKey = boot.resamples > 0 ? byKey(parts, pen) : null;
+        FoldPlay[] fp = fullPlays;
+        FoldPlay[] fh = fullHalf;
+        PlayValues[] hv = halfValues;
+        onThreads(threads, (first, step) ->
+                resamples(result, p, pen, parts, ip, bk, bkFull, plays, fp, fh, hv, byKey, full, first, step));
+    }
+
+    /**
+     * The full-index half fits of penetration p alone, as scorePen works them out: their flat EV
+     * on the estimate's weights and on every resample, their summaries and the in-sample check.
+     */
+    private void scoreHalves(Result result, CountKeys.Count count, FullIndexFit.Fits fits, int p, int threads) {
+        PlayValues[] halfValues = fits.halfValues(p);
+        if (halfValues == null) {
+            return;
+        }
+        Pen pen = pens[p];
+        Parts parts = partsFor(count, fits, p);
+        InsuranceParts ip = insuranceParts(parts, pen);
+        FoldPlay[] fullHalf = halfPlays(parts, pen, ip, pen.weight, null, null, null, halfValues, null);
+        result.fullHalfFitFlat[p] = halfFlat(pen, ip, fullHalf, pen.weight);
+        result.fullHalfFitBoot[p] = new double[boot.resamples];
+        int[] check = new int[4];
+        for (int f = 0; f < 2; f++) {
+            result.fullHalfFit[p][f] = fits.half[p][f].summary();
+            int[] c = result.fullHalfFit[p][f].inSample;
+            for (int k = 0; k < 4; k++) {
+                check[k] += c[k];
+            }
+        }
+        result.fullInSample[p] = check;
+        ByKey byKey = boot.resamples > 0 ? byKey(parts, pen) : null;
+        onThreads(threads, (first, step) -> {
+            double[] wm = new double[pen.states.length];
+            double[] um = new double[pen.states.length];
+            for (int r = first; r < boot.resamples; r += step) {
+                for (int j = 0; j < wm.length; j++) {
+                    um[j] = boot.mult(r, st.shoe[pen.states[j]]);
+                    wm[j] = pen.weight[j] * um[j];
+                }
+                result.fullHalfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, fullHalf, halfValues, null);
+            }
+        });
+    }
+
+    /** The count's parts at penetration p: those its fits hold, which are the same, or made afresh. */
+    private Parts partsFor(CountKeys.Count count, FullIndexFit.Fits fits, int p) {
+        Parts held = fits == null ? null : fits.partsAt(p);
+        return held != null ? held : parts(count, pens[p]);
+    }
+
+    /** Work split over resamples: a share, first, first + step, ... */
+    private interface Share {
+        void run(int first, int step);
+    }
+
+    /** Runs a share of the resamples on each of threads threads (one when the resamples are fewer), and waits. */
+    private void onThreads(int threads, Share share) {
+        int rt = Math.max(1, Math.min(threads, boot.resamples));
+        if (rt == 1) {
+            share.run(0, 1);
+            return;
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(rt, r -> {
+            Thread t = new Thread(r, "score-resamples");
+            t.setDaemon(true);
+            return t;
+        });
+        try {
+            List<java.util.concurrent.Future<?>> jobs = new ArrayList<>();
+            for (int k = 0; k < rt; k++) {
+                int first = k;
+                jobs.add(pool.submit(() -> {
+                    share.run(first, rt);
+                    return null;
+                }));
+            }
+            for (java.util.concurrent.Future<?> j : jobs) {
+                j.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("scoring interrupted", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable c = e.getCause();
+            if (c instanceof RuntimeException) {
+                throw (RuntimeException) c;
+            }
+            if (c instanceof Error) {
+                throw (Error) c;
+            }
+            throw new IllegalStateException(c);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** Resamples first, first + step, ... of penetration p, each with its own weights and refits. */
+    private void resamples(Result result, int p, Pen pen, Parts parts, InsuranceParts ip, BetKeys[] bk, BetKeys[] bkFull,
+                           FoldPlay[] plays, FoldPlay[] fullPlays, FoldPlay[] fullHalf, PlayValues[] halfValues,
+                           ByKey byKey, boolean full, int first, int step) {
+        double[] wm = new double[pen.states.length];
+        double[] um = new double[pen.states.length];
+        FoldPlay[] refit = new FoldPlay[2];
+        for (int r = first; r < boot.resamples; r += step) {
+            for (int j = 0; j < wm.length; j++) {
+                um[j] = boot.mult(r, st.shoe[pen.states[j]]);
+                wm[j] = pen.weight[j] * um[j];
+            }
+            for (int f = 0; f < 2; f++) {
+                refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, plays[f]);
+            }
+            double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false);
+            for (int e = 0; e < rs.length; e++) {
+                for (int m = 0; m < METRICS; m++) {
+                    result.entries.get(e).boot[p][m][r] = rs[e][m];
+                }
+            }
+            result.halfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, plays);
+            if (full) {
+                for (int f = 0; f < 2; f++) {
+                    refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
+                }
+                rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false);
+                for (int e = 0; e < rs.length; e++) {
+                    for (int m = 0; m < METRICS; m++) {
+                        result.fullEntries.get(e).boot[p][m][r] = rs[e][m];
+                    }
+                }
+                if (fullHalf != null) {
+                    result.fullHalfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, fullHalf, halfValues, null);
+                }
+            }
+        }
+    }
+
+    /**
+     * One count's Result put together from Results that each scored some of its penetrations,
+     * or one part of them (score with only and a Part): every penetration's figures taken from
+     * the part that worked them out. The parts must be of the same count, with the same entries,
+     * and nothing worked out twice. A count is known by its name, since a part read back from a
+     * checkpoint holds a copy of it.
+     */
+    static Result merge(List<Result> parts) {
+        Result out = parts.get(0);
+        for (int k = 1; k < parts.size(); k++) {
+            Result r = parts.get(k);
+            if (!r.count.name.equals(out.count.name) || r.entries.size() != out.entries.size()
+                    || r.fullEntries.size() != out.fullEntries.size()) {
+                throw new IllegalArgumentException("parts of different counts or entries");
+            }
+            for (int p = 0; p < CUTS.length; p++) {
+                if (r.entries.get(0).estimate[p] != null) {
+                    if (out.entries.get(0).estimate[p] != null) {
+                        throw new IllegalArgumentException("penetration " + p + " scored twice");
+                    }
+                    for (int e = 0; e < r.entries.size(); e++) {
+                        copyPen(r.entries.get(e), out.entries.get(e), p);
+                    }
+                    for (int e = 0; e < r.fullEntries.size(); e++) {
+                        copyPen(r.fullEntries.get(e), out.fullEntries.get(e), p);
+                    }
+                    out.resolution[p] = r.resolution[p];
+                    out.halfFitFlat[p] = r.halfFitFlat[p];
+                    out.halfFitBoot[p] = r.halfFitBoot[p];
+                    out.groups[p] = r.groups[p];
+                    out.fullResolution[p] = r.fullResolution[p];
+                    out.fullFirst[p] = r.fullFirst[p];
+                    out.fullFit[p] = r.fullFit[p];
+                }
+                if (r.fullHalfFit[p][0] != null) {
+                    if (out.fullHalfFit[p][0] != null) {
+                        throw new IllegalArgumentException("penetration " + p + "'s half fits scored twice");
+                    }
+                    out.fullHalfFitFlat[p] = r.fullHalfFitFlat[p];
+                    out.fullHalfFitBoot[p] = r.fullHalfFitBoot[p];
+                    out.fullHalfFit[p] = r.fullHalfFit[p];
+                    out.fullInSample[p] = r.fullInSample[p];
+                }
+            }
+            out.seconds += r.seconds;
+        }
+        return out;
+    }
+
+    private static void copyPen(Entry from, Entry to, int p) {
+        if (!from.name.equals(to.name)) {
+            throw new IllegalArgumentException(from.name + " is not " + to.name);
+        }
+        to.estimate[p] = from.estimate[p];
+        to.boot[p] = from.boot[p];
+        to.shoeSums[p] = from.shoeSums[p];
+        to.keys[p] = from.keys[p];
     }
 
     /**

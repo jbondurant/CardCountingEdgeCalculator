@@ -205,22 +205,45 @@ The arrays, and the Split arrays beside them, are kept per (penetration, fit), n
 pooled. Tests fail if a test state is scored under the later plays fitted on its own fold,
 or if a fold's first decisions are fitted on Hit values from the other fold's later plays.
 
-**The joint run (FullIndexFit.scoreJoint).** Every count's strategies, both folds and the
+**The joint run (FullIndexFit.JointRun).** Every count's strategies, both folds and the
 half fits at every penetration, run their passes together: each round visits each state
-once, builds its trees once, sets them up once for each count and walks every strategy still
-fitting. The split values worked out at a state are shared by every strategy there, kept by
-the post-split play's fingerprint, so a play several counts or penetrations share is valued
-once, and they are kept from round to round. While they fit, the strategies hold no Hit or
-Split value per state: a pass needs of them only the first-decision sums of Hit and Split
-per (group, deal) and the training EV, which it adds up as it walks; the other moves' sums
-do not change with the play. Once every strategy is fitted, the counts are given their last
-round, which fills the values they are scored with, and scored, in batches sized to the
-heap, the trees built again for each batch's last round; Split is then held for the parts of
-the 100 pair deals alone. The joint run fits and scores as the earlier batched run
-(FullIndexFit.scoreAll) does, to 1e-12, the sums being added in another order
-(FullIndexFitTest), and a split value kept for one play is never served to another: every
-Split value every strategy holds at the end is valued afresh under its own play and must
-agree.
+once, gets its trees once, sets them up once for each count and walks every strategy still
+fitting. Strategies of a count that play the same later play at a state share one walk, as
+all of them do in pass 0. The split values worked out at a state are shared by every
+strategy there, kept by the post-split play's fingerprint, so a play several counts or
+penetrations share is valued once, and they are kept from round to round, packed (40 bytes a
+value). While they fit, the strategies hold no Hit or Split value per state: a pass needs of
+them only the first-decision sums of Hit and Split per (group, deal) and the training EV,
+which it adds up as it walks; the other moves' sums do not change with the play.
+
+Once every strategy is fitted, the scoring goes in items: each count's fold fits, and then
+its half fits, at each penetration in turn, scored apart (SystemScorer.Part) and put
+together once all of a count's are scored (SystemScorer.merge). As many items go to a batch
+as the heap holds. A batch's strategies are given their last round, which fills the values
+they are scored with, Split held for the parts of the 100 pair deals alone, and each item's
+bootstrap resamples are shared among the threads. Every state's trees are built once, in
+the first round, and kept on disk (TreeStore, 245 KB a state); every later round and every
+batch reads them back, bit for bit the trees built.
+
+The joint run fits and scores as the earlier batched run (FullIndexFit.scoreAll) does, to
+1e-12, the sums being added in another order, and scoring a penetration or a part at a time
+on several threads gives the Result of scoring it all at once, to the bit
+(FullIndexFitTest). A split value kept for one play is never served to another: every Split
+value every strategy holds at the end is valued afresh under its own play and must agree.
+
+**Checkpoints (FullIndexCheckpoint).** The run checkpoints into its output directory: after
+every round of the passes, each strategy's plays, passes and sums, the run's rounds and the
+perfect row; after the passes, the same marked fitted; and each scoring item's Result as it
+is scored. Each file is written whole, forced to disk and moved into place, and begins with
+the run's identity: the commit its classes were built from, the state file's path, size and
+time, and every setting that changes a result, the threads among them, since each thread adds
+its own sums in its own order. Restarted with --resume, the run refuses a checkpoint of
+another identity, saying what differs; otherwise it goes on from the last round written, or
+from the fitted strategies, scores only the items not written, and gives the Results an
+uninterrupted run gives, to the bit (FullIndexFitTest, interrupted after the first and the
+second-last round and after five of twelve items). The tree store keeps an index of the
+states it holds, written only after their trees are forced to disk, so a crash costs at most
+the trees built since the last round.
 
 **Decision resolution** covers the later cells, and split hands through the
 first-decision cells they use. A later cell is settled when its one-flip gain under the

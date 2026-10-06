@@ -208,6 +208,38 @@ final class PlayerTree {
     }
 
     /**
+     * A tree whose stand values were worked out before, by the constructor above, and kept
+     * (TreeStore): the shoe and each up-card's row of stand values, NaN where the state cannot
+     * hold a hand. The rows are taken as they are, so the tree is the one that made them.
+     */
+    PlayerTree(int[] shoe, double[][] stand) {
+        if (shoe == null || shoe.length != 11 || stand == null || stand.length != 11) {
+            throw new IllegalArgumentException("a shoe by rank 1 to 10 and a row of stand values for each up-card");
+        }
+        this.shoe = shoe.clone();
+        int n = 0;
+        for (int r = 1; r <= 10; r++) {
+            n += shoe[r];
+        }
+        this.cards = n;
+        if (n < mostCardsARoundTakes(shoe)) {
+            throw new IllegalArgumentException("a round can run this shoe out: " + Arrays.toString(shoe));
+        }
+        for (int u = 1; u <= 10; u++) {
+            if (stand[u] == null || stand[u].length != Hands.ALL.size) {
+                throw new IllegalArgumentException("up-card " + u + " needs a stand value for each of "
+                        + Hands.ALL.size + " hands");
+            }
+            this.stand[u] = stand[u].clone();
+        }
+    }
+
+    /** The stand values of every hand against up-card u, as TreeStore keeps them; not to be changed. */
+    double[] standRow(int u) {
+        return stand[u];
+    }
+
+    /**
      * The most cards a round without a split can take from this shoe, the deal included. A
      * hand hits only while its hard total is 20 or less, from 2 or more on its first two
      * cards, so every card it draws but its last adds up to 18 at most; the dealer draws only

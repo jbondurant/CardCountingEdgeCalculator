@@ -3,38 +3,32 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
- * The dry run of the joint full-index run (FullIndexFit.scoreJoint), on the first shoes of the
- * run's state file, read and never written, before the full run is sized (FULL_INDEX_PLAYS.md
- * section 6).
+ * The dry run of the full-index run (FullIndexRun), on the first shoes of the run's state file,
+ * read and never written, before the whole file is run (FULL_INDEX_PLAYS.md section 6).
  *
- * It runs the whole thing as the full run will, at a smaller size: every count (the null count
- * and the catalog), at every penetration, both folds and the learning curve's half fits, fitted
- * together, then given their last rounds and scored in batches. Each round's figures are
- * printed: the states visited and the walks, the CPU seconds a state for the trees, the walks
- * and the split values, and the distinct post-split plays per (state, pair deal) over every
- * strategy of the round. Split values are kept per state from round to round, so a play met in
- * an earlier round is not valued again; each round also gives the distinct plays that are not
- * the chart's, which is what a cache kept for one state's visit would value, so both are known
- * from one run. Then the rounds every strategy took, the heap's peak while fitting and while
- * scoring, what the split values kept hold, and the batches.
+ * It runs the whole thing as FullIndexRun will, at a smaller size: every count (the null count
+ * and the catalog's entries), at every penetration, both folds and the learning curve's half
+ * fits, fitted together by FullIndexFit.JointRun, every state's trees built once into a tree
+ * store and read back after, a checkpoint written after every round and every item scored;
+ * then the scoring items, one to a batch, as the whole file's batches hold one to three. Each
+ * round's figures are printed: the states visited and the walks, the CPU seconds a state for
+ * the trees, the walks and the split values, and the distinct post-split plays per (state,
+ * pair deal) over every strategy of the round, with those not the chart's, which is what a
+ * cache kept for one state's visit would value. Then the rounds every strategy took, the heap's
+ * peak, the split values kept, the tree store and the checkpoints, and the last rounds and the
+ * scoring.
  *
- * From these it projects the full run's wall time and memory for 8,000 to 15,000 states, and
- * the most states that fit in the hours given. The projection is linear in the states for
- * everything but the play groups, which grow as their square root; what each figure assumes
- * is printed beside it (Projection).
+ * From these it projects the whole file's run, at 200 and 1,000 resamples (Projection).
  *
- * Run it after ./run-tests.sh has compiled the sources, with the mongo jar on the class path
- * for the catalog:
- * java -Xmx10g -cp build/classes:lib/mongo-java-driver-3.12.14.jar FullIndexDryRun [state file]
- * [shoes] [resamples] [threads] [mPlay] [hours]
+ * Its trees and checkpoints go to a directory of their own under the work directory given.
+ * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexDryRun [state file] [shoes]
+ * [resamples] [threads] [work directory]
  */
 public final class FullIndexDryRun {
 
-    static final int[] PENS = {0, 1, 2};
-    static final int[] SIZES = {8000, 10000, 12000, 15000};
+    static final int[] PENS = FullIndexRun.PENS;
 
     /** What the dry run measured, for the projection. */
     static final class Measured {
@@ -59,49 +53,84 @@ public final class FullIndexDryRun {
         long cacheBytes;
         /** What every strategy holds per state of its penetration while it fits: insurance values, roles and training states. */
         double arrayBytes;
+        /** The tree store: trees built and read back, and the bytes of its file. */
+        long treesBuilt;
+        long treesRead;
+        long treeFileBytes;
+        /** The last fit checkpoint's bytes, and the seconds spent forcing trees to disk before checkpoints. */
+        long checkpointBytes;
+        double syncSeconds;
+        /** CPU seconds of the whole process over the run, every thread and the collector included. */
+        double processCpu;
         double wall;
     }
 
     public static void main(String[] args) throws Exception {
         Path data = Paths.get(args.length > 0 ? args[0] : "runs/montreal-80.states");
-        int shoes = args.length > 1 ? Integer.parseInt(args[1]) : 300;
+        int shoes = args.length > 1 ? Integer.parseInt(args[1]) : 2000;
         int resamples = args.length > 2 ? Integer.parseInt(args[2]) : 200;
         int threads = args.length > 3 ? Integer.parseInt(args[3]) : 6;
-        double mPlay = args.length > 4 ? Double.parseDouble(args[4]) : SystemScorer.M_PLAY;
-        double hours = args.length > 5 ? Double.parseDouble(args[5]) : 16;
+        Path work = Paths.get(args.length > 4 ? args[4] : "runs/full-index/dry-run");
         PrintStream out = System.out;
         long t0 = System.nanoTime();
         ScoringStates st = FullIndexPilot.load(data, shoes);
         out.printf("# Full-index dry run%n%n");
         out.printf("FullIndexDryRun: the first %d shoes of %s, %d valued states, read and never written; M_play %.2f; "
-                        + "%d resamples of seed %d; %d threads of %d processors; max heap %.0f MB; java %s.%n", shoes, data,
-                st.size, mPlay, resamples, Bootstrap.SEED, threads, Runtime.getRuntime().availableProcessors(),
-                Runtime.getRuntime().maxMemory() / 1e6, System.getProperty("java.vm.version"));
+                        + "%d resamples of seed %d; %d threads of %d processors; max heap %.0f MB; java %s; trees and "
+                        + "checkpoints in %s.%n", shoes, data, st.size, SystemScorer.M_PLAY, resamples, Bootstrap.SEED,
+                threads, Runtime.getRuntime().availableProcessors(), Runtime.getRuntime().maxMemory() / 1e6,
+                System.getProperty("java.vm.version"), work);
         out.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
         out.flush();
-        Measured m = run(st, resamples, threads, mPlay, out);
+        Measured m = run(st, resamples, threads, work, out);
         print(out, m);
-        Projection.print(out, data, m, hours);
+        Projection.print(out, data, m);
         out.printf("%nFinished %s, load average %.2f.%n", java.time.LocalDateTime.now(), FullIndexTimingReport.loadAverage());
     }
 
-    /** Runs the joint fit and scoring on the states given, every count at every penetration, and measures it. */
-    static Measured run(ScoringStates st, int resamples, int threads, double mPlay, PrintStream log) throws Exception {
+    /**
+     * Runs the joint fit and scoring on the states given as FullIndexRun runs the whole file:
+     * every count at every penetration, trees kept in a TreeStore and checkpoints written, in a
+     * fresh directory under work; and one scoring item to a batch, as the whole file's batches
+     * hold one to three. Measures it.
+     */
+    static Measured run(ScoringStates st, int resamples, int threads, Path work, PrintStream log) throws Exception {
         Measured m = new Measured();
         m.st = st;
         m.threads = threads;
         m.resamples = resamples;
-        m.mPlay = mPlay;
-        SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), mPlay);
+        m.mPlay = SystemScorer.M_PLAY;
+        SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), m.mPlay);
         List<CountKeys.Count> counts = new ArrayList<>();
         counts.add(CountKeys.nullCount());
         counts.addAll(CountKeys.catalog());
         m.counts = counts.size();
         m.statesHeld = FullIndexPilot.usedAfterGc();
+        Path dir = work.resolve("run-" + System.currentTimeMillis());
+        java.nio.file.Files.createDirectories(dir);
+        TreeStore store = new TreeStore(st, dir.resolve("trees.bin"), "dry run " + st.size, FullIndexRun.DISK_MARGIN);
+        FullIndexCheckpoint ck = new FullIndexCheckpoint(dir.resolve("checkpoints"), "dry run " + st.size);
         FullIndexTimingReport.resetPeaks();
         FullIndexFit[] fitOf = new FullIndexFit[1];
-        FullIndexFit.Watch watch = new FullIndexFit.Watch() {
+        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, PENS, threads);
+        run.trees = store;
+        run.batchBytes = 1;
+        run.checkpoint = ck;
+        run.log = System.err;
+        run.beforeCheckpoint = () -> {
+            long c0 = System.nanoTime();
+            store.sync();
+            m.syncSeconds += (System.nanoTime() - c0) / 1e9;
+        };
+        run.afterRound = r -> {
+            try {
+                m.checkpointBytes = java.nio.file.Files.size(ck.dir.resolve("fit.ckpt"));
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        };
+        run.watch = new FullIndexFit.Watch() {
             @Override
             public void fitted(List<FullIndexFit.Fits> fits, FullIndexFit fit) {
                 fitOf[0] = fit;
@@ -121,30 +150,30 @@ public final class FullIndexDryRun {
                 }
                 m.firstGroups = fg / m.strategies;
                 m.laterGroups = lg / m.strategies;
+                for (SplitValues.Packed kept : fit.splitCache) {
+                    if (kept != null) {
+                        m.cacheEntries += kept.entries();
+                        m.cacheBytes += kept.bytes();
+                    }
+                }
                 log.printf("%nFitted %d strategies in %d rounds; heap peak %.0f MB while fitting, %.0f MB held after.%n",
                         m.strategies, fit.rounds.size(), m.peakFit / 1e6, m.heldAfterFit / 1e6);
                 log.flush();
                 FullIndexTimingReport.resetPeaks();
             }
-
-            @Override
-            public void finalRound(List<FullIndexFit.Fits> batch) {
-                log.printf("A batch of %d counts had its last round; scoring it.%n", batch.size());
-                log.flush();
-            }
         };
         long w0 = System.nanoTime();
-        double budget = 0.45 * Runtime.getRuntime().maxMemory();
-        m.scored = FullIndexFit.scoreJoint(scorer, FullIndexFit.built(st), counts, PENS, budget, threads, true, true, null,
-                watch, System.err);
+        com.sun.management.OperatingSystemMXBean os =
+                (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        long cpu0 = os.getProcessCpuTime();
+        m.scored = run.run();
         m.wall = (System.nanoTime() - w0) / 1e9;
+        m.processCpu = (os.getProcessCpuTime() - cpu0) / 1e9;
         m.peakScore = FullIndexTimingReport.peakHeap();
-        long with = FullIndexPilot.usedAfterGc();
-        for (Map<String, Double> kept : fitOf[0].splitCache.values()) {
-            m.cacheEntries += kept.size();
-        }
-        fitOf[0].splitCache.clear();
-        m.cacheBytes = Math.max(0, with - FullIndexPilot.usedAfterGc());
+        store.close();
+        m.treesBuilt = store.built();
+        m.treesRead = store.read();
+        m.treeFileBytes = java.nio.file.Files.size(dir.resolve("trees.bin"));
         return m;
     }
 
@@ -152,42 +181,50 @@ public final class FullIndexDryRun {
         FullIndexFit.Scored sc = m.scored;
         out.printf("%n## The joint passes%n%n");
         out.printf("%d counts, %d strategies (each count at %d penetrations, each fold and each half fit), fitted together "
-                + "in %.1f s on the wall. Split values kept per state from round to round.%n%n", m.counts, m.strategies,
-                PENS.length, sc.fitWall);
-        roundTable(out, sc.rounds.get(0), m.st.size);
+                + "in %.1f s on the wall. Split values kept per state from round to round; trees built in the first round "
+                + "and read back from the tree store after.%n%n", m.counts, m.strategies, PENS.length, sc.fitWall);
+        roundTable(out, sc.rounds.get(0));
         FullIndexFit.RoundStats ft = FullIndexPilot.total(sc.rounds.get(0));
         out.printf("%nIn all: %d state visits, %d walks, %d of them worked out; CPU a state visit: trees %.4f s, walks %.4f s "
                         + "(%.3f ms a strategy's walk, its reach and sums included), splits %.4f s (%.1f ms a split valued); "
-                        + "%.2f threads busy of %d.%n",
-                ft.states, ft.walks, ft.walksMade, ft.treeCpu / ft.states, ft.walkCpu / ft.states,
-                1000 * ft.walkCpu / Math.max(1, ft.walks), ft.splitCpu / ft.states,
+                        + "%.2f threads busy of %d.%n", ft.states, ft.walks, ft.walksMade, ft.treeCpu / ft.states,
+                ft.walkCpu / ft.states, 1000 * ft.walkCpu / Math.max(1, ft.walks), ft.splitCpu / ft.states,
                 1000 * ft.splitCpu / Math.max(1, ft.splitValued), cpu(ft) / ft.wall, m.threads);
         out.printf("Rounds a strategy fitted (passes and clean-ups): %s; %d of %d capped. On average %.2f first-decision "
                 + "groups and %.2f later groups a strategy.%n", FullIndexPilot.histogram(m.strategyRounds), m.capped,
                 m.strategies, m.firstGroups, m.laterGroups);
         out.printf("Heap: %.0f MB held with the states alone; peak %.0f MB while fitting (each pool's peak added, so at "
-                        + "most this); %.0f MB held after the passes, policies, sums and split values kept included.%n",
-                m.statesHeld / 1e6, m.peakFit / 1e6, m.heldAfterFit / 1e6);
+                        + "most this); %.0f MB held after the passes, policies, sums and split values kept included. Split "
+                        + "values kept after the passes: %d, %.1f a state, %.1f KB a state packed.%n", m.statesHeld / 1e6,
+                m.peakFit / 1e6, m.heldAfterFit / 1e6, m.cacheEntries, (double) m.cacheEntries / m.st.size,
+                (double) m.cacheBytes / m.st.size / 1e3);
+        out.printf("Tree store: %d trees built, %d read back, %.0f MB on disk (%.0f KB a state); the last fit checkpoint "
+                + "%.1f MB; %.1f s forcing trees to disk before checkpoints.%n", m.treesBuilt, m.treesRead,
+                m.treeFileBytes / 1e6, m.treeFileBytes / 1e3 / m.st.size, m.checkpointBytes / 1e6, m.syncSeconds);
 
         out.printf("%n## The last rounds and the scoring%n%n");
-        out.println("| Batch | Counts | Estimated bytes | Last round wall s | CPU s a state: trees | walks | splits | Splits "
-                + "valued | Scoring wall s |");
-        out.println("|---|---|---|---|---|---|---|---|---|");
+        FullIndexFit.RoundStats lt = new FullIndexFit.RoundStats();
+        double finalWall = 0;
+        double scoreWall = 0;
+        double most = 0;
+        double bytes = 0;
         for (int b = 0; b < sc.batches.size(); b++) {
-            FullIndexFit.RoundStats r = FullIndexPilot.total(sc.rounds.get(b + 1));
-            out.printf("| %d | %d | %.0f MB | %.1f | %.4f | %.4f | %.4f | %d | %.1f |%n", b, sc.batches.get(b).size(),
-                    sc.batchBytes.get(b) / 1e6, sc.finalWall.get(b), r.treeCpu / r.states, r.walkCpu / r.states,
-                    r.splitCpu / r.states, r.splitValued, sc.scoreWall.get(b));
+            for (FullIndexFit.RoundStats r : sc.rounds.get(b + 1)) {
+                lt.add(r);
+            }
+            finalWall += sc.finalWall.get(b);
+            scoreWall += sc.scoreWall.get(b);
+            most = Math.max(most, sc.batchBytes.get(b));
+            bytes += sc.batchBytes.get(b);
         }
-        double scoreCpu = 0;
-        for (double c : sc.scoreCpu) {
-            scoreCpu += c;
-        }
-        out.printf("%nScoring: %.1f CPU s over the %d counts, %.2f s a count, %d resamples. Peak heap from the last rounds "
-                        + "on %.0f MB. Split values kept at the end: %d, %.1f a state, holding %.0f MB, %.0f bytes each.%n",
-                scoreCpu, m.counts, scoreCpu / m.counts, m.resamples, m.peakScore / 1e6, m.cacheEntries,
-                (double) m.cacheEntries / m.st.size, m.cacheBytes / 1e6, (double) m.cacheBytes / Math.max(1, m.cacheEntries));
-        out.printf("Everything on the wall: %.1f s.%n", m.wall);
+        out.printf("%d batches of one scoring item each (a count's fold fits or half fits at one penetration), as the "
+                        + "whole file's batches hold one to three: last rounds %.1f s and scoring %.1f s on the wall. The last "
+                        + "rounds' CPU a state, over every batch: trees read %.4f s, walks %.4f s, splits %.4f s (%d valued). "
+                        + "An item holds %.1f KB a state on average and %.1f KB at most.%n", sc.batches.size(), finalWall,
+                scoreWall, lt.treeCpu / m.st.size, lt.walkCpu / m.st.size, lt.splitCpu / m.st.size, lt.splitValued,
+                bytes / sc.batches.size() / m.st.size / 1e3, most / m.st.size / 1e3);
+        out.printf("Peak heap from the last rounds on %.0f MB. Everything on the wall: %.1f s, %.1f s of the process's "
+                + "CPU.%n", m.peakScore / 1e6, m.wall, m.processCpu);
     }
 
     static double cpu(FullIndexFit.RoundStats r) {
@@ -195,7 +232,7 @@ public final class FullIndexDryRun {
     }
 
     /** One line a round: its strategies and what a state visit cost in it. */
-    static void roundTable(PrintStream out, List<FullIndexFit.RoundStats> rounds, int states) {
+    static void roundTable(PrintStream out, List<FullIndexFit.RoundStats> rounds) {
         out.println("| Round | Strategies | States | Walks a state | worked out | Wall s | CPU s a state: trees | walks | "
                 + "splits | Split asks a state | the chart's | already valued | valued | Distinct plays a pair deal | "
                 + "most | not the chart's, a state |");
@@ -204,8 +241,7 @@ public final class FullIndexDryRun {
             double n = Math.max(1, r.states);
             out.printf("| %d | %d | %d | %.1f | %.1f | %.1f | %.4f | %.4f | %.4f | %.1f | %.1f | %.1f | %.2f | %.2f | %d | "
                             + "%.2f |%n", r.round, r.strategies, r.states, r.walks / n, r.walksMade / n, r.wall, r.treeCpu / n,
-                    r.walkCpu / n, r.splitCpu / n,
-                    r.splitAsks / n, r.splitChart / n, r.splitKept / n, r.splitValued / n,
+                    r.walkCpu / n, r.splitCpu / n, r.splitAsks / n, r.splitChart / n, r.splitKept / n, r.splitValued / n,
                     r.pairDeals == 0 ? 0 : (double) r.distinctPlays / r.pairDeals, r.mostPlays, r.distinctOther / n);
         }
     }
@@ -213,141 +249,111 @@ public final class FullIndexDryRun {
     // ------------------------------------------------------------------ the full run
 
     /**
-     * The full run projected from the dry run, for each number of states in SIZES and for the
-     * most that fit in the hours given.
+     * The whole file's run projected from the dry run (FULL_INDEX_PLAYS.md section 6), at 200
+     * and at 1,000 resamples, with what each figure assumes.
      *
-     * The passes. Every state is visited in as many rounds as the dry run's passes took, and a
-     * state visit costs what it cost there: its trees, its walks and the split values worked out
-     * afresh, each summed over the rounds. The groups grow as the square root of the states, so
-     * a larger run can take more passes and meet more distinct post-split plays at a state; the
-     * projection is also given with every strategy at the cap, its walks and splits a state taken
-     * at the dry run's busiest round, which is far more than the dry run did.
+     * Time, from the dry run's wall seconds a state, which take in the machine's other load and
+     * the threads' contention as they were:
+     * - the passes: their wall split by CPU into trees (built in the first round, read back
+     *   after), walks and split values, each times the states. The groups grow as the square root
+     *   of the states, so a larger run meets more distinct post-split plays a state: the split
+     *   values are also taken growing as the square root of the groups and as the groups, which
+     *   brackets the growth from the 300-shoe run to the 2,000-shoe one (FULL_INDEX_PLAYS.md
+     *   section 6). They are also taken with every strategy at the cap, six passes and two
+     *   clean-ups at the walks and splits of the busiest round, far more than any run took;
+     * - the last rounds: their wall a state times the states. The dry run gives each item a
+     *   batch, as the whole file's batches hold one to three, so the trees are read as often;
+     * - the scoring: its wall a state and a resample times the states and the resamples, each
+     *   item's resamples shared among the threads as the full run shares them.
      *
-     * The last rounds. Each batch builds every state's trees once, and every state's walks and
-     * splits are those of the dry run's last rounds, once in all. The split values kept from the
-     * passes serve them.
-     *
-     * The scoring. Its CPU is linear in the states and in the resamples, from the dry run's,
-     * and its counts run on the threads at once.
-     *
-     * Memory. The states, the strategies' per-state arrays and the split values kept grow with
-     * the states, and the sums each thread holds for each strategy with the groups. A batch is
-     * as many counts as fit in the heap left, at the dry run's bytes a count scaled by the states.
-     *
-     * Wall time is the CPU of the passes and last rounds over the threads the dry run's passes
-     * kept busy, plus the scoring's over the threads, on this machine at the dry run's load.
+     * Memory: the states, the strategies' arrays and the split values kept grow with the states;
+     * the policies and the threads' sums with the groups; the tree store's file and the items
+     * with the states. A batch holds as many items as fit in 80% of the heap less what the run
+     * holds once fitted.
      */
     static final class Projection {
 
-        static final double HEAP = 10e9;
+        static final double HEAP = 10.0 * (1L << 30);
         static final double FILL = 0.8;
 
-        static void print(PrintStream out, Path data, Measured m, double hours) throws java.io.IOException {
+        static void print(PrintStream out, Path data, Measured m) throws java.io.IOException {
             FullIndexFit.Scored sc = m.scored;
-            int fileStates = StateStore.records(data);
+            int n = StateStore.records(data);
             int s = m.st.size;
-            out.printf("%n## The full run, projected%n%n");
-            out.printf("The file holds %,d states. The dry run fitted %d; the full run's states are the first shoes of the "
-                    + "file, a random sample, as the dry run's are.%n", fileStates, s);
+            double scale = (double) n / s;
+            double grow = Math.sqrt(scale);
             List<FullIndexFit.RoundStats> fit = sc.rounds.get(0);
-            double treeR = 0;
-            double walkR = 0;
-            double splitR = 0;
-            double busiest = 0;
-            for (FullIndexFit.RoundStats r : fit) {
-                treeR += r.treeCpu / s;
-                walkR += r.walkCpu / s;
-                splitR += r.splitCpu / s;
-                busiest = Math.max(busiest, (r.walkCpu + r.splitCpu) / s);
-            }
             FullIndexFit.RoundStats ft = FullIndexPilot.total(fit);
-            double busy = cpu(ft) / ft.wall;
-            double treeState = ft.treeCpu / ft.states;
-            double finalWalk = 0;
-            double finalSplit = 0;
-            double batchBytes = 0;
-            for (int b = 0; b < sc.batches.size(); b++) {
-                FullIndexFit.RoundStats r = FullIndexPilot.total(sc.rounds.get(b + 1));
-                finalWalk += r.walkCpu / s;
-                finalSplit += r.splitCpu / s;
-                batchBytes += sc.batchBytes.get(b);
+            double cpu = cpu(ft);
+            double passWall = sc.fitWall;
+            double treeShare = ft.treeCpu / cpu;
+            double walkShare = ft.walkCpu / cpu;
+            double splitShare = ft.splitCpu / cpu;
+            // The busiest round's walks and split values, in wall seconds.
+            double busyWalk = 0;
+            double busySplit = 0;
+            for (FullIndexFit.RoundStats r : fit) {
+                if (r.walkCpu + r.splitCpu > (busyWalk + busySplit) / passWall * cpu) {
+                    busyWalk = r.walkCpu / cpu * passWall;
+                    busySplit = r.splitCpu / cpu * passWall;
+                }
             }
-            double perCount = batchBytes / m.counts / s;
-            double scoreCpu = 0;
-            for (double c : sc.scoreCpu) {
-                scoreCpu += c;
-            }
-            double scoreState = scoreCpu / s / m.resamples;
             int cap = FullIndexFit.MAX_PASSES + FullIndexFit.CLEAN_UPS;
-            out.printf("From the dry run, CPU seconds a state: the passes' trees %.3f, walks %.3f and splits %.3f over its "
-                            + "%d rounds; a last round's trees %.4f a batch; the last rounds' walks %.3f and splits %.3f; "
-                            + "scoring %.3g a resample (every count); %.2f threads busy in the passes. A count's batch holds "
-                            + "%.0f KB a state.%n", treeR, walkR, splitR, fit.size(), treeState, finalWalk, finalSplit,
-                    scoreState, busy, perCount / 1e3);
-            double statesBytes = FullIndexPilot.Projection.statesBytes(m.st) / s;
-            double cacheBytes = (double) m.cacheBytes / s;
-            double arrayBytes = m.arrayBytes / s;
-            // Policies, groups and the rest the strategies hold, which grow with the groups.
-            double fitBytes = Math.max(0, m.heldAfterFit - m.statesHeld - m.cacheBytes - m.arrayBytes);
-            double accBytes = (double) m.threads * m.strategies * m.firstGroups * Deals.COUNT * 16;
-            out.printf("Memory: a state's own values %.1f KB, the strategies' arrays for it %.1f KB, the split values kept "
-                            + "for it %.1f KB; the policies and the rest the strategies hold %.0f MB, and the threads' sums "
-                            + "in a round %.0f MB, at the dry run's %.2f groups a strategy, both growing as the groups do, "
-                            + "with the square root of the states. Heap %.0f GB, of which %.0f%% is filled.%n%n",
-                    statesBytes / 1e3, arrayBytes / 1e3, cacheBytes / 1e3, fitBytes / 1e6, accBytes / 1e6, m.firstGroups,
-                    HEAP / 1e9, 100 * FILL);
-            statesBytes += arrayBytes;
-            out.println("| States | Resamples | Rounds | Batches | Heap while fitting | CPU hours: passes' trees | walks | "
-                    + "splits | last rounds | scoring | Wall hours | Wall hours, every strategy at the cap |");
-            out.println("|---|---|---|---|---|---|---|---|---|---|---|---|");
-            List<Integer> sizes = new ArrayList<>();
-            for (int n : SIZES) {
-                sizes.add(n);
+            double finalWall = 0;
+            double scoreWall = 0;
+            double itemBytes = 0;
+            double itemMost = 0;
+            for (int b = 0; b < sc.batches.size(); b++) {
+                finalWall += sc.finalWall.get(b);
+                scoreWall += sc.scoreWall.get(b);
+                itemBytes += sc.batchBytes.get(b);
+                itemMost = Math.max(itemMost, sc.batchBytes.get(b));
             }
-            for (int resamples : new int[]{200, 1000}) {
-                // The most states, in steps of 500, whose projected wall time fits in the hours given.
-                int most = 0;
-                for (int n = 500; n <= fileStates; n += 500) {
-                    if (wall(n, m, treeR, walkR, splitR, treeState, finalWalk, finalSplit, scoreState, busy, perCount,
-                            statesBytes, fitBytes, cacheBytes, accBytes, resamples, false)[0] > hours * 3600) {
-                        break;
-                    }
-                    most = n;
-                }
-                List<Integer> rows = new ArrayList<>(sizes);
-                rows.add(most);
-                for (int n : rows) {
-                    double[] w = wall(n, m, treeR, walkR, splitR, treeState, finalWalk, finalSplit, scoreState, busy,
-                            perCount, statesBytes, fitBytes, cacheBytes, accBytes, resamples, false);
-                    double[] c = wall(n, m, treeR * cap / fit.size(), busiest * cap, 0, treeState, finalWalk, finalSplit,
-                            scoreState, busy, perCount, statesBytes, fitBytes, cacheBytes, accBytes, resamples, true);
-                    out.printf("| %,d%s | %d | %d | %.0f | %.1f GB | %.1f | %.1f | %.1f | %.1f | %.1f | %.1f | %.1f |%n", n,
-                            n == most ? " (most in " + hours + " h)" : "", resamples, fit.size(), w[1], w[2] / 1e9, w[3], w[4],
-                            w[5], w[6], w[7], w[0] / 3600, c[0] / 3600);
-                }
-            }
-        }
+            int items = sc.batches.size();
+            out.printf("%n## The whole file, projected%n%n");
+            out.printf("The file holds %,d valued states, %.1f times the dry run's %,d. From the dry run, wall seconds a "
+                            + "state: the passes %.3f (trees %.0f%%, walks %.0f%%, split values %.0f%% of their CPU) over %d "
+                            + "rounds; the last rounds %.3f; the scoring %.3g a resample.%n", n, scale, s, passWall / s,
+                    100 * treeShare, 100 * walkShare, 100 * splitShare, fit.size(), finalWall / s, scoreWall / s / m.resamples);
 
-        /**
-         * {wall seconds, batches, heap while fitting, CPU hours of the passes' trees, walks and
-         * splits, of the last rounds and of the scoring} at n states.
-         */
-        static double[] wall(int n, Measured m, double treeR, double walkR, double splitR, double treeState,
-                             double finalWalk, double finalSplit, double scoreState, double busy, double perCount,
-                             double statesBytes, double fitBytes, double cacheBytes, double accBytes, int resamples,
-                             boolean capped) {
-            double grow = Math.sqrt((double) n / m.st.size);
-            double held = n * (statesBytes + cacheBytes) + fitBytes * grow;
-            double fitHeap = held + accBytes * grow;
+            double states = FullIndexPilot.Projection.statesBytes(m.st) * scale;
+            double arrays = m.arrayBytes * scale;
+            double cache = m.cacheBytes * scale;
+            double fixed = Math.max(0, m.heldAfterFit - m.statesHeld - m.cacheBytes - m.arrayBytes) * grow;
+            double sums = (double) m.threads * m.strategies * m.firstGroups * grow * Deals.COUNT * 16;
+            double held = states + arrays + cache + fixed;
             double room = FILL * HEAP - held;
-            double batches = Math.max(1, Math.ceil(m.counts * perCount * n / Math.max(1, room)));
-            double trees = n * treeR / 3600;
-            double walks = n * walkR / 3600;
-            double splits = n * splitR / 3600;
-            double last = n * (batches * treeState + finalWalk + finalSplit) / 3600;
-            double scoring = n * scoreState * resamples / 3600;
-            double wall = (trees + walks + splits + last) * 3600 / busy + scoring * 3600 / m.threads;
-            return new double[]{wall, batches, fitHeap, trees, walks, splits, last, scoring};
+            double itemsBytes = itemBytes * scale;
+            double perBatch = Math.max(1, Math.floor(room / (itemsBytes / items)));
+            out.printf("Memory at %,d states: the states %.2f GB, the strategies' arrays %.2f GB, the split values kept "
+                            + "%.2f GB (as many a state as the dry run kept; more if the plays grow with the groups), the "
+                            + "policies and the rest %.2f GB, and the threads' sums in a round %.2f GB: %.2f GB held while "
+                            + "fitting and %.2f GB after. A batch may then hold %.2f GB: an item holds %.2f GB on average "
+                            + "and %.2f GB at most, so about %.0f items a batch of the %d. The tree store takes %.1f GB of "
+                            + "disk, a fit checkpoint about %.0f MB.%n%n", n, states / 1e9, arrays / 1e9, cache / 1e9,
+                    fixed / 1e9, sums / 1e9, (held + sums) / 1e9, held / 1e9, room / 1e9, itemsBytes / items / 1e9,
+                    itemMost * scale / 1e9, perBatch, items, TreeStore.bytes(n) / 1e9, m.checkpointBytes * grow / 1e6);
+            if (itemMost * scale > room) {
+                out.printf("The largest item does not fit beside what the run holds: it would need %.2f GB of %.2f.%n%n",
+                        itemMost * scale / 1e9, room / 1e9);
+            }
+
+            out.println("| Resamples | Split values a state | Rounds | Passes h | Last rounds h | Scoring h | Total h |");
+            out.println("|---|---|---|---|---|---|---|");
+            String[] growth = {"as in the dry run", "growing as the square root of the groups", "growing as the groups"};
+            double[] factor = {1, Math.sqrt(grow), grow};
+            for (int resamples : new int[]{200, 1000}) {
+                double last = finalWall * scale / 3600;
+                double scoring = scoreWall / m.resamples * resamples * scale / 3600;
+                for (int g = 0; g < factor.length; g++) {
+                    double passes = passWall * scale * (treeShare + walkShare + splitShare * factor[g]) / 3600;
+                    out.printf("| %d | %s | %d | %.1f | %.1f | %.1f | %.1f |%n", resamples, growth[g], fit.size(), passes,
+                            last, scoring, passes + last + scoring);
+                }
+                double passes = (passWall * treeShare + cap * (busyWalk + busySplit * grow)) * scale / 3600;
+                out.printf("| %d | at the busiest round's, growing as the groups | %d, the cap | %.1f | %.1f | %.1f | %.1f |%n",
+                        resamples, cap, passes, last, scoring, passes + last + scoring);
+            }
         }
     }
 }

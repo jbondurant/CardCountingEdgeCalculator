@@ -410,7 +410,9 @@ final class FullIndexFit {
     }
 
     /** What one pass found, for the report. */
-    static final class PassRecord {
+    static final class PassRecord implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final boolean cleanUp;
         /** The training states' weighted EV per round under the play walked, insurance included. */
         final double ev;
@@ -1214,6 +1216,59 @@ final class FullIndexFit {
                     (total, soft) -> PlayerTree.CHART.stands(total, soft, up, 0), d -> rank[d]));
         }
 
+        // ------------------------------------------------------------- checkpoints
+
+        /**
+         * What a checkpoint keeps of this strategy between rounds: whatever a later round reads
+         * that making the strategy again does not give, its plays, passes and sums. Only between
+         * rounds of the passes, or once it waits for its last round.
+         */
+        State state() {
+            if (phase == Phase.DONE || sums != null || finalGap != null) {
+                throw new IllegalStateException(this + " is not between rounds of its passes");
+            }
+            State x = new State();
+            x.name = toString();
+            x.phase = phase;
+            x.passes = passes;
+            x.cleanUps = cleanUps;
+            x.converged = converged;
+            x.capped = capped;
+            x.history = new ArrayList<>(history);
+            x.flipped = flipped;
+            x.bestPass = bestPass;
+            x.bestEv = bestEv;
+            x.bestSums = bestSums;
+            x.lastSums = lastSums;
+            x.flipping = flipping;
+            x.later = later;
+            x.now = new PolicyState(now);
+            x.best = best == null ? null : best == now ? x.now : new PolicyState(best);
+            return x;
+        }
+
+        /** Puts back what state() kept, on a strategy made afresh for the same count, penetration, fold and weights. */
+        void restore(State x) {
+            if (!x.name.equals(toString()) || passes != 0 || phase != Phase.FITTING) {
+                throw new IllegalStateException("a checkpoint of " + x.name + " cannot restore " + this);
+            }
+            phase = x.phase;
+            passes = x.passes;
+            cleanUps = x.cleanUps;
+            converged = x.converged;
+            capped = x.capped;
+            history.addAll(x.history);
+            flipped = x.flipped;
+            bestPass = x.bestPass;
+            bestEv = x.bestEv;
+            bestSums = x.bestSums;
+            lastSums = x.lastSums;
+            flipping = x.flipping;
+            later = x.later;
+            now = x.now.policy(this);
+            best = x.best == null ? null : x.best == x.now ? now : x.best.policy(this);
+        }
+
         // ------------------------------------------------------------- after the fit
 
         /** Whether the play kept stands at later cell (g, cell). */
@@ -1309,6 +1364,54 @@ final class FullIndexFit {
         }
     }
 
+    /** A strategy between rounds, as a checkpoint keeps it (Strategy.state). */
+    static final class State implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        String name;
+        Phase phase;
+        int passes;
+        int cleanUps;
+        boolean converged;
+        boolean capped;
+        List<PassRecord> history;
+        int flipped;
+        int bestPass;
+        double bestEv;
+        double[][] bestSums;
+        double[][] lastSums;
+        int flipping;
+        SystemScorer.Groups later;
+        PolicyState now;
+        PolicyState best;
+    }
+
+    /** A play as a checkpoint keeps it: its first moves and sums and its later cells; its rankings are made again from the sums. */
+    static final class PolicyState implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        final int[][] move;
+        final double[][] sum;
+        final double[][] reach;
+        final double weight;
+        final boolean[] stands;
+        final int laterNoReach;
+        final int laterTies;
+
+        PolicyState(Policy p) {
+            move = p.first.move;
+            sum = p.first.sum;
+            reach = p.first.reach;
+            weight = p.first.weight;
+            stands = p.stands;
+            laterNoReach = p.laterNoReach;
+            laterTies = p.laterTies;
+        }
+
+        Policy policy(Strategy t) {
+            SystemScorer.Fit f = new SystemScorer.Fit(t.groups, move, sum, reach, weight);
+            return new Policy(f, rankings(t.st, t.scorer.rules(), f), stands, laterNoReach, laterTies);
+        }
+    }
+
     /**
      * A finished strategy as the report reads it: how its passes went, its later groups and
      * answers, each later cell's one-flip gain, standard error and frequency under the play
@@ -1316,7 +1419,9 @@ final class FullIndexFit {
      * half fit the in-sample check. It holds none of the strategy's per-state values, so a
      * batch's strategies can be let go once their counts are scored.
      */
-    static final class Summary {
+    static final class Summary implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         final String name;
         final int pen;
         final int fold;
@@ -1390,6 +1495,18 @@ final class FullIndexFit {
 
         boolean has(int pen) {
             return fold[pen][0] != null && fold[pen][1] != null;
+        }
+
+        /** The parts a strategy at this penetration holds (the same for all four), or null if none holds them. */
+        SystemScorer.Parts partsAt(int pen) {
+            for (Strategy[] two : new Strategy[][]{fold[pen], half[pen]}) {
+                for (Strategy t : two) {
+                    if (t != null && t.parts != null) {
+                        return t.parts;
+                    }
+                }
+            }
+            return null;
         }
 
         SystemScorer.PlayValues[] values(int pen) {
@@ -1485,7 +1602,9 @@ final class FullIndexFit {
     // ------------------------------------------------------------------ the rounds
 
     /** What one round did, summed over its threads. */
-    static final class RoundStats {
+    static final class RoundStats implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         int round;
         int strategies;
         int states;
@@ -1637,8 +1756,15 @@ final class FullIndexFit {
         /** V(Split) of deal i of the current state under a play that is not the chart's, conditional on no natural. */
         double split(int i, SplitEntry e) {
             if (splitValues == null) {
-                Map<String, Double> kept = splitCache == null ? new HashMap<>()
-                        : splitCache.computeIfAbsent(state, k -> new HashMap<>());
+                SplitValues.Kept kept;
+                if (splitCache == null) {
+                    kept = new SplitValues.Packed();
+                } else {
+                    if (splitCache[state] == null) {
+                        splitCache[state] = new SplitValues.Packed();
+                    }
+                    kept = splitCache[state];
+                }
                 splitValues = new SplitValues(rules, ShoeRun.ranksLeft(st.dealt[state]), null, kept, engine);
             }
             int valued = splitValues.valued;
@@ -1664,16 +1790,28 @@ final class FullIndexFit {
 
     final ScoringStates st;
     final RoundRules rules;
-    final Trees trees;
+    /** Where each state's trees come from; the joint run walks kept trees in its passes and built ones in its last rounds. */
+    Trees trees;
     final int threads;
-    /** Split values kept per state from round to round, or null to keep them for one state's visit only. */
-    final Map<Integer, Map<String, Double>> splitCache;
+    /**
+     * Split values kept per state from round to round, or null to keep them for one state's
+     * visit only. A state is visited by one thread at a time, and a round's visits finish before
+     * the next round's begin.
+     */
+    final SplitValues.Packed[] splitCache;
     private final byte[][] chartPrints = new byte[Deals.COUNT][];
     /** Each state's round value with every decision of the dealt hand played best and split hands at the chart; NaN until worked out. */
     final double[] perfect;
     final List<RoundStats> rounds = new ArrayList<>();
     /** Where a line goes after each round, and as the first thread gets through each tenth of its shoes; null for none. */
     PrintStream log;
+    /** Called after each round, once every strategy has refitted; the joint run writes its checkpoint here. */
+    AfterRound afterRound;
+
+    /** Work done after a round, which may fail. */
+    interface AfterRound {
+        void ended() throws Exception;
+    }
 
     /**
      * @param keepSplits keep every split value worked out, per state, for later rounds and later
@@ -1685,7 +1823,7 @@ final class FullIndexFit {
         this.rules = rules;
         this.trees = trees;
         this.threads = threads;
-        this.splitCache = keepSplits ? new ConcurrentHashMap<>() : null;
+        this.splitCache = keepSplits ? new SplitValues.Packed[st.size] : null;
         RoundPolicy chart = BasicStrategy.chart();
         for (int i = 0; i < Deals.COUNT; i++) {
             if (Deals.P1[i] == Deals.P2[i] && rules.maxHandsFor(Deals.P1[i]) >= 2) {
@@ -1822,6 +1960,9 @@ final class FullIndexFit {
                                     + "worked out; %d strategies go on%n", total.round, total.wall, total.strategies,
                             total.states, total.splitValued, total.walksMade, total.walks, left);
                     log.flush();
+                }
+                if (afterRound != null) {
+                    afterRound.ended();
                 }
             }
         } finally {
@@ -1983,176 +2124,340 @@ final class FullIndexFit {
 
     /**
      * Scores every count given both ways, as scoreAll does, with every count's strategies fitted
-     * together (FULL_INDEX_PLAYS.md section 6): both folds and the half fits at each penetration
-     * given, of every count, in one run of passes. Each round visits each state once, builds its
-     * trees once, sets each count's tree up once and walks every strategy still fitting, and the
-     * split values worked out at a state are shared by every strategy there, by the post-split
-     * play's fingerprint (SplitValues), so a play several counts or penetrations share is valued
-     * once. While they fit, the strategies are lean: they hold their policies and the sums each
-     * pass adds up, not a Hit and a Split value for every state.
-     *
-     * Once every strategy is fitted, the counts are given their last rounds and scored in batches,
-     * in order, as many to a batch as batchBytes holds by estimateBytes (always at least one).
-     * A batch's strategies get their parts and values, Split held compactly for the deals that
-     * can be split (SystemScorer.PlayValues), walk every state in one round, trees built afresh
-     * from those given, and their counts are scored on threads threads at once; then their values
-     * are let go. The Results are those scoreAll gives the same counts: the same plays, refitted
-     * in the same order, and the same values for scoring, but for sums added in another order.
-     * Split values are kept per state from round to round, the last rounds included, when
-     * keepSplits; otherwise for one state's visit.
+     * together (FULL_INDEX_PLAYS.md section 6); see JointRun. Trees from trees in every round,
+     * split values kept for each state's visit only unless keepSplits, no checkpoints.
      */
     static Scored scoreJoint(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens,
                              double batchBytes, int threads, boolean keepSplits, boolean perfect,
                              Map<CountKeys.Count, Double> widen, Watch watch) throws Exception {
-        return scoreJoint(scorer, trees, counts, pens, batchBytes, threads, keepSplits, perfect, widen, watch, null);
+        return scoreJoint(scorer, null, trees, counts, pens, batchBytes, threads, keepSplits, perfect, widen, watch, null);
     }
 
-    /** The same, with a line to log after each round and each batch; null for none. */
-    static Scored scoreJoint(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens,
-                             double batchBytes, int threads, boolean keepSplits, boolean perfect,
+    /** The same, the passes walking passTrees (trees when null), and a line to log after each round and batch. */
+    static Scored scoreJoint(SystemScorer scorer, Trees passTrees, Trees trees, List<CountKeys.Count> counts,
+                             int[] pens, double batchBytes, int threads, boolean keepSplits, boolean perfect,
                              Map<CountKeys.Count, Double> widen, Watch watch, PrintStream log) throws Exception {
-        Watch see = watch == null ? new Watch() {
-        } : watch;
-        Scored out = new Scored();
-        long t0 = System.nanoTime();
-        List<Fits> fits = plan(scorer, counts, pens, true, true);
-        List<Strategy> all = new ArrayList<>();
-        for (Fits f : fits) {
-            all.addAll(f.all());
-        }
-        FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), trees, threads, keepSplits, perfect);
-        fit.log = log;
-        fit.run(all, true);
-        out.fitWall = (System.nanoTime() - t0) / 1e9;
-        out.rounds.add(new ArrayList<>(fit.rounds));
-        if (perfect) {
-            out.perfect = fit.perfect;
-        }
-        see.fitted(fits, fit);
-
-        SystemScorer.Result[] results = new SystemScorer.Result[counts.size()];
-        out.scoreCpu = new double[counts.size()];
-        ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
-            Thread t = new Thread(r, "full-index-score");
-            t.setDaemon(true);
-            return t;
-        });
-        try {
-            int next = 0;
-            Prepared waiting = null;
-            while (next < counts.size()) {
-                List<Integer> batch = new ArrayList<>();
-                List<Prepared> prepared = new ArrayList<>();
-                double bytes = 0;
-                while (next < counts.size()) {
-                    Prepared pr = waiting != null ? waiting : new Prepared(scorer, fits.get(next), pens);
-                    waiting = null;
-                    if (!batch.isEmpty() && bytes + pr.bytes > batchBytes) {
-                        waiting = pr;
-                        break;
-                    }
-                    batch.add(next);
-                    prepared.add(pr);
-                    bytes += pr.bytes;
-                    next++;
-                }
-                List<Strategy> finals = new ArrayList<>();
-                List<Fits> batchFits = new ArrayList<>();
-                List<CountKeys.Count> batchCounts = new ArrayList<>();
-                for (int b = 0; b < batch.size(); b++) {
-                    Fits f = fits.get(batch.get(b));
-                    prepared.get(b).give(f);
-                    finals.addAll(f.all());
-                    batchFits.add(f);
-                    batchCounts.add(f.count);
-                }
-                int before = fit.rounds.size();
-                long f0 = System.nanoTime();
-                fit.run(finals, false);
-                out.finalWall.add((System.nanoTime() - f0) / 1e9);
-                out.rounds.add(new ArrayList<>(fit.rounds.subList(before, fit.rounds.size())));
-                out.batches.add(batchCounts);
-                out.batchBytes.add(bytes);
-                prepared.clear();
-                see.finalRound(batchFits);
-
-                long s0 = System.nanoTime();
-                List<Future<SystemScorer.Result>> jobs = new ArrayList<>();
-                for (int b = 0; b < batch.size(); b++) {
-                    Fits f = batchFits.get(b);
-                    int at = batch.get(b);
-                    jobs.add(pool.submit(() -> {
-                        ThreadMXBean bean = ManagementFactory.getThreadMXBean();
-                        long c0 = bean.getCurrentThreadCpuTime();
-                        SystemScorer.Result r = scorer.score(f.count, CountKeys.sideCountVariant(f.count), f);
-                        out.scoreCpu[at] = (bean.getCurrentThreadCpuTime() - c0) / 1e9;
-                        return r;
-                    }));
-                }
-                for (int b = 0; b < batch.size(); b++) {
-                    SystemScorer.Result r = jobs.get(b).get();
-                    Double ratio = widen == null ? null : widen.get(r.count);
-                    r.widen = ratio == null ? 1 : ratio;
-                    results[batch.get(b)] = r;
-                }
-                out.scoreWall.add((System.nanoTime() - s0) / 1e9);
-                if (log != null) {
-                    log.printf("batch %d of %d counts: last round %.1f s, scored in %.1f s%n", out.batches.size() - 1,
-                            batch.size(), out.finalWall.get(out.finalWall.size() - 1),
-                            out.scoreWall.get(out.scoreWall.size() - 1));
-                    log.flush();
-                }
-                for (Strategy t : finals) {
-                    t.release();
-                }
-                for (int k : batch) {
-                    fits.set(k, null);
-                }
-            }
-        } finally {
-            pool.shutdownNow();
-        }
-        out.results.addAll(Arrays.asList(results));
-        return out;
+        JointRun run = new JointRun(scorer, counts, pens, threads);
+        run.passTrees = passTrees;
+        run.trees = trees;
+        run.batchBytes = batchBytes;
+        run.keepSplits = keepSplits;
+        run.perfect = perfect;
+        run.widen = widen;
+        run.watch = watch;
+        run.log = log;
+        return run.run();
     }
 
     /**
-     * One count's parts at each penetration, made for its last round, and what its batch is
-     * estimated to hold for it: per penetration the parts' keys (and shares and starts for a
-     * count that tags by colour or face), the compact Split slots, and each of its four
-     * strategies' values, a Hit value a part and a Split value a part of a deal that can be split;
-     * and the scoring's own copy of the largest penetration's parts with an index by key
-     * (SystemScorer.ByKey), which it makes while it scores. The rest of what scoring holds is
-     * per state and small beside these.
+     * The joint run (FULL_INDEX_PLAYS.md section 6). Every count's strategies, both folds and the
+     * half fits at each penetration given, run their passes together: each round visits each
+     * state once, gets its trees once, sets each count's tree up once and walks every strategy
+     * still fitting, and the split values worked out at a state are shared by every strategy
+     * there, by the post-split play's fingerprint (SplitValues), so a play several counts or
+     * penetrations share is valued once. While they fit, the strategies are lean: they hold their
+     * policies and the sums each pass adds up, not a Hit and a Split value for every state.
+     *
+     * Once every strategy is fitted, the scoring goes in items, in order: each count's
+     * penetrations in turn, at each its two fold fits and then its two half fits (the two parts
+     * SystemScorer.Part scores apart). As many items go to a batch as batchBytes holds by
+     * Prepared's estimate, always at least one. A batch's strategies get their parts and their
+     * values, Split held compactly for the deals that can be split, walk every state in one last
+     * round, and its items are scored at once on the threads, each item's resamples shared among
+     * the threads left to it; then their values are let go. A count's parts are put together
+     * (SystemScorer.merge) once all are scored. The Results are those scoreAll gives the same
+     * counts: the same plays, refitted in the same order, and the same values for scoring, but
+     * for sums added in another order.
+     *
+     * With a checkpoint (FullIndexCheckpoint), the run writes after every round of the passes
+     * what the next round needs, the strategies' plays and sums and the run's rounds, after the
+     * passes the same marked fitted, and every item's scored part as it is scored. Resumed, it
+     * starts from the last round written, or from the fitted strategies, and scores only the
+     * items with no part written; on the same number of threads it gives the same Results to the
+     * bit, since every sum is added in the same order (FullIndexFitTest).
      */
-    static final class Prepared {
-        final SystemScorer.Parts[] parts;
-        final SystemScorer.SplitSlots[] slots;
-        final double bytes;
+    static final class JointRun {
+        final SystemScorer scorer;
+        final List<CountKeys.Count> counts;
+        final int[] pens;
+        final int threads;
+        /** Trees for the passes (trees when null) and for the last rounds. */
+        Trees passTrees;
+        Trees trees;
+        /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the run holds once fitted. */
+        double batchBytes;
+        double heapFill = 0.8;
+        boolean keepSplits = true;
+        boolean perfect = true;
+        Map<CountKeys.Count, Double> widen;
+        Watch watch;
+        PrintStream log;
+        FullIndexCheckpoint checkpoint;
+        boolean resume;
+        /** Called after each round of the passes is written to the checkpoint, with the round; the tests interrupt here. */
+        java.util.function.IntConsumer afterRound;
+        /** Called after each item's part is scored and written, with the items scored so far. */
+        java.util.function.IntConsumer afterItem;
+        /** Called before a round's checkpoint is written, so the trees it read are on disk first (TreeStore.sync). */
+        AfterRound beforeCheckpoint;
 
-        Prepared(SystemScorer scorer, Fits fits, int[] pens) {
-            parts = new SystemScorer.Parts[SystemScorer.CUTS.length];
-            slots = new SystemScorer.SplitSlots[SystemScorer.CUTS.length];
-            double b = 0;
-            double most = 0;
-            for (int pen : pens) {
-                SystemScorer.Pen p = scorer.pen(pen);
-                parts[pen] = scorer.parts(fits.count, p);
-                slots[pen] = scorer.splitSlots(parts[pen], p);
-                double pb = partsBytes(parts[pen]);
-                int strategies = fits.all().size() / pens.length;
-                b += pb + 4.0 * parts[pen].key.length
-                        + strategies * (8.0 * parts[pen].key.length + 8.0 * slots[pen].count);
-                most = Math.max(most, pb + 8.0 * parts[pen].key.length);
-            }
-            bytes = b + most;
+        JointRun(SystemScorer scorer, List<CountKeys.Count> counts, int[] pens, int threads) {
+            this.scorer = scorer;
+            this.counts = counts;
+            this.pens = pens.clone();
+            this.threads = threads;
         }
 
-        /** Gives each of the count's strategies its penetration's parts and compact values. */
-        void give(Fits fits) {
-            for (Strategy t : fits.all()) {
-                t.prepareFinal(parts[t.pen], new SystemScorer.PlayValues(slots[t.pen]));
+        private void log(String format, Object... args) {
+            if (log != null) {
+                log.printf(format + "%n", args);
+                log.flush();
             }
+        }
+
+        Scored run() throws Exception {
+            Watch see = watch == null ? new Watch() {
+            } : watch;
+            if (checkpoint != null) {
+                checkpoint.open(resume);
+            } else if (resume) {
+                throw new IllegalArgumentException("nothing to resume from without a checkpoint");
+            }
+            Scored out = new Scored();
+            long t0 = System.nanoTime();
+            List<Fits> fits = plan(scorer, counts, pens, true, true);
+            List<Strategy> all = new ArrayList<>();
+            for (Fits f : fits) {
+                all.addAll(f.all());
+            }
+            FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), passTrees == null ? trees : passTrees, threads,
+                    keepSplits, perfect);
+            passTrees = null;
+            fit.log = log;
+            boolean fitted = false;
+            if (resume) {
+                Boolean f = checkpoint.readFit(fit, all);
+                if (f != null) {
+                    fitted = f;
+                    log("resumed from the checkpoint after round %d%s", fit.rounds.size() - 1,
+                            fitted ? ", every strategy fitted" : "");
+                }
+            }
+            if (!fitted) {
+                if (checkpoint != null) {
+                    fit.afterRound = () -> {
+                        if (beforeCheckpoint != null) {
+                            beforeCheckpoint.ended();
+                        }
+                        checkpoint.writeFit(fit, all, false);
+                        if (afterRound != null) {
+                            afterRound.accept(fit.rounds.size() - 1);
+                        }
+                    };
+                }
+                fit.run(all, true);
+                fit.afterRound = null;
+                if (checkpoint != null) {
+                    if (beforeCheckpoint != null) {
+                        beforeCheckpoint.ended();
+                    }
+                    checkpoint.writeFit(fit, all, true);
+                }
+            }
+            fit.trees = trees;
+            out.fitWall = (System.nanoTime() - t0) / 1e9;
+            out.rounds.add(new ArrayList<>(fit.rounds));
+            if (perfect) {
+                out.perfect = fit.perfect;
+            }
+            see.fitted(fits, fit);
+            double room = batchBytes > 0 ? batchBytes
+                    : heapFill * Runtime.getRuntime().maxMemory() - FullIndexPilot.usedAfterGc();
+            log("every strategy fitted; scoring batches hold up to %.0f MB", room / 1e6);
+
+            // The items, in order, and the parts already scored.
+            List<int[]> items = new ArrayList<>();
+            for (int k = 0; k < counts.size(); k++) {
+                for (int p : pens) {
+                    for (int part = 0; part < 2; part++) {
+                        items.add(new int[]{k, p, part});
+                    }
+                }
+            }
+            SystemScorer.Result[][] parts = new SystemScorer.Result[counts.size()][items.size() / counts.size()];
+            List<int[]> todo = new ArrayList<>();
+            for (int x = 0; x < items.size(); x++) {
+                int[] it = items.get(x);
+                SystemScorer.Result r = resume ? checkpoint.readPart(key(it)) : null;
+                if (r != null) {
+                    parts[it[0]][x % parts[0].length] = r;
+                } else {
+                    todo.add(new int[]{it[0], it[1], it[2], x % parts[0].length});
+                }
+            }
+            if (todo.size() < items.size()) {
+                log("%d of %d scoring items were scored before", items.size() - todo.size(), items.size());
+            }
+            out.scoreCpu = new double[counts.size()];
+            SystemScorer.Result[] results = new SystemScorer.Result[counts.size()];
+            for (int k = 0; k < counts.size(); k++) {
+                results[k] = complete(parts[k], k);
+            }
+            ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
+                Thread t = new Thread(r, "full-index-score");
+                t.setDaemon(true);
+                return t;
+            });
+            try {
+                int next = 0;
+                int scored = items.size() - todo.size();
+                Prepared waiting = null;
+                while (next < todo.size()) {
+                    List<int[]> batch = new ArrayList<>();
+                    List<Prepared> prepared = new ArrayList<>();
+                    double bytes = 0;
+                    while (next < todo.size()) {
+                        int[] it = todo.get(next);
+                        Prepared pr = waiting != null ? waiting : new Prepared(scorer, fits.get(it[0]), it[1], it[2] == 1);
+                        waiting = null;
+                        if (!batch.isEmpty() && bytes + pr.bytes > room) {
+                            waiting = pr;
+                            break;
+                        }
+                        batch.add(it);
+                        prepared.add(pr);
+                        bytes += pr.bytes;
+                        next++;
+                    }
+                    List<Strategy> finals = new ArrayList<>();
+                    List<Fits> batchFits = new ArrayList<>();
+                    List<CountKeys.Count> batchCounts = new ArrayList<>();
+                    for (int b = 0; b < batch.size(); b++) {
+                        Fits f = fits.get(batch.get(b)[0]);
+                        finals.addAll(prepared.get(b).give(f));
+                        if (!batchFits.contains(f)) {
+                            batchFits.add(f);
+                            batchCounts.add(f.count);
+                        }
+                    }
+                    prepared.clear();
+                    int before = fit.rounds.size();
+                    long f0 = System.nanoTime();
+                    fit.run(finals, false);
+                    out.finalWall.add((System.nanoTime() - f0) / 1e9);
+                    out.rounds.add(new ArrayList<>(fit.rounds.subList(before, fit.rounds.size())));
+                    out.batches.add(batchCounts);
+                    out.batchBytes.add(bytes);
+                    see.finalRound(batchFits);
+
+                    long s0 = System.nanoTime();
+                    int each = Math.max(1, threads / batch.size());
+                    List<Future<SystemScorer.Result>> jobs = new ArrayList<>();
+                    for (int[] it : batch) {
+                        Fits f = fits.get(it[0]);
+                        int[] only = {it[1]};
+                        SystemScorer.Part part = it[2] == 0 ? SystemScorer.Part.FOLDS : SystemScorer.Part.HALVES;
+                        jobs.add(pool.submit(() -> {
+                            ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+                            long c0 = bean.getCurrentThreadCpuTime();
+                            SystemScorer.Result r = scorer.score(f.count, CountKeys.sideCountVariant(f.count), f, only,
+                                    each, part);
+                            synchronized (out) {
+                                out.scoreCpu[it[0]] += (bean.getCurrentThreadCpuTime() - c0) / 1e9;
+                            }
+                            return r;
+                        }));
+                    }
+                    for (int b = 0; b < batch.size(); b++) {
+                        int[] it = batch.get(b);
+                        SystemScorer.Result r = jobs.get(b).get();
+                        if (checkpoint != null) {
+                            checkpoint.writePart(key(it), r);
+                        }
+                        parts[it[0]][it[3]] = r;
+                        for (Strategy t : strategiesOf(fits.get(it[0]), it[1], it[2] == 1)) {
+                            t.release();
+                        }
+                        results[it[0]] = complete(parts[it[0]], it[0]);
+                        scored++;
+                        if (afterItem != null) {
+                            afterItem.accept(scored);
+                        }
+                    }
+                    out.scoreWall.add((System.nanoTime() - s0) / 1e9);
+                    log("batch %d of %d items: last round %.1f s, scored in %.1f s; %d of %d items scored",
+                            out.batches.size() - 1, batch.size(), out.finalWall.get(out.finalWall.size() - 1),
+                            out.scoreWall.get(out.scoreWall.size() - 1), scored, items.size());
+                    for (int k = 0; k < counts.size(); k++) {
+                        if (results[k] != null) {
+                            fits.set(k, null);
+                        }
+                    }
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+            out.results.addAll(Arrays.asList(results));
+            return out;
+        }
+
+        /** An item's name in the checkpoint: its count's place, penetration and part. */
+        private String key(int[] it) {
+            return "part-" + it[0] + "-" + it[1] + "-" + (it[2] == 0 ? "folds" : "halves");
+        }
+
+        /** A count's Result once every part is scored, its widening ratio set; null before. */
+        private SystemScorer.Result complete(SystemScorer.Result[] parts, int k) {
+            for (SystemScorer.Result r : parts) {
+                if (r == null) {
+                    return null;
+                }
+            }
+            SystemScorer.Result r = SystemScorer.merge(Arrays.asList(parts));
+            Double ratio = widen == null ? null : widen.get(counts.get(k));
+            r.widen = ratio == null ? 1 : ratio;
+            return r;
+        }
+    }
+
+    /** The two fold fits, or the two half fits, of a count at a penetration. */
+    static List<Strategy> strategiesOf(Fits fits, int pen, boolean halves) {
+        Strategy[] two = halves ? fits.half[pen] : fits.fold[pen];
+        return Arrays.asList(two[0], two[1]);
+    }
+
+    /**
+     * One scoring item's parts, made for its last round, and what its batch is estimated to
+     * hold for it: the parts' keys (and shares and starts for a count that tags by colour or
+     * face), the compact Split slots, and its two strategies' values, a Hit value a part and a
+     * Split value a part of a deal that can be split; and while it is scored, which reads the same
+     * parts, an index by key (SystemScorer.ByKey) and the insurance parts. The rest of what scoring
+     * holds is per state and small beside these.
+     */
+    static final class Prepared {
+        final SystemScorer.Parts parts;
+        final SystemScorer.SplitSlots slots;
+        final int pen;
+        final boolean halves;
+        final double bytes;
+
+        Prepared(SystemScorer scorer, Fits fits, int pen, boolean halves) {
+            this.pen = pen;
+            this.halves = halves;
+            SystemScorer.Pen p = scorer.pen(pen);
+            parts = scorer.parts(fits.count, p);
+            slots = scorer.splitSlots(parts, p);
+            double n = parts.key.length;
+            bytes = partsBytes(parts) + 4.0 * n + 2 * (8.0 * n + 8.0 * slots.count) + 8.0 * n + 2.1 * n;
+        }
+
+        /** Gives the item's two strategies its parts and compact values; returns them. */
+        List<Strategy> give(Fits fits) {
+            List<Strategy> two = strategiesOf(fits, pen, halves);
+            for (Strategy t : two) {
+                t.prepareFinal(parts, new SystemScorer.PlayValues(slots));
+            }
+            return two;
         }
 
         static double partsBytes(SystemScorer.Parts parts) {

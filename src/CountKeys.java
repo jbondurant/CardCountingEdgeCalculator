@@ -53,7 +53,9 @@ final class CountKeys {
     }
 
     /** One count as the comparison scores it. */
-    static final class Count {
+    static final class Count implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
         /** The row's name: its systems joined by " = ", with " + ace side count" for a variant. */
         final String name;
         /** The catalog systems it stands for, in catalog order; empty for the null count. */

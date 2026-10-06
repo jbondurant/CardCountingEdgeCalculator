@@ -1484,8 +1484,9 @@ public class FullIndexFitTest {
      * The joint run (FullIndexFit.scoreJoint) fits and scores as the batched run does. The null
      * count, Hi-Lo and Red Seven at two penetrations, with their half fits, are fitted once one
      * count to a batch with every value held (scoreAll, kept trees, splits kept from round to
-     * round) and once all together, lean, then given their last rounds a count to a batch with
-     * Split held for the pair deals alone (trees built afresh, splits kept for one state's visit).
+     * round) and once all together, lean, the passes walking kept trees, then given their last
+     * rounds one scoring item to a batch with Split held for the pair deals alone (trees built
+     * afresh, splits kept for one state's visit).
      * Every play must be the same: every pass's changes, the passes, clean-ups and cells
      * flipped, the later groups and answers, the first decisions; and every score, resample,
      * bound, gain, standard error and training EV within 1e-12, the sums being added in another
@@ -1502,10 +1503,12 @@ public class FullIndexFitTest {
         widen.put(RED_SEVEN, 1.25);
         FullIndexFit.Scored batched = FullIndexFit.scoreAll(scorer, fx.trees, counts, pens, 1, THREADS, true, true,
                 widen);
-        FullIndexFit.Scored joint = FullIndexFit.scoreJoint(scorer, FullIndexFit.built(fx.st), counts, pens, 0, THREADS,
-                false, true, widen, null);
-        assertEquals(1 + counts.size(), joint.rounds.size());
-        assertEquals(counts.size(), joint.batches.size());
+        FullIndexFit.Scored joint = FullIndexFit.scoreJoint(scorer, fx.trees, FullIndexFit.built(fx.st), counts, pens, 1,
+                THREADS, false, true, widen, null, null);
+        // One scoring item to a batch: each count's fold fits and half fits at each penetration.
+        int items = counts.size() * pens.length * 2;
+        assertEquals(1 + items, joint.rounds.size());
+        assertEquals(items, joint.batches.size());
         int slowest = 0;
         for (SystemScorer.Result r : joint.results) {
             for (int p : pens) {
@@ -1531,35 +1534,47 @@ public class FullIndexFitTest {
 
     /** Two runs' Results for the same counts, as theJointRunFitsAndScoresAsTheBatchedRunDoes compares them. */
     static void assertSameResults(FullIndexFit.Scored a, FullIndexFit.Scored b, List<CountKeys.Count> counts, int[] pens) {
-        double tol = EXACT;
         for (int k = 0; k < counts.size(); k++) {
-            SystemScorer.Result x = a.results.get(k);
-            SystemScorer.Result y = b.results.get(k);
-            String c = counts.get(k).name;
-            assertSame(counts.get(k), y.count);
-            assertEquals(x.widen, y.widen, 0.0, c);
-            assertEquals(x.fullEntries.size(), y.fullEntries.size());
-            for (int p : pens) {
-                for (int e = 0; e < x.entries.size(); e++) {
-                    entry(x.entries.get(e), y.entries.get(e), p, tol);
+            assertSame(counts.get(k), b.results.get(k).count);
+            sameResult(a.results.get(k), b.results.get(k), pens, EXACT);
+        }
+    }
+
+    /** Two Results of one count, every figure of the penetrations given within tol and every play the same. */
+    static void sameResult(SystemScorer.Result x, SystemScorer.Result y, int[] pens, double tol) {
+        String c = x.count.name;
+        assertEquals(x.widen, y.widen, 0.0, c);
+        assertEquals(x.entries.size(), y.entries.size());
+        assertEquals(x.fullEntries.size(), y.fullEntries.size());
+        for (int p : pens) {
+            for (int e = 0; e < x.entries.size(); e++) {
+                entry(x.entries.get(e), y.entries.get(e), p, tol);
+            }
+            for (int e = 0; e < x.fullEntries.size(); e++) {
+                entry(x.fullEntries.get(e), y.fullEntries.get(e), p, tol);
+            }
+            assertEquals(x.resolution[p].total(), y.resolution[p].total(), tol, c);
+            assertEquals(x.halfFitFlat[p], y.halfFitFlat[p], tol, c);
+            assertArrayEquals(x.halfFitBoot[p], y.halfFitBoot[p], tol, c);
+            for (int f = 0; f < 2; f++) {
+                assertArrayEquals(x.groups[p][f].upper, y.groups[p][f].upper, c);
+            }
+            if (x.fullResolution[p] == null) {
+                assertNull(y.fullResolution[p], c);
+                continue;
+            }
+            assertEquals(x.fullResolution[p].total(), y.fullResolution[p].total(), tol, c);
+            assertEquals(x.fullResolution[p].laterDecisions, y.fullResolution[p].laterDecisions, c);
+            assertEquals(x.fullResolution[p].laterUnsettled, y.fullResolution[p].laterUnsettled, c);
+            assertEquals(x.fullHalfFitFlat[p], y.fullHalfFitFlat[p], tol, c);
+            assertArrayEquals(x.fullHalfFitBoot[p], y.fullHalfFitBoot[p], tol, c);
+            assertArrayEquals(x.fullInSample[p], y.fullInSample[p], c);
+            for (int f = 0; f < 2; f++) {
+                for (int g = 0; g < x.fullFirst[p][f].move.length; g++) {
+                    assertArrayEquals(x.fullFirst[p][f].move[g], y.fullFirst[p][f].move[g], c + " group " + g);
                 }
-                for (int e = 0; e < x.fullEntries.size(); e++) {
-                    entry(x.fullEntries.get(e), y.fullEntries.get(e), p, tol);
-                }
-                assertEquals(x.fullResolution[p].total(), y.fullResolution[p].total(), tol, c);
-                assertEquals(x.fullResolution[p].laterDecisions, y.fullResolution[p].laterDecisions, c);
-                assertEquals(x.fullResolution[p].laterUnsettled, y.fullResolution[p].laterUnsettled, c);
-                assertEquals(x.resolution[p].total(), y.resolution[p].total(), tol, c);
-                assertEquals(x.fullHalfFitFlat[p], y.fullHalfFitFlat[p], tol, c);
-                assertArrayEquals(x.fullHalfFitBoot[p], y.fullHalfFitBoot[p], tol, c);
-                assertArrayEquals(x.fullInSample[p], y.fullInSample[p], c);
-                for (int f = 0; f < 2; f++) {
-                    for (int g = 0; g < x.fullFirst[p][f].move.length; g++) {
-                        assertArrayEquals(x.fullFirst[p][f].move[g], y.fullFirst[p][f].move[g], c + " group " + g);
-                    }
-                    summary(x.fullFit[p][f], y.fullFit[p][f], tol);
-                    summary(x.fullHalfFit[p][f], y.fullHalfFit[p][f], tol);
-                }
+                summary(x.fullFit[p][f], y.fullFit[p][f], tol);
+                summary(x.fullHalfFit[p][f], y.fullHalfFit[p][f], tol);
             }
         }
     }
@@ -1567,6 +1582,10 @@ public class FullIndexFitTest {
     private static void entry(SystemScorer.Entry x, SystemScorer.Entry y, int p, double tol) {
         assertEquals(x.name, y.name);
         assertArrayEquals(x.estimate[p], y.estimate[p], tol, x.name);
+        if (x.boot[p] == null) {
+            assertNull(y.boot[p], x.name);
+            return;
+        }
         for (int m = 0; m < SystemScorer.METRICS; m++) {
             assertArrayEquals(x.boot[p][m], y.boot[p][m], tol, x.name + " metric " + m);
         }
@@ -1746,5 +1765,111 @@ public class FullIndexFitTest {
                 keys.size(), differing, shared);
         assertTrue(differing >= 50, differing + " (state, deal)s split under plays of differing value");
         assertTrue(shared >= 100, shared + " plays shared");
+    }
+
+    /**
+     * Scoring a count a penetration at a time, the full-index half fits apart from the rest
+     * (SystemScorer.Part), each penetration's resamples on several threads, and putting the parts
+     * together (SystemScorer.merge) gives the Result of scoring it all at once on one thread, to
+     * the bit: Hi-Lo and Red Seven with their full-index fits at 80%, the other penetrations
+     * first-decision play alone, and every resample.
+     */
+    @Test
+    public void scoringAPenetrationAtATimeOnThreadsChangesNothing() throws Exception {
+        Run r = run();
+        SystemScorer sc = r.fx.scorer;
+        int[] all = {0, 1, 2};
+        for (CountKeys.Count c : Arrays.asList(HI_LO, RED_SEVEN)) {
+            SystemScorer.Result whole = sc.score(c, null, r.fits.get(c), null, 1);
+            List<SystemScorer.Result> parts = new ArrayList<>();
+            for (int p = 2; p >= 0; p--) {
+                parts.add(sc.score(c, null, r.fits.get(c), new int[]{p}, 3, SystemScorer.Part.HALVES));
+                parts.add(sc.score(c, null, r.fits.get(c), new int[]{p}, 2 + p, SystemScorer.Part.FOLDS));
+            }
+            SystemScorer.Result merged = SystemScorer.merge(parts);
+            sameResult(whole, merged, all, 0.0);
+            assertNotNull(merged.fullEntries.get(0).estimate[PEN]);
+            assertNull(merged.fullEntries.get(0).estimate[0], "no full-index fit at 70%");
+        }
+        assertThrows(IllegalArgumentException.class, () -> SystemScorer.merge(Arrays.asList(
+                sc.score(HI_LO, null, null, new int[]{0}, 1), sc.score(HI_LO, null, null, new int[]{0}, 1))));
+    }
+
+    // ------------------------------------------------------------------ checkpoints
+
+    /** A planted interruption, as a kill or a crash leaves a run. */
+    private static final class Interrupted extends RuntimeException {
+        Interrupted() {
+            super("interrupted on purpose");
+        }
+    }
+
+    /** A joint run of the counts given with checkpoints in dir, a scoring item to a batch. */
+    private static FullIndexFit.Scored checkpointed(SystemScorer scorer, List<CountKeys.Count> counts, int[] pens,
+                                                    java.nio.file.Path dir, String identity, boolean resume,
+                                                    java.util.function.IntConsumer afterRound,
+                                                    java.util.function.IntConsumer afterItem) throws Exception {
+        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, THREADS);
+        run.trees = standard().trees;
+        run.batchBytes = 1;
+        run.checkpoint = new FullIndexCheckpoint(dir, identity);
+        run.resume = resume;
+        run.afterRound = afterRound;
+        run.afterItem = afterItem;
+        return run.run();
+    }
+
+    /**
+     * A run interrupted after a round of its passes, or after some of its scoring items, and
+     * resumed from its checkpoint gives the Results an uninterrupted run gives, to the bit: the
+     * null count, Hi-Lo and Red Seven at 70% and 80% with their half fits, every play, score,
+     * resample, bound and training EV, and the perfect row. Resuming with another identity, or
+     * starting afresh where a run is checkpointed, is refused.
+     */
+    @Test
+    public void aRunInterruptedAndResumedGivesTheResultsOfOneThatWasNot() throws Exception {
+        Fixture fx = standard();
+        SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 3, 1), 1);
+        List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
+        int[] pens = {0, PEN};
+        String id = "FullIndexFitTest\nthreads " + THREADS;
+        java.nio.file.Path root = java.nio.file.Files.createTempDirectory("checkpoints");
+        FullIndexFit.Scored whole = checkpointed(scorer, counts, pens, root.resolve("whole"), id, false, null, null);
+        int rounds = whole.rounds.get(0).size();
+        assertTrue(rounds >= 3, rounds + " rounds of passes");
+
+        for (int at : new int[]{0, rounds - 2}) {
+            java.nio.file.Path dir = root.resolve("round-" + at);
+            assertThrows(Interrupted.class, () -> checkpointed(scorer, counts, pens, dir, id, false, r -> {
+                if (r == at) {
+                    throw new Interrupted();
+                }
+            }, null));
+            FullIndexFit.Scored resumed = checkpointed(scorer, counts, pens, dir, id, true, null, null);
+            assertEquals(rounds, resumed.rounds.get(0).size());
+            assertArrayEquals(whole.perfect, resumed.perfect, 0.0);
+            for (int k = 0; k < counts.size(); k++) {
+                sameResult(whole.results.get(k), resumed.results.get(k), pens, 0.0);
+            }
+        }
+
+        java.nio.file.Path dir = root.resolve("items");
+        assertThrows(Interrupted.class, () -> checkpointed(scorer, counts, pens, dir, id, false, null, n -> {
+            if (n == 5) {
+                throw new Interrupted();
+            }
+        }));
+        int[] scoredAgain = new int[1];
+        FullIndexFit.Scored resumed = checkpointed(scorer, counts, pens, dir, id, true, r -> fail("refitted round " + r),
+                n -> scoredAgain[0]++);
+        assertEquals(counts.size() * pens.length * 2 - 5, scoredAgain[0], "the items not scored before");
+        for (int k = 0; k < counts.size(); k++) {
+            sameResult(whole.results.get(k), resumed.results.get(k), pens, 0.0);
+        }
+
+        IllegalStateException other = assertThrows(IllegalStateException.class,
+                () -> checkpointed(scorer, counts, pens, dir, "FullIndexFitTest\nthreads 99", true, null, null));
+        assertTrue(other.getMessage().contains("threads 99"), other.getMessage());
+        assertThrows(IllegalStateException.class, () -> checkpointed(scorer, counts, pens, dir, id, false, null, null));
     }
 }
