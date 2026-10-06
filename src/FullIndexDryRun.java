@@ -59,6 +59,8 @@ public final class FullIndexDryRun {
         long treeFileBytes;
         /** The last fit checkpoint's bytes, and the seconds spent forcing trees to disk before checkpoints. */
         long checkpointBytes;
+        /** The bytes of every scoring item's checkpointed Result. */
+        long partBytes;
         double syncSeconds;
         /** CPU seconds of the whole process over the run, every thread and the collector included. */
         double processCpu;
@@ -66,6 +68,15 @@ public final class FullIndexDryRun {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && args[0].equals("project")) {
+            // project STATE_FILE SUMMARY...: the whole file projected from several dry runs.
+            List<Path> runs = new ArrayList<>();
+            for (int a = 2; a < args.length; a++) {
+                runs.add(Paths.get(args[a]));
+            }
+            Growth.print(System.out, StateStore.records(Paths.get(args[1])), runs);
+            return;
+        }
         Path data = Paths.get(args.length > 0 ? args[0] : "runs/montreal-80.states");
         int shoes = args.length > 1 ? Integer.parseInt(args[1]) : 2000;
         int resamples = args.length > 2 ? Integer.parseInt(args[2]) : 200;
@@ -86,6 +97,9 @@ public final class FullIndexDryRun {
         Measured m = run(st, resamples, threads, work, out);
         print(out, m);
         Projection.print(out, data, m);
+        Path summary = work.resolve("summary-" + st.size + ".txt");
+        java.nio.file.Files.write(summary, summary(m).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        out.printf("%nIts figures for FullIndexDryRun project: %s%n", summary);
         out.printf("%nFinished %s, load average %.2f.%n", java.time.LocalDateTime.now(), FullIndexTimingReport.loadAverage());
     }
 
@@ -174,6 +188,17 @@ public final class FullIndexDryRun {
         m.treesBuilt = store.built();
         m.treesRead = store.read();
         m.treeFileBytes = java.nio.file.Files.size(dir.resolve("trees.bin"));
+        try (java.util.stream.Stream<Path> files = java.nio.file.Files.list(ck.dir)) {
+            m.partBytes = files.filter(f -> f.getFileName().toString().startsWith("part-")).mapToLong(f -> {
+                try {
+                    return java.nio.file.Files.size(f);
+                } catch (java.io.IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            }).sum();
+        }
+        // The dry run's own trees are only for timing it; they would take a gigabyte or more of disk.
+        java.nio.file.Files.delete(dir.resolve("trees.bin"));
         return m;
     }
 
@@ -354,6 +379,244 @@ public final class FullIndexDryRun {
                 out.printf("| %d | at the busiest round's, growing as the groups | %d, the cap | %.1f | %.1f | %.1f | %.1f |%n",
                         resamples, cap, passes, last, scoring, passes + last + scoring);
             }
+        }
+    }
+
+    /**
+     * The dry run's figures a line each, "name value", for FullIndexDryRun project: wall seconds
+     * and CPU seconds by kind over the passes, the last rounds and the scoring, bytes held, and
+     * every scoring item's bytes.
+     */
+    static String summary(Measured m) {
+        FullIndexFit.Scored sc = m.scored;
+        FullIndexFit.RoundStats ft = FullIndexPilot.total(sc.rounds.get(0));
+        double finalWall = 0;
+        double scoreWall = 0;
+        FullIndexFit.RoundStats lt = new FullIndexFit.RoundStats();
+        StringBuilder items = new StringBuilder();
+        for (int b = 0; b < sc.batches.size(); b++) {
+            finalWall += sc.finalWall.get(b);
+            scoreWall += sc.scoreWall.get(b);
+            for (FullIndexFit.RoundStats r : sc.rounds.get(b + 1)) {
+                lt.add(r);
+            }
+            items.append(b == 0 ? "" : ",").append(Math.round(sc.batchBytes.get(b)));
+        }
+        StringBuilder b = new StringBuilder();
+        java.util.function.BiConsumer<String, Object> line = (k, v) -> b.append(k).append(' ').append(v).append('\n');
+        line.accept("states", m.st.size);
+        line.accept("shoes", m.st.shoes);
+        line.accept("threads", m.threads);
+        line.accept("resamples", m.resamples);
+        line.accept("strategies", m.strategies);
+        line.accept("rounds", sc.rounds.get(0).size());
+        line.accept("capped", m.capped);
+        line.accept("firstGroups", m.firstGroups);
+        line.accept("laterGroups", m.laterGroups);
+        line.accept("passWall", sc.fitWall);
+        line.accept("passTreeCpu", ft.treeCpu);
+        line.accept("passWalkCpu", ft.walkCpu);
+        line.accept("passSplitCpu", ft.splitCpu);
+        line.accept("passSplitsValued", ft.splitValued);
+        line.accept("finalWall", finalWall);
+        line.accept("finalTreeCpu", lt.treeCpu);
+        line.accept("finalWalkCpu", lt.walkCpu);
+        line.accept("finalSplitCpu", lt.splitCpu);
+        line.accept("scoreWall", scoreWall);
+        line.accept("statesModelBytes", FullIndexPilot.Projection.statesBytes(m.st));
+        line.accept("statesHeld", m.statesHeld);
+        line.accept("arrayBytes", m.arrayBytes);
+        line.accept("heldAfterFit", m.heldAfterFit);
+        line.accept("cacheEntries", m.cacheEntries);
+        line.accept("cacheBytes", m.cacheBytes);
+        line.accept("peakFit", m.peakFit);
+        line.accept("peakScore", m.peakScore);
+        line.accept("treeFileBytes", m.treeFileBytes);
+        line.accept("checkpointBytes", m.checkpointBytes);
+        line.accept("partBytes", m.partBytes);
+        line.accept("wall", m.wall);
+        line.accept("processCpu", m.processCpu);
+        line.accept("items", items);
+        return b.toString();
+    }
+
+    /**
+     * The whole file projected from several dry runs (FULL_INDEX_PLAYS.md section 6), each of
+     * its figures carried to the file's states by the growth the runs show.
+     *
+     * Each figure a state (or, for the plays and sums the strategies hold, in all) is fitted as
+     * a x n^b by least squares on the logarithms over the runs, and the fit printed beside what
+     * each run measured. The passes' wall time is split by CPU into trees, walks and split values,
+     * each fitted on its own, since the split values grow with the play groups and the rest do
+     * not. The last rounds and the scoring are taken from their wall time, which charges them as
+     * the code runs them: a dry run gives each scoring item a batch of its own, as the file's
+     * batches hold one to three, and shares each item's resamples among the threads.
+     *
+     * Memory: the states and the strategies' arrays a state as measured; the split values kept a
+     * state and the plays the strategies hold by their fits. The batches are formed as JointRun
+     * forms them, greedily in order from each item's bytes, the largest run's items carried to
+     * the file's states, within 80% of a 10 GiB heap less what the run holds once fitted; the
+     * largest item must fit. On disk: the tree store, the fit checkpoint (growing with the plays,
+     * taken as the square root of the states) and the items' checkpoints (with the states).
+     */
+    static final class Growth {
+
+        static void print(PrintStream out, int n, List<Path> files) throws java.io.IOException {
+            List<java.util.Map<String, String>> runs = new ArrayList<>();
+            for (Path f : files) {
+                java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+                for (String l : java.nio.file.Files.readAllLines(f)) {
+                    int sp = l.indexOf(' ');
+                    m.put(l.substring(0, sp), l.substring(sp + 1));
+                }
+                runs.add(m);
+            }
+            runs.sort(java.util.Comparator.comparingDouble(r -> d(r, "states")));
+            int k = runs.size();
+            double[] states = new double[k];
+            for (int i = 0; i < k; i++) {
+                states[i] = d(runs.get(i), "states");
+            }
+            out.printf("# The whole file projected from %d dry runs%n%n", k);
+            out.printf("The file holds %,d valued states; the dry runs %s. Each figure is fitted as a x n^b on the "
+                    + "logarithms over the runs.%n%n", n, java.util.Arrays.toString(states));
+            out.println("| Figure | " + String.join(" | ", label(states)) + " | b | at " + String.format("%,d", n) + " |");
+            StringBuilder sep = new StringBuilder("|---|");
+            for (int i = 0; i < k + 2; i++) {
+                sep.append("---|");
+            }
+            out.println(sep);
+            // Wall seconds a state of the passes, by kind, from the CPU shares.
+            double[] trees = new double[k];
+            double[] walks = new double[k];
+            double[] splits = new double[k];
+            double[] last = new double[k];
+            double[] score = new double[k];
+            double[] cache = new double[k];
+            double[] plays = new double[k];
+            double[] valued = new double[k];
+            double[] rounds = new double[k];
+            double[] groups = new double[k];
+            for (int i = 0; i < k; i++) {
+                java.util.Map<String, String> r = runs.get(i);
+                double cpu = d(r, "passTreeCpu") + d(r, "passWalkCpu") + d(r, "passSplitCpu");
+                double wall = d(r, "passWall");
+                trees[i] = wall * d(r, "passTreeCpu") / cpu / states[i];
+                walks[i] = wall * d(r, "passWalkCpu") / cpu / states[i];
+                splits[i] = wall * d(r, "passSplitCpu") / cpu / states[i];
+                last[i] = d(r, "finalWall") / states[i];
+                score[i] = d(r, "scoreWall") / states[i] / d(r, "resamples");
+                cache[i] = d(r, "cacheBytes") / states[i];
+                plays[i] = Math.max(1, d(r, "heldAfterFit") - d(r, "statesHeld") - d(r, "cacheBytes") - d(r, "arrayBytes"));
+                valued[i] = d(r, "passSplitsValued") / states[i];
+                rounds[i] = d(r, "rounds");
+                groups[i] = d(r, "firstGroups");
+            }
+            double[][] fit = {
+                    row(out, "first-decision groups a strategy", states, groups, n, "%.2f"),
+                    row(out, "rounds of the passes", states, rounds, n, "%.1f"),
+                    row(out, "splits valued a state in the passes", states, valued, n, "%.0f"),
+                    row(out, "passes: trees, wall s a state", states, trees, n, "%.4f"),
+                    row(out, "passes: walks, wall s a state", states, walks, n, "%.4f"),
+                    row(out, "passes: split values, wall s a state", states, splits, n, "%.4f"),
+                    row(out, "last rounds, wall s a state", states, last, n, "%.4f"),
+                    row(out, "scoring, wall s a state and resample", states, score, n, "%.3g"),
+                    row(out, "split values kept, bytes a state", states, cache, n, "%.0f"),
+                    row(out, "plays and the rest held after the passes, MB", states, mb(plays), n, "%.0f")};
+            double passes = (fit[3][1] + fit[4][1] + fit[5][1]) * n / 3600;
+            double lastRounds = fit[6][1] * n / 3600;
+
+            java.util.Map<String, String> big = runs.get(k - 1);
+            double scale = n / states[k - 1];
+            double heap = 0.8 * 10.0 * (1L << 30);
+            double held = n * (d(big, "statesModelBytes") / states[k - 1] + d(big, "arrayBytes") / states[k - 1]
+                    + fit[8][1]) + fit[9][1] * 1e6;
+            double room = heap - held;
+            String[] itemText = big.get("items").split(",");
+            double most = 0;
+            int batches = 0;
+            double used = 0;
+            for (String t : itemText) {
+                double b = Double.parseDouble(t) * scale;
+                most = Math.max(most, b);
+                if (batches == 0 || used + b > room) {
+                    batches++;
+                    used = 0;
+                }
+                used += b;
+            }
+            out.printf("%nMemory at %,d states: %.2f GB held once fitted (the states and strategies' arrays as measured, "
+                            + "the split values kept and the plays by their fits), leaving %.2f GB of 80%% of a 10 GiB heap "
+                            + "for a batch. The largest item holds %.2f GB%s; the %d items go in %d batches. The tree store "
+                            + "takes %.1f GB of disk; the checkpoints about %.1f GB.%n%n", n, held / 1e9, room / 1e9,
+                    most / 1e9, most > room ? ", MORE THAN FITS" : ", and fits", itemText.length, batches,
+                    TreeStore.bytes(n) / 1e9, (d(big, "checkpointBytes") * Math.sqrt(scale)
+                            + d(big, "partBytes") * scale) / 1e9);
+            out.println("| Resamples | Passes h | Last rounds h | Scoring h | Total h |");
+            out.println("|---|---|---|---|---|");
+            for (int resamples : new int[]{200, 1000}) {
+                double scoring = fit[7][1] * n * resamples / 3600;
+                out.printf("| %d | %.1f | %.1f | %.1f | %.1f |%n", resamples, passes, lastRounds, scoring,
+                        passes + lastRounds + scoring);
+            }
+        }
+
+        private static double d(java.util.Map<String, String> r, String key) {
+            String v = r.get(key);
+            if (v == null) {
+                throw new IllegalArgumentException("a dry run's figures lack " + key);
+            }
+            return Double.parseDouble(v);
+        }
+
+        private static String[] label(double[] states) {
+            String[] out = new String[states.length];
+            for (int i = 0; i < states.length; i++) {
+                out[i] = String.format("%,.0f states", states[i]);
+            }
+            return out;
+        }
+
+        private static double[] mb(double[] bytes) {
+            double[] out = new double[bytes.length];
+            for (int i = 0; i < bytes.length; i++) {
+                out[i] = bytes[i] / 1e6;
+            }
+            return out;
+        }
+
+        /** Prints a figure's values, its fitted exponent and its value at n; returns {b, value at n}. */
+        static double[] row(PrintStream out, String name, double[] x, double[] y, int n, String format) {
+            double[] ab = powerFit(x, y);
+            double at = ab[0] * Math.pow(n, ab[1]);
+            StringBuilder b = new StringBuilder("| " + name + " | ");
+            for (double v : y) {
+                b.append(String.format(format, v)).append(" | ");
+            }
+            b.append(String.format("%.2f", ab[1])).append(" | ").append(String.format(format, at)).append(" |");
+            out.println(b);
+            return new double[]{ab[1], at};
+        }
+
+        /** {a, b} of y = a x^b by least squares on the logarithms; with one point, b = 0. */
+        static double[] powerFit(double[] x, double[] y) {
+            int k = x.length;
+            double sx = 0;
+            double sy = 0;
+            double sxx = 0;
+            double sxy = 0;
+            for (int i = 0; i < k; i++) {
+                double lx = Math.log(x[i]);
+                double ly = Math.log(Math.max(y[i], 1e-300));
+                sx += lx;
+                sy += ly;
+                sxx += lx * lx;
+                sxy += lx * ly;
+            }
+            double den = k * sxx - sx * sx;
+            double b = k < 2 || den == 0 ? 0 : (k * sxy - sx * sy) / den;
+            double a = Math.exp((sy - b * sx) / k);
+            return new double[]{a, b};
         }
     }
 }

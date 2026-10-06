@@ -489,7 +489,7 @@ final class FullIndexFit {
          */
         final boolean lean;
         /** The first decisions fitted from the stored values: pass 0's, and the stored moves' sums of every refit. */
-        private final SystemScorer.Fit stored;
+        private SystemScorer.Fit stored;
         // A lean strategy's sums of the round in progress (Acc.hit, split and ev), added up from its threads'.
         private double[] hitSum;
         private double[] splitSum;
@@ -637,13 +637,29 @@ final class FullIndexFit {
             this.values = values;
         }
 
-        /** Lets a lean strategy's values and parts go once its count is scored. */
+        /** Lets a lean strategy's values and parts go once its count is scored, and the post-split plays its last round made. */
         void release() {
             if (!lean || phase != Phase.DONE) {
                 throw new IllegalStateException(this + " is not a lean strategy done");
             }
             parts = null;
             values = null;
+            now.splits.clear();
+        }
+
+        /**
+         * Lets go what a lean strategy fitted and waiting for its last round no longer needs: the
+         * best pass's play and sums, the stored fit, and the post-split plays worked out so far,
+         * which its last round works out again for the states it visits.
+         */
+        void trim() {
+            if (!lean || phase != Phase.FINAL) {
+                throw new IllegalStateException(this + " is not a lean strategy waiting for its last round");
+            }
+            best = null;
+            bestSums = null;
+            stored = null;
+            now.splits.clear();
         }
 
         @Override
@@ -1488,6 +1504,11 @@ final class FullIndexFit {
         final CountKeys.Count count;
         final Strategy[][] fold = new Strategy[SystemScorer.CUTS.length][2];
         final Strategy[][] half = new Strategy[SystemScorer.CUTS.length][2];
+        /**
+         * What a scoring item of this count at each penetration holds, worked out from the parts
+         * when they are planned, so a batch is formed without making any: Prepared.bytes.
+         */
+        final double[] itemBytes = new double[SystemScorer.CUTS.length];
 
         Fits(CountKeys.Count count) {
             this.count = count;
@@ -1550,6 +1571,7 @@ final class FullIndexFit {
                 SystemScorer.Pen p = scorer.pen(pen);
                 SystemScorer.Parts parts = scorer.parts(c, p);
                 SystemScorer.InsuranceParts ip = scorer.insuranceParts(parts, p);
+                fits.itemBytes[pen] = Prepared.bytes(parts, scorer.splitSlots(parts, p).count);
                 for (int f = 0; f < 2; f++) {
                     fits.fold[pen][f] = new Strategy(scorer, parts, ip, c, pen, f, false, p.weight, null, null, lean);
                     if (halves) {
@@ -1757,7 +1779,7 @@ final class FullIndexFit {
         double split(int i, SplitEntry e) {
             if (splitValues == null) {
                 SplitValues.Kept kept;
-                if (splitCache == null) {
+                if (splitCache == null || !keeping) {
                     kept = new SplitValues.Packed();
                 } else {
                     if (splitCache[state] == null) {
@@ -1799,6 +1821,8 @@ final class FullIndexFit {
      * the next round's begin.
      */
     final SplitValues.Packed[] splitCache;
+    /** Whether split values still go into splitCache; dropSplitCache stops it. */
+    private volatile boolean keeping = true;
     private final byte[][] chartPrints = new byte[Deals.COUNT][];
     /** Each state's round value with every decision of the dealt hand played best and split hands at the chart; NaN until worked out. */
     final double[] perfect;
@@ -1835,6 +1859,14 @@ final class FullIndexFit {
             Arrays.fill(this.perfect, Double.NaN);
         } else {
             this.perfect = null;
+        }
+    }
+
+    /** Lets the split values kept from round to round go, and keeps none from now on, to make room. */
+    void dropSplitCache() {
+        keeping = false;
+        if (splitCache != null) {
+            Arrays.fill(splitCache, null);
         }
     }
 
@@ -2084,13 +2116,16 @@ final class FullIndexFit {
      * each state's trees built from the trees given (afresh each round, for the full run) and
      * set up once a round for every strategy of a count. Each count of the batch is then
      * scored and its strategies let go, so the memory the values take is one batch's
-     * (FULL_INDEX_PLAYS.md section 3). A count's Result.widen is set from the map given, 1 where
-     * it has none. The full-scope perfect row is worked out in the first batch's run when asked.
+     * (FULL_INDEX_PLAYS.md section 3). A count's Result.widen is set from the map given
+     * (SystemScorer.Widening.of), the default given where it has none, and a count missing with
+     * no default is refused; no map leaves it null. The full-scope perfect row is worked out in
+     * the first batch's run when asked.
      * Split values are kept per state from round to round when keepSplits, which is worth it
      * when the trees are kept too.
      */
     static Scored scoreAll(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens, int batch,
-                           int threads, boolean keepSplits, boolean perfect, Map<CountKeys.Count, Double> widen)
+                           int threads, boolean keepSplits, boolean perfect,
+                           Map<CountKeys.Count, SystemScorer.Widening> widen, SystemScorer.Widening missing)
             throws Exception {
         if (batch < 1) {
             throw new IllegalArgumentException("a batch holds at least one count");
@@ -2113,8 +2148,7 @@ final class FullIndexFit {
             for (int k = 0; k < fits.size(); k++) {
                 CountKeys.Count c = some.get(k);
                 SystemScorer.Result r = scorer.score(c, CountKeys.sideCountVariant(c), fits.get(k));
-                Double ratio = widen == null ? null : widen.get(c);
-                r.widen = ratio == null ? 1 : ratio;
+                r.widen = SystemScorer.Widening.of(widen, missing, c);
                 out.results.add(r);
                 fits.set(k, null);
             }
@@ -2129,14 +2163,15 @@ final class FullIndexFit {
      */
     static Scored scoreJoint(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens,
                              double batchBytes, int threads, boolean keepSplits, boolean perfect,
-                             Map<CountKeys.Count, Double> widen, Watch watch) throws Exception {
+                             Map<CountKeys.Count, SystemScorer.Widening> widen, Watch watch) throws Exception {
         return scoreJoint(scorer, null, trees, counts, pens, batchBytes, threads, keepSplits, perfect, widen, watch, null);
     }
 
     /** The same, the passes walking passTrees (trees when null), and a line to log after each round and batch. */
     static Scored scoreJoint(SystemScorer scorer, Trees passTrees, Trees trees, List<CountKeys.Count> counts,
                              int[] pens, double batchBytes, int threads, boolean keepSplits, boolean perfect,
-                             Map<CountKeys.Count, Double> widen, Watch watch, PrintStream log) throws Exception {
+                             Map<CountKeys.Count, SystemScorer.Widening> widen, Watch watch, PrintStream log)
+            throws Exception {
         JointRun run = new JointRun(scorer, counts, pens, threads);
         run.passTrees = passTrees;
         run.trees = trees;
@@ -2187,9 +2222,13 @@ final class FullIndexFit {
         /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the run holds once fitted. */
         double batchBytes;
         double heapFill = 0.8;
+        /** The bytes a state the split values kept are allowed before the passes, in the check that the run fits. */
+        double splitAllowance = 32_000;
         boolean keepSplits = true;
         boolean perfect = true;
-        Map<CountKeys.Count, Double> widen;
+        /** Each count's widening (SystemScorer.Widening.of), and the default for a count the map lacks. */
+        Map<CountKeys.Count, SystemScorer.Widening> widen;
+        SystemScorer.Widening missingWiden;
         Watch watch;
         PrintStream log;
         FullIndexCheckpoint checkpoint;
@@ -2229,6 +2268,9 @@ final class FullIndexFit {
             List<Strategy> all = new ArrayList<>();
             for (Fits f : fits) {
                 all.addAll(f.all());
+            }
+            if (batchBytes <= 0) {
+                preflight(fits, all);
             }
             FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), passTrees == null ? trees : passTrees, threads,
                     keepSplits, perfect);
@@ -2271,8 +2313,30 @@ final class FullIndexFit {
                 out.perfect = fit.perfect;
             }
             see.fitted(fits, fit);
-            double room = batchBytes > 0 ? batchBytes
-                    : heapFill * Runtime.getRuntime().maxMemory() - FullIndexPilot.usedAfterGc();
+            for (Strategy t : all) {
+                t.trim();
+            }
+            double room = batchBytes;
+            if (room <= 0) {
+                double heap = heapFill * Runtime.getRuntime().maxMemory();
+                double held = FullIndexPilot.usedAfterGc();
+                room = heap - held;
+                Item big = largest(fits, items(fits));
+                if (big.bytes > room && keepSplits) {
+                    log("the largest scoring item, %s, holds %.2f GB, more than the %.2f GB left beside the %.2f GB the run "
+                            + "holds; the split values kept are let go to make room, and the last rounds value theirs "
+                            + "afresh", big.name, big.bytes / 1e9, room / 1e9, held / 1e9);
+                    fit.dropSplitCache();
+                    held = FullIndexPilot.usedAfterGc();
+                    room = heap - held;
+                }
+                if (big.bytes > room) {
+                    throw new IllegalStateException(String.format("the largest scoring item, %s, holds %.2f GB, more than "
+                            + "the %.2f GB left of %.0f%% of the heap beside the %.2f GB the run holds; the fit is "
+                            + "checkpointed, so resume it with a larger heap", big.name, big.bytes / 1e9, room / 1e9,
+                            100 * heapFill, held / 1e9));
+                }
+            }
             log("every strategy fitted; scoring batches hold up to %.0f MB", room / 1e6);
 
             // The items, in order, and the parts already scored.
@@ -2311,23 +2375,24 @@ final class FullIndexFit {
             try {
                 int next = 0;
                 int scored = items.size() - todo.size();
-                Prepared waiting = null;
                 while (next < todo.size()) {
+                    // A batch is formed from the items' bytes worked out when they were planned; its
+                    // parts are made only once it is formed, so nothing is held outside its estimate.
                     List<int[]> batch = new ArrayList<>();
-                    List<Prepared> prepared = new ArrayList<>();
                     double bytes = 0;
                     while (next < todo.size()) {
                         int[] it = todo.get(next);
-                        Prepared pr = waiting != null ? waiting : new Prepared(scorer, fits.get(it[0]), it[1], it[2] == 1);
-                        waiting = null;
-                        if (!batch.isEmpty() && bytes + pr.bytes > room) {
-                            waiting = pr;
+                        double b = fits.get(it[0]).itemBytes[it[1]];
+                        if (!batch.isEmpty() && bytes + b > room) {
                             break;
                         }
                         batch.add(it);
-                        prepared.add(pr);
-                        bytes += pr.bytes;
+                        bytes += b;
                         next++;
+                    }
+                    List<Prepared> prepared = new ArrayList<>();
+                    for (int[] it : batch) {
+                        prepared.add(new Prepared(scorer, fits.get(it[0]), it[1], it[2] == 1));
                     }
                     List<Strategy> finals = new ArrayList<>();
                     List<Fits> batchFits = new ArrayList<>();
@@ -2401,6 +2466,74 @@ final class FullIndexFit {
             return out;
         }
 
+        /** A scoring item's name and bytes, for the checks. */
+        static final class Item {
+            final String name;
+            final double bytes;
+
+            Item(String name, double bytes) {
+                this.name = name;
+                this.bytes = bytes;
+            }
+        }
+
+        /** Every scoring item still to be scored, by its count's fits, penetration and part. */
+        private List<Item> items(List<Fits> fits) {
+            List<Item> out = new ArrayList<>();
+            for (Fits f : fits) {
+                if (f == null) {
+                    continue;
+                }
+                for (int p : pens) {
+                    out.add(new Item(f.count.name + " at " + SystemScorer.PENETRATIONS[p] + " (its fold fits, or its half "
+                            + "fits)", f.itemBytes[p]));
+                }
+            }
+            return out;
+        }
+
+        private static Item largest(List<Fits> fits, List<Item> items) {
+            Item big = new Item("none", 0);
+            for (Item it : items) {
+                if (it.bytes > big.bytes) {
+                    big = it;
+                }
+            }
+            return big;
+        }
+
+        /**
+         * Before the passes: refuses a run that could not score its largest item, naming it. What
+         * the run will hold once fitted is what it holds now, with every strategy made, less the
+         * parts the strategies let go, plus the plays they will hold and the split values kept,
+         * at splitAllowance bytes a state (the dry runs keep 10 to 30 KB a state); the largest
+         * item must fit beside that in heapFill of the heap. The passes themselves hold less: no
+         * item, and the sums of a round.
+         */
+        private void preflight(List<Fits> fits, List<Strategy> all) {
+            double heap = heapFill * Runtime.getRuntime().maxMemory();
+            double now = FullIndexPilot.usedAfterGc();
+            double plays = 0;
+            for (Strategy t : all) {
+                // The play kept: its first-decision sums, reach and moves, its rankings and later
+                // cells, and the post-split plays of one item's last round.
+                plays += t.groups.count() * (Deals.COUNT * (ScoringStates.MOVES + 1) * 8.0 + Deals.COUNT * 40.0)
+                        + 100.0 * 2 * t.groups.count() * 350;
+            }
+            double cache = keepSplits ? splitAllowance * scorer.st.size : 0;
+            Item big = largest(fits, items(fits));
+            double need = now + plays + cache + big.bytes;
+            log("before the passes: %.2f GB held, about %.2f GB of plays and %.2f GB of split values to come, and the "
+                    + "largest scoring item, %s, %.2f GB: %.2f GB of the %.2f GB allowed", now / 1e9, plays / 1e9,
+                    cache / 1e9, big.name, big.bytes / 1e9, need / 1e9, heap / 1e9);
+            if (need > heap) {
+                throw new IllegalStateException(String.format("the run would not fit in the heap: the largest scoring "
+                        + "item, %s, holds %.2f GB, beside %.2f GB held now, about %.2f GB of plays and %.2f GB of split "
+                        + "values kept; %.2f GB in all, more than the %.2f GB of %.0f%% of the heap", big.name,
+                        big.bytes / 1e9, now / 1e9, plays / 1e9, cache / 1e9, need / 1e9, heap / 1e9, 100 * heapFill));
+            }
+        }
+
         /** An item's name in the checkpoint: its count's place, penetration and part. */
         private String key(int[] it) {
             return "part-" + it[0] + "-" + it[1] + "-" + (it[2] == 0 ? "folds" : "halves");
@@ -2414,8 +2547,7 @@ final class FullIndexFit {
                 }
             }
             SystemScorer.Result r = SystemScorer.merge(Arrays.asList(parts));
-            Double ratio = widen == null ? null : widen.get(counts.get(k));
-            r.widen = ratio == null ? 1 : ratio;
+            r.widen = SystemScorer.Widening.of(widen, missingWiden, counts.get(k));
             return r;
         }
     }
@@ -2447,8 +2579,18 @@ final class FullIndexFit {
             SystemScorer.Pen p = scorer.pen(pen);
             parts = scorer.parts(fits.count, p);
             slots = scorer.splitSlots(parts, p);
+            bytes = bytes(parts, slots.count);
+        }
+
+        /**
+         * An item's bytes from its parts and its parts of deals that can be split: the parts'
+         * arrays, the slots (an int a part), two strategies' values (a double a part for Hit and
+         * one a part split for Split), the scoring's index by key (two ints a part) and its
+         * insurance parts (21 bytes a part of the 55 ace-up deals, about a tenth).
+         */
+        static double bytes(SystemScorer.Parts parts, int pairParts) {
             double n = parts.key.length;
-            bytes = partsBytes(parts) + 4.0 * n + 2 * (8.0 * n + 8.0 * slots.count) + 8.0 * n + 2.1 * n;
+            return partsBytes(parts) + 4.0 * n + 2 * (8.0 * n + 8.0 * pairParts) + 8.0 * n + 2.1 * n;
         }
 
         /** Gives the item's two strategies its parts and compact values; returns them. */

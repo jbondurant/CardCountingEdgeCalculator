@@ -1544,6 +1544,50 @@ final class SystemScorer {
         }
     }
 
+    /**
+     * How much a count's full-play intervals are widened (FULL_INDEX_PLAYS.md section 4): one
+     * ratio for its full-play difference from another count, one for its gain from full play,
+     * each the pilot's refitted SE over its held SE. measured says whether the pilot measured
+     * this count; a count it did not measure takes the conservative default the caller states,
+     * the largest ratio measured of the kind, so that no count's interval is left narrow by
+     * default.
+     */
+    static final class Widening implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        final double difference;
+        final double gain;
+        final boolean measured;
+
+        Widening(double difference, double gain, boolean measured) {
+            if (!(difference >= 1) || !(gain >= 1)) {
+                throw new IllegalArgumentException("a widening ratio below 1 would narrow an interval: " + difference
+                        + ", " + gain);
+            }
+            this.difference = difference;
+            this.gain = gain;
+            this.measured = measured;
+        }
+
+        /**
+         * A count's widening from the map given: its own, or when it has none the default given,
+         * marked not measured; with no default, a count missing from the map is refused. No map
+         * leaves the count unwidened, its Result.widen null.
+         */
+        static Widening of(java.util.Map<CountKeys.Count, Widening> measured, Widening missing, CountKeys.Count c) {
+            if (measured == null) {
+                return null;
+            }
+            Widening w = measured.get(c);
+            if (w != null) {
+                return w;
+            }
+            if (missing == null) {
+                throw new IllegalArgumentException(c.name + " has no measured widening and no default was given");
+            }
+            return new Widening(missing.difference, missing.gain, false);
+        }
+    }
+
     /** Everything scored for one count: its entries, its decision resolution and learning curve. */
     static final class Result implements java.io.Serializable {
         private static final long serialVersionUID = 1L;
@@ -1580,10 +1624,10 @@ final class SystemScorer {
         final int[][] fullInSample = new int[CUTS.length][];
         /**
          * What the full-play intervals are widened by: the bootstrap holds the later plays as
-         * fitted, and the pilot measures how much that narrows a difference's SE
-         * (FULL_INDEX_PLAYS.md section 4). 1 until a ratio is set; difference applies it.
+         * fitted, and the pilot measures how much that narrows an SE (FULL_INDEX_PLAYS.md section
+         * 4). Null until set, and a report must not give a full-play interval while it is null.
          */
-        double widen = 1;
+        Widening widen;
         double seconds;
 
         Result(CountKeys.Count count) {

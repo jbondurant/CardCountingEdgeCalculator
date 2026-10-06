@@ -1443,22 +1443,32 @@ public class FullIndexFitTest {
         // Half the shoes, the even and odd shoe of every other pair, to keep the test short.
         ScoringStates sub = fx.st.subRun(0, 2);
         SystemScorer scorer = new SystemScorer(sub, new Bootstrap(sub.shoes, 5, 1), 1);
-        Map<CountKeys.Count, Double> widen = new HashMap<>();
-        widen.put(HI_LO, 1.5);
+        Map<CountKeys.Count, SystemScorer.Widening> widen = new HashMap<>();
+        widen.put(HI_LO, new SystemScorer.Widening(1.5, 1.25, true));
+        SystemScorer.Widening missing = new SystemScorer.Widening(2, 1.75, true);
         List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO);
         int[] pens = {PEN};
         FullIndexFit.Scored apart = FullIndexFit.scoreAll(scorer, FullIndexFit.built(sub), counts, pens, 1, THREADS,
-                false, true, widen);
+                false, true, widen, missing);
         FullIndexFit.Scored together = FullIndexFit.scoreAll(scorer, FullIndexFit.kept(sub, RULES, THREADS), counts, pens,
-                2, THREADS, true, false, null);
+                2, THREADS, true, false, null, null);
         assertEquals(2, apart.rounds.size());
         assertEquals(1, together.rounds.size());
         assertNull(together.perfect);
         for (int s = 0; s < sub.size; s++) {
             assertFalse(Double.isNaN(apart.perfect[s]));
         }
-        assertEquals(1, apart.results.get(0).widen, 0);
-        assertEquals(1.5, apart.results.get(1).widen, 0);
+        // The null count, which the map lacks, takes the default, marked not measured.
+        assertEquals(2, apart.results.get(0).widen.difference, 0);
+        assertEquals(1.75, apart.results.get(0).widen.gain, 0);
+        assertFalse(apart.results.get(0).widen.measured);
+        assertEquals(1.5, apart.results.get(1).widen.difference, 0);
+        assertEquals(1.25, apart.results.get(1).widen.gain, 0);
+        assertTrue(apart.results.get(1).widen.measured);
+        assertNull(together.results.get(0).widen, "no map, no widening");
+        assertThrows(IllegalArgumentException.class, () -> SystemScorer.Widening.of(widen, null, NULL),
+                "a count with no measured ratio and no default is refused");
+        assertThrows(IllegalArgumentException.class, () -> new SystemScorer.Widening(0.9, 1, true));
         for (int k = 0; k < counts.size(); k++) {
             SystemScorer.Result a = apart.results.get(k);
             SystemScorer.Result b = together.results.get(k);
@@ -1499,10 +1509,12 @@ public class FullIndexFitTest {
         SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 5, 1), 1);
         List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
         int[] pens = {0, PEN};
-        Map<CountKeys.Count, Double> widen = new HashMap<>();
-        widen.put(RED_SEVEN, 1.25);
+        Map<CountKeys.Count, SystemScorer.Widening> widen = new HashMap<>();
+        for (CountKeys.Count c : counts) {
+            widen.put(c, new SystemScorer.Widening(1.25, 1.5, true));
+        }
         FullIndexFit.Scored batched = FullIndexFit.scoreAll(scorer, fx.trees, counts, pens, 1, THREADS, true, true,
-                widen);
+                widen, null);
         FullIndexFit.Scored joint = FullIndexFit.scoreJoint(scorer, fx.trees, FullIndexFit.built(fx.st), counts, pens, 1,
                 THREADS, false, true, widen, null, null);
         // One scoring item to a batch: each count's fold fits and half fits at each penetration.
@@ -1543,7 +1555,12 @@ public class FullIndexFitTest {
     /** Two Results of one count, every figure of the penetrations given within tol and every play the same. */
     static void sameResult(SystemScorer.Result x, SystemScorer.Result y, int[] pens, double tol) {
         String c = x.count.name;
-        assertEquals(x.widen, y.widen, 0.0, c);
+        assertEquals(x.widen == null, y.widen == null, c);
+        if (x.widen != null) {
+            assertEquals(x.widen.difference, y.widen.difference, 0.0, c);
+            assertEquals(x.widen.gain, y.widen.gain, 0.0, c);
+            assertEquals(x.widen.measured, y.widen.measured, c);
+        }
         assertEquals(x.entries.size(), y.entries.size());
         assertEquals(x.fullEntries.size(), y.fullEntries.size());
         for (int p : pens) {
@@ -1871,5 +1888,42 @@ public class FullIndexFitTest {
                 () -> checkpointed(scorer, counts, pens, dir, "FullIndexFitTest\nthreads 99", true, null, null));
         assertTrue(other.getMessage().contains("threads 99"), other.getMessage());
         assertThrows(IllegalStateException.class, () -> checkpointed(scorer, counts, pens, dir, id, false, null, null));
+    }
+
+    /**
+     * A run whose largest scoring item would not fit in the heap beside what it will hold refuses
+     * before its passes, naming the item and its bytes; and a run's batches hold no more than the
+     * room given but for a batch of one item, their items' bytes worked out when planned.
+     */
+    @Test
+    public void aRunRefusesBeforeItsPassesWhenItsLargestItemCannotFit() throws Exception {
+        Fixture fx = standard();
+        SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 2, 1), 1);
+        List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
+        int[] pens = {0, PEN};
+        FullIndexFit.JointRun tight = new FullIndexFit.JointRun(scorer, counts, pens, THREADS);
+        tight.trees = fx.trees;
+        tight.heapFill = 1e-6;
+        tight.afterRound = r -> fail("round " + r + " ran");
+        IllegalStateException e = assertThrows(IllegalStateException.class, tight::run);
+        assertTrue(e.getMessage().contains("largest scoring item, Red Seven (Red 7)"), e.getMessage());
+        assertTrue(e.getMessage().contains("GB"), e.getMessage());
+
+        List<FullIndexFit.Fits> planned = FullIndexFit.plan(scorer, counts, pens, true, true);
+        double hiLo = planned.get(1).itemBytes[PEN];
+        double redSeven = planned.get(2).itemBytes[PEN];
+        assertTrue(redSeven > hiLo, "a count that tags by colour has more parts");
+        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, THREADS);
+        run.trees = fx.trees;
+        run.batchBytes = 2.5 * hiLo;
+        FullIndexFit.Scored sc = run.run();
+        int many = 0;
+        for (int b = 0; b < sc.batches.size(); b++) {
+            int items = sc.rounds.get(b + 1).get(0).strategies / 2;
+            assertTrue(items == 1 || sc.batchBytes.get(b) <= run.batchBytes, "batch " + b + " holds "
+                    + sc.batchBytes.get(b) + " bytes in " + items + " items");
+            many += items > 1 ? 1 : 0;
+        }
+        assertTrue(many > 0, "some batch holds more than one item");
     }
 }

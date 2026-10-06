@@ -250,7 +250,11 @@ first-decision cells they use. A later cell is settled when its one-flip gain un
 final policy exceeds 2 SE. Otherwise it is a close call bounded by frequency ×
 (2 SE − gain). The SEs come from per-shoe sums, with whole shoes per thread. The bound is
 added to the first-decision and insurance bounds into the system's decision bound, under
-the same 0.005% target. The learning curve's half fits include the later plays.
+the same 0.005% target. The learning curve's half fits include the later plays. Their
+interval holds both fits' later plays on every resample, as the bootstrap holds every full
+fit's, so it leaves out how much the later plays move on half the data, and no pilot has
+measured by how much (section 7). The full-play learning curve is reported with its held
+interval named as such, and is not taken by itself to show the 0.005% sizing criterion met.
 
 **Section 8's decision-bound scaling** on quarters and halves of the file holds the whole
 file's later-play fit fixed in the parts. Its fitted exponent therefore measures how the
@@ -306,6 +310,27 @@ full run, as that section measured it:
 The SE of each difference from Hi-Lo is printed with the later plays held and refitted.
 If the ratio is near 1 the run goes as planned. If not, the full run's intervals are
 widened by the measured ratio per count, and the report says how.
+
+**What the pilot measured** (runs/full-index/pilot-1417-100.txt: the first 1,417 shoes,
+1,472 states, at 80%, 100 resamples). Refitted SE over held SE:
+- for each count's full-play difference from Hi-Lo, 1.04 to 1.07 on the 1-8 same schedule
+  and 1.03 to 1.06 flat, jackknife SEs 0.01 to 0.02;
+- for each count's gain from full play, 1.03 to 1.80 on the 1-8 same schedule (Hi-Lo 1.43,
+  KO 1.10, Red Seven 1.03, Omega II 1.80, Wong Halves 1.66) and 1.08 to 1.52 flat,
+  jackknife SEs 0.03 to 0.15.
+So holding the later plays narrows a difference's interval a little and a gain's by up to
+almost half.
+
+**How the intervals are widened (SystemScorer.Widening).** Each count's Result carries two
+ratios: one for its full-play differences from other counts, one for its gain from full
+play. A count the pilot measured takes its own, the larger of its two metrics' for each kind.
+Every other count, and every side-count variant, takes a stated conservative default, the
+largest ratio of its kind the pilot measured over all its counts and both metrics (1.07 for
+differences, 1.80 for gains), and its Result marks the ratio as not measured; a count with
+neither its own ratio nor a default is refused, so no count is left unwidened by default.
+The full run (FullIndexRun) writes its Results unwidened, Widening null; the report sets
+each count's Widening before it prints a full-play interval, and prints none while it is
+null.
 
 ## 5. The index tables
 
@@ -367,4 +392,7 @@ of section 4. The state file is read, never written.
 - **Composition-dependent play beyond the count** (section 1).
 - **Refitting the later plays inside the full run's bootstrap.** The pilot measures the
   effect and the intervals are widened by it (section 4).
+- **Widening the full-play learning curve.** Its half fits hold their later plays on every
+  resample too, and the pilot did not measure what that leaves out of the half-less-full
+  interval; the curve is reported as an estimate with a held interval (section 3).
 - **Risk.** There is still no round variance, so no SCORE.

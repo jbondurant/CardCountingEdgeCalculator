@@ -25,6 +25,12 @@ import java.util.List;
  *
  * At the end it writes results.ser (every count's SystemScorer.Result, the perfect row's
  * values and the run's rounds, for the report to read) and prints each count's figures at 80%.
+ * Its Results are not widened (Result.widen is null): the report sets each count's widening
+ * from the pilot before it prints a full-play interval (FULL_INDEX_PLAYS.md section 4).
+ *
+ * Before the passes it checks that its largest scoring item will fit in the heap beside what
+ * the run will hold, and refuses to start if not, naming the item; after the passes it checks
+ * again with what the run holds, letting the split values kept go if that makes the room.
  *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --states FILE --out DIR
  * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none] [--resume]
@@ -180,8 +186,9 @@ public final class FullIndexRun {
         String[] names = {"1-8 same schedule", "flat"};
         for (int k = 0; k < metrics.length; k++) {
             int m = metrics[k];
-            out.printf("%n%s at 80%%, %% of a unit per round:%n%n", names[k]);
-            out.println("| Count | First decisions | Full play | Gain | its SE |");
+            out.printf("%n%s at 80%%, %% of a unit per round; the gain's SE with the later plays held, not yet "
+                    + "widened (FULL_INDEX_PLAYS.md section 4):%n%n", names[k]);
+            out.println("| Count | First decisions | Full play | Gain | its held SE |");
             out.println("|---|---|---|---|---|");
             for (SystemScorer.Result r : sc.results) {
                 SystemScorer.Entry first = r.entries.get(0);
