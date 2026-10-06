@@ -1477,4 +1477,269 @@ public class FullIndexFitTest {
             assertEquals(b.fullResolution[PEN].total(), a.fullResolution[PEN].total(), 1e-15);
         }
     }
+
+    // ------------------------------------------------------------------ the joint run
+
+    /**
+     * The joint run (FullIndexFit.scoreJoint) fits and scores as the batched run does. The null
+     * count, Hi-Lo and Red Seven at two penetrations, with their half fits, are fitted once one
+     * count to a batch with every value held (scoreAll, kept trees, splits kept from round to
+     * round) and once all together, lean, then given their last rounds a count to a batch with
+     * Split held for the pair deals alone (trees built afresh, splits kept for one state's visit).
+     * Every play must be the same: every pass's changes, the passes, clean-ups and cells
+     * flipped, the later groups and answers, the first decisions; and every score, resample,
+     * bound, gain, standard error and training EV within 1e-12, the sums being added in another
+     * order. The joint passes take as many rounds as the slowest strategy, each visiting each
+     * state once.
+     */
+    @Test
+    public void theJointRunFitsAndScoresAsTheBatchedRunDoes() throws Exception {
+        Fixture fx = standard();
+        SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 5, 1), 1);
+        List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
+        int[] pens = {0, PEN};
+        Map<CountKeys.Count, Double> widen = new HashMap<>();
+        widen.put(RED_SEVEN, 1.25);
+        FullIndexFit.Scored batched = FullIndexFit.scoreAll(scorer, fx.trees, counts, pens, 1, THREADS, true, true,
+                widen);
+        FullIndexFit.Scored joint = FullIndexFit.scoreJoint(scorer, FullIndexFit.built(fx.st), counts, pens, 0, THREADS,
+                false, true, widen, null);
+        assertEquals(1 + counts.size(), joint.rounds.size());
+        assertEquals(counts.size(), joint.batches.size());
+        int slowest = 0;
+        for (SystemScorer.Result r : joint.results) {
+            for (int p : pens) {
+                for (int f = 0; f < 2; f++) {
+                    for (FullIndexFit.Summary t : new FullIndexFit.Summary[]{r.fullFit[p][f], r.fullHalfFit[p][f]}) {
+                        slowest = Math.max(slowest, t.passes + t.cleanUps);
+                    }
+                }
+            }
+        }
+        assertEquals(slowest, joint.rounds.get(0).size(), "the joint passes run as long as the slowest strategy");
+        for (FullIndexFit.RoundStats rs : joint.rounds.get(0)) {
+            assertTrue(rs.states <= fx.st.size, "each state visited once a round");
+        }
+        assertArrayEquals(batched.perfect, joint.perfect, 0.0);
+        assertSameResults(batched, joint, counts, pens);
+    }
+
+    /** Two runs' Results for the same counts, as theJointRunFitsAndScoresAsTheBatchedRunDoes compares them. */
+    static void assertSameResults(FullIndexFit.Scored a, FullIndexFit.Scored b, List<CountKeys.Count> counts, int[] pens) {
+        double tol = EXACT;
+        for (int k = 0; k < counts.size(); k++) {
+            SystemScorer.Result x = a.results.get(k);
+            SystemScorer.Result y = b.results.get(k);
+            String c = counts.get(k).name;
+            assertSame(counts.get(k), y.count);
+            assertEquals(x.widen, y.widen, 0.0, c);
+            assertEquals(x.fullEntries.size(), y.fullEntries.size());
+            for (int p : pens) {
+                for (int e = 0; e < x.entries.size(); e++) {
+                    entry(x.entries.get(e), y.entries.get(e), p, tol);
+                }
+                for (int e = 0; e < x.fullEntries.size(); e++) {
+                    entry(x.fullEntries.get(e), y.fullEntries.get(e), p, tol);
+                }
+                assertEquals(x.fullResolution[p].total(), y.fullResolution[p].total(), tol, c);
+                assertEquals(x.fullResolution[p].laterDecisions, y.fullResolution[p].laterDecisions, c);
+                assertEquals(x.fullResolution[p].laterUnsettled, y.fullResolution[p].laterUnsettled, c);
+                assertEquals(x.resolution[p].total(), y.resolution[p].total(), tol, c);
+                assertEquals(x.fullHalfFitFlat[p], y.fullHalfFitFlat[p], tol, c);
+                assertArrayEquals(x.fullHalfFitBoot[p], y.fullHalfFitBoot[p], tol, c);
+                assertArrayEquals(x.fullInSample[p], y.fullInSample[p], c);
+                for (int f = 0; f < 2; f++) {
+                    for (int g = 0; g < x.fullFirst[p][f].move.length; g++) {
+                        assertArrayEquals(x.fullFirst[p][f].move[g], y.fullFirst[p][f].move[g], c + " group " + g);
+                    }
+                    summary(x.fullFit[p][f], y.fullFit[p][f], tol);
+                    summary(x.fullHalfFit[p][f], y.fullHalfFit[p][f], tol);
+                }
+            }
+        }
+    }
+
+    private static void entry(SystemScorer.Entry x, SystemScorer.Entry y, int p, double tol) {
+        assertEquals(x.name, y.name);
+        assertArrayEquals(x.estimate[p], y.estimate[p], tol, x.name);
+        for (int m = 0; m < SystemScorer.METRICS; m++) {
+            assertArrayEquals(x.boot[p][m], y.boot[p][m], tol, x.name + " metric " + m);
+        }
+    }
+
+    private static void summary(FullIndexFit.Summary x, FullIndexFit.Summary y, double tol) {
+        String t = x.name;
+        assertEquals(x.name, y.name);
+        assertEquals(x.passes, y.passes, t);
+        assertEquals(x.converged, y.converged, t);
+        assertEquals(x.capped, y.capped, t);
+        assertEquals(x.bestPass, y.bestPass, t);
+        assertEquals(x.cleanUps, y.cleanUps, t);
+        assertEquals(x.flipped, y.flipped, t);
+        assertArrayEquals(x.later.lo, y.later.lo, t);
+        assertArrayEquals(x.later.hi, y.later.hi, t);
+        assertArrayEquals(x.stands, y.stands, t);
+        assertArrayEquals(x.gain, y.gain, tol, t);
+        assertArrayEquals(x.se, y.se, tol, t);
+        assertArrayEquals(x.frequency, y.frequency, tol, t);
+        assertEquals(x.laterNoReach, y.laterNoReach, t);
+        assertEquals(x.laterTies, y.laterTies, t);
+        assertEquals(x.firstNoReach, y.firstNoReach, t);
+        assertEquals(x.firstTies, y.firstTies, t);
+        assertEquals(x.refitDiffers, y.refitDiffers, t);
+        assertEquals(x.finalAgreement, y.finalAgreement, tol, t);
+        assertArrayEquals(x.inSample, y.inSample, t);
+        assertEquals(x.history.size(), y.history.size(), t);
+        for (int k = 0; k < x.history.size(); k++) {
+            FullIndexFit.PassRecord a = x.history.get(k);
+            FullIndexFit.PassRecord b = y.history.get(k);
+            assertEquals(a.cleanUp, b.cleanUp, t + " pass " + k);
+            assertEquals(a.ev, b.ev, tol, t + " pass " + k);
+            assertEquals(a.firstChanges, b.firstChanges, t + " pass " + k);
+            assertEquals(a.laterChanges, b.laterChanges, t + " pass " + k);
+        }
+    }
+
+    /**
+     * Every answer a post-split play gives a split of this deal, reached or not: the two-card
+     * decision for every second card, with Split offered and not where a resplit can be, and the
+     * later decision at every total below 21, hard and soft. Two plays with the same answers are
+     * the same play. Unlike SplitValues' fingerprint it leaves nothing out, so a cache keyed by
+     * that fingerprint is checked against something it does not rest on.
+     */
+    static String everyAnswer(int deal, SplitPlay play) {
+        int r = Deals.P1[deal];
+        int up = Deals.UP[deal];
+        StringBuilder b = new StringBuilder(deal + ":");
+        boolean mayHit = r != 1 || RULES.canHitSplitAces;
+        boolean surrender = RULES.surrender && RULES.surrenderAfterSplit;
+        for (int x = 1; x <= 10; x++) {
+            boolean ace = r == 1 || x == 1;
+            if (RULES.blackjackOnSplitPairs && r + x == 11 && ace) {
+                continue;
+            }
+            int hard = r + x;
+            int total = ace && hard <= 11 ? hard + 10 : hard;
+            boolean soft = ace && hard <= 11;
+            for (int offered = 0; offered <= 1; offered++) {
+                boolean canSplit = offered == 1;
+                if (canSplit && (x != r || RULES.maxHandsFor(r) < 3)) {
+                    continue;
+                }
+                b.append(play.choose(new RoundPolicy.Decision(total, soft, 2, x == r ? r : 0, up, true, true,
+                        mayHit && total < 21, RULES.doubleAfterSplit[r], canSplit, surrender)).ordinal());
+            }
+        }
+        b.append('|');
+        for (int soft = 0; soft <= 1; soft++) {
+            for (int total = soft == 1 ? 12 : 4; total <= 20; total++) {
+                b.append(play.choose(new RoundPolicy.Decision(total, soft == 1, 3, 0, up, true, false, true, false,
+                        false, false)).ordinal());
+            }
+        }
+        return b.toString();
+    }
+
+    /**
+     * A split value kept for one post-split play is never served to another. The null count,
+     * Hi-Lo and Red Seven at two penetrations, with their half fits, are fitted together and given
+     * their last rounds in one batch, with split values kept per state from round to round and
+     * shared by every strategy: so the values a strategy holds at the end were mostly worked out
+     * for other strategies, other counts and other rounds. Every Split value every strategy holds
+     * for every pair deal of every state is then valued afresh, with no cache, under that
+     * strategy's own post-split play read from its play kept, once for each set of answers that
+     * play gives (everyAnswer), and must equal the value held within 1e-12. The plays met must
+     * differ: many (state, deal)s are split under two or more plays whose values differ, and
+     * many plays are shared by strategies of different counts.
+     */
+    @Test
+    public void aSharedSplitCacheNeverServesOnePlaysValueToAnother() throws Exception {
+        Fixture fx = standard();
+        SystemScorer scorer = new SystemScorer(fx.st, new Bootstrap(SHOES, 2, 1), 1);
+        List<CountKeys.Count> counts = Arrays.asList(NULL, HI_LO, RED_SEVEN);
+        int[] pens = {0, PEN};
+        // (state, everyAnswer) -> the play, and every (strategy, part) holding a value for it.
+        Map<String, SplitPlay> plays = new java.util.concurrent.ConcurrentHashMap<>();
+        Map<String, List<Object[]>> held = new java.util.concurrent.ConcurrentHashMap<>();
+        FullIndexFit.Watch watch = new FullIndexFit.Watch() {
+            @Override
+            public void finalRound(List<FullIndexFit.Fits> batch) {
+                assertEquals(counts.size(), batch.size(), "one batch");
+                for (FullIndexFit.Fits f : batch) {
+                    for (FullIndexFit.Strategy t : f.all()) {
+                        assertNotNull(t.values.splitAt, "Split held compactly");
+                        FullIndexFit.Policy pol = t.now;
+                        for (int j = 0; j < t.p.states.length; j++) {
+                            int s = t.p.states[j];
+                            for (int i = 0; i < Deals.COUNT; i++) {
+                                if (!fx.st.legal[i * MOVES + SPLIT] || fx.st.chance[s][i] == 0) {
+                                    continue;
+                                }
+                                int cell = j * Deals.COUNT + i;
+                                for (int x = t.parts.from(cell); x < t.parts.to(cell); x++) {
+                                    int key = t.parts.key[x];
+                                    PlayerMove[][] rank = pol.ranking[t.table[key - t.minKey]];
+                                    int up = Deals.UP[i];
+                                    SplitPlay play = new SplitPlay(Deals.P1[i], up,
+                                            (total, soft) -> stands(t.later, pol.stands, total, soft, up, key), d -> rank[d]);
+                                    String k = s + "/" + everyAnswer(i, play);
+                                    plays.putIfAbsent(k, play);
+                                    held.computeIfAbsent(k, z -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                                            .add(new Object[]{t.toString(), t.values.split(x), t.count.name});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        FullIndexFit.scoreJoint(scorer, fx.trees, counts, pens, Double.MAX_VALUE, THREADS, true, false, null, watch);
+
+        List<String> keys = new ArrayList<>(held.keySet());
+        Map<String, Double> fresh = new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(THREADS);
+        try {
+            List<java.util.concurrent.Future<?>> jobs = new ArrayList<>();
+            for (String k : keys) {
+                jobs.add(pool.submit(() -> {
+                    int s = Integer.parseInt(k.substring(0, k.indexOf('/')));
+                    int i = Integer.parseInt(k.substring(k.indexOf('/') + 1, k.indexOf(':')));
+                    int[] left = ShoeRun.ranksLeft(fx.st.dealt[s]);
+                    SplitValues sv = new SplitValues(RULES, left, null, new HashMap<>(), new ExactRound(RULES));
+                    fresh.put(k, units(left, i, sv.value(i, plays.get(k))));
+                    return null;
+                }));
+            }
+            for (java.util.concurrent.Future<?> job : jobs) {
+                job.get();
+            }
+        } finally {
+            pool.shutdown();
+        }
+        int checked = 0;
+        int shared = 0;
+        Map<String, List<Double>> byDeal = new HashMap<>();
+        for (String k : keys) {
+            double v = fresh.get(k);
+            java.util.Set<String> who = new java.util.HashSet<>();
+            for (Object[] h : held.get(k)) {
+                assertEquals(v, (double) h[1], EXACT, h[0] + " at " + k);
+                who.add((String) h[2]);
+                checked++;
+            }
+            shared += who.size() > 1 ? 1 : 0;
+            byDeal.computeIfAbsent(k.substring(0, k.indexOf(':')), z -> new ArrayList<>()).add(v);
+        }
+        int differing = 0;
+        for (List<Double> vs : byDeal.values()) {
+            double lo = vs.stream().mapToDouble(Double::doubleValue).min().getAsDouble();
+            double hi = vs.stream().mapToDouble(Double::doubleValue).max().getAsDouble();
+            differing += hi - lo > 1e-9 ? 1 : 0;
+        }
+        System.out.printf("FullIndexFitTest: %d Split values held checked against %d plays valued afresh; %d (state, deal)s "
+                + "split under plays of differing value; %d plays shared by more than one count%n", checked,
+                keys.size(), differing, shared);
+        assertTrue(differing >= 50, differing + " (state, deal)s split under plays of differing value");
+        assertTrue(shared >= 100, shared + " plays shared");
+    }
 }

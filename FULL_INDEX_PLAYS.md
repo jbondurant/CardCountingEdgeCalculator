@@ -202,13 +202,25 @@ two Hit arrays:
 - under L_{1−φ}, fitted on its own fold, for the training sums of strategy 1−φ.
 
 The arrays, and the Split arrays beside them, are kept per (penetration, fit), never
-pooled. Systems are scored in batches, with the trees rebuilt per batch, so memory stays
-bounded; at about 0.1 s of CPU a state, a rebuild is cheap. A batch's strategies, both
-folds and the half fits at every penetration, run their passes together: a state's trees
-are built once a round for all of them and set up once for each count. Once they are done,
-each count of the batch is scored both ways and its arrays let go (FullIndexFit.scoreAll).
-Tests fail if a test state is scored under the later plays fitted on its own fold, or if a
-fold's first decisions are fitted on Hit values from the other fold's later plays.
+pooled. Tests fail if a test state is scored under the later plays fitted on its own fold,
+or if a fold's first decisions are fitted on Hit values from the other fold's later plays.
+
+**The joint run (FullIndexFit.scoreJoint).** Every count's strategies, both folds and the
+half fits at every penetration, run their passes together: each round visits each state
+once, builds its trees once, sets them up once for each count and walks every strategy still
+fitting. The split values worked out at a state are shared by every strategy there, kept by
+the post-split play's fingerprint, so a play several counts or penetrations share is valued
+once, and they are kept from round to round. While they fit, the strategies hold no Hit or
+Split value per state: a pass needs of them only the first-decision sums of Hit and Split
+per (group, deal) and the training EV, which it adds up as it walks; the other moves' sums
+do not change with the play. Once every strategy is fitted, the counts are given their last
+round, which fills the values they are scored with, and scored, in batches sized to the
+heap, the trees built again for each batch's last round; Split is then held for the parts of
+the 100 pair deals alone. The joint run fits and scores as the earlier batched run
+(FullIndexFit.scoreAll) does, to 1e-12, the sums being added in another order
+(FullIndexFitTest), and a split value kept for one play is never served to another: every
+Split value every strategy holds at the end is valued afresh under its own play and must
+agree.
 
 **Decision resolution** covers the later cells, and split hands through the
 first-decision cells they use. A later cell is settled when its one-flip gain under the

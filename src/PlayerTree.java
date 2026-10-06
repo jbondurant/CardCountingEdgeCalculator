@@ -584,6 +584,8 @@ final class PlayerTree {
         final int[] partFrom = new int[Deals.COUNT + 1];
         final int[] partTagSum;
         final double[] partShare;
+        /** Each part's play key, the count with the deal's three cards seen, as SystemScorer.Parts keys the part. */
+        final int[] partKey;
         /** P(i | S), and the chance of no natural once deal i is out. */
         final double[] chance = new double[Deals.COUNT];
         final double[] noNatural = new double[Deals.COUNT];
@@ -748,9 +750,11 @@ final class PlayerTree {
             compFrom[Deals.COUNT] = comps.size();
             partTagSum = new int[partTags.size()];
             partShare = new double[partTags.size()];
+            partKey = new int[partTags.size()];
             for (int q = 0; q < partTagSum.length; q++) {
                 partTagSum[q] = partTags.get(q);
                 partShare[q] = partShares.get(q);
+                partKey[q] = count.playKey(rc, depth, partTagSum[q]);
             }
             compPart = new int[comps.size()];
             compTree = new int[comps.size()];

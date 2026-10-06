@@ -484,14 +484,22 @@ final class SystemScorer {
      *
      * A fit's values are its own: the states it is scored on and the states it is fitted on
      * both take them, and no fit reads another's.
+     *
+     * Split is held either for every part, indexed like Hit, or compactly, for the parts of the
+     * deals that can be split alone: 100 of the 550 deals, so about a sixth of the parts. Then
+     * splitAt[x] is part x's place in split, -1 for a part of any other deal, which nothing
+     * asks the Split value of. The values are the same doubles either way.
      */
     static final class PlayValues {
         final double[] hit;
         final double[] split;
+        /** Null when split is indexed like hit; otherwise each part's place in split, or -1. */
+        final int[] splitAt;
 
         PlayValues(int parts) {
             hit = new double[parts];
             split = new double[parts];
+            splitAt = null;
             Arrays.fill(hit, Double.NaN);
             Arrays.fill(split, Double.NaN);
         }
@@ -502,11 +510,70 @@ final class SystemScorer {
             }
             this.hit = hit;
             this.split = split;
+            this.splitAt = null;
+        }
+
+        /** Values held compactly: a Hit value for every part, a Split value for the parts that slots places. */
+        PlayValues(SplitSlots slots) {
+            hit = new double[slots.at.length];
+            split = new double[slots.count];
+            splitAt = slots.at;
+            Arrays.fill(hit, Double.NaN);
+            Arrays.fill(split, Double.NaN);
+        }
+
+        private PlayValues(double[] hit, double[] split, int[] splitAt) {
+            this.hit = hit;
+            this.split = split;
+            this.splitAt = splitAt;
+        }
+
+        /** Part x's Split value; a compact holder throws for a part of a deal that cannot be split. */
+        double split(int x) {
+            return splitAt == null ? split[x] : split[splitAt[x]];
+        }
+
+        void setSplit(int x, double v) {
+            if (splitAt == null) {
+                split[x] = v;
+            } else {
+                split[splitAt[x]] = v;
+            }
         }
 
         PlayValues copy() {
-            return new PlayValues(hit.clone(), split.clone());
+            return new PlayValues(hit.clone(), split.clone(), splitAt);
         }
+    }
+
+    /** Where each part of a penetration's Parts keeps its Split value in a compact PlayValues: shared by every fit of the count there. */
+    static final class SplitSlots {
+        final int[] at;
+        final int count;
+
+        SplitSlots(int[] at, int count) {
+            this.at = at;
+            this.count = count;
+        }
+    }
+
+    /** The slots of the parts of every deal that can be split, in order, -1 for every other part. */
+    SplitSlots splitSlots(Parts parts, Pen pen) {
+        int[] at = new int[parts.key.length];
+        Arrays.fill(at, -1);
+        int n = 0;
+        for (int j = 0; j < pen.states.length; j++) {
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (!st.legal[i * ScoringStates.MOVES + SPLIT]) {
+                    continue;
+                }
+                int cell = j * Deals.COUNT + i;
+                for (int x = parts.from(cell); x < parts.to(cell); x++) {
+                    at[x] = n++;
+                }
+            }
+        }
+        return new SplitSlots(at, n);
     }
 
     /**
@@ -519,7 +586,7 @@ final class SystemScorer {
                 return pv.hit[x];
             }
             if (m == SPLIT) {
-                return pv.split[x];
+                return pv.split(x);
             }
         }
         return stored[i * ScoringStates.MOVES + m];
@@ -587,6 +654,16 @@ final class SystemScorer {
                 }
             }
         }
+        return fitFrom(groups, sum, reach, weight);
+    }
+
+    /**
+     * The fit made from sums already added up, as fit makes them: each (group, deal) takes its
+     * best move by its sums, the chart's where nothing reached it or it ties for best. The
+     * arrays are kept, not copied.
+     */
+    Fit fitFrom(Groups groups, double[][] sum, double[][] reach, double weight) {
+        int g0 = groups.count();
         int[][] move = new int[g0][Deals.COUNT];
         for (int g = 0; g < g0; g++) {
             for (int i = 0; i < Deals.COUNT; i++) {
