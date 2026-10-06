@@ -357,33 +357,70 @@ differences, given this game's rules and conventions:
 
 ## 6. Cost and run
 
-**Measured by the review's scratch code, to be confirmed by the committed timing
-report:**
+**Measured before stage 2,** by the review's scratch code and stage 1's timing report
+(FullIndexTimingReport):
 - the trees of one state take 0.085 to 0.112 s of CPU, single-threaded;
 - walking only the nodes where any decision is contested (hard 12-16, soft 13-18, and
   the two-card starts) gives the same gap sums as walking every node, to within 9.4e-16;
 - stored states never run out, holding at least 85 cards.
 
-**Passes:** up to six fitting passes, two clean-up passes and a final evaluation, each a
-walk of every training state per (system, penetration, fit), the half fits included. Split
-values are computed per distinct post-split policy and cached.
+**The pilot (FullIndexPilot, cbdd02b)**, on the first 1,417 shoes with five counts, put the
+run as first built at 388 to 833 hours on the wall, most of it split valuations, 14.9 a walk
+at 8.8 ms: each batch of counts valued its own splits and built its own trees every round,
+and every strategy held a Hit and a Split value for every state of its penetration through
+the run.
 
-**Before the full run,** a committed timing report measures, on the first 1,000 states:
-- seconds a state for the trees, the walks and the split values;
-- the number of distinct post-split policies per (state, deal);
-- peak memory at the planned batch size.
+**The run.** The owner first chose a random subsample sized to about 16 hours of the wall,
+then the whole file: all 60,743 valued states of the 60,000 shoes, every count (the null
+count and the catalog's 30 entries) at 70%, 75% and 80%, both folds and the half fits, 372
+strategies, scored at 1,000 resamples unless that takes the run past about 30 hours. What
+makes that possible is the joint run of section 3:
+- every strategy's passes run together, a state visited once a round for all of them, its
+  split values shared by every strategy there and kept from round to round;
+- the strategies hold no values while they fit, only their plays and the sums a pass adds up;
+- every state's trees are built once and read back from disk after, since building them
+  again for each round and each scoring batch would cost about half an hour of the wall a
+  time;
+- the scoring goes one count's fold fits, or half fits, at one penetration at a time, one to
+  three of these to a batch at the file's size, each item's resamples shared among the
+  threads, since one count's values at every penetration would hold 4.4 GB (9 GB for
+  KISS I);
+- the run checks before its passes that its largest scoring item will fit in the heap;
+- checkpoints after every round of the passes and every item scored, resumed to the bit.
 
-Stage 1's report (FullIndexTimingReport) gives the seconds a state for the trees and the
-walks, the CPU time of a split valued afresh under one play that is not the chart's, the
-heap's peak and the memory a state's trees hold. It cannot give the second figure: a
-post-split policy is read from a group's fitted first decisions and later plays, and
-stage 1 fits nothing. Stage 2 counts it before the run is sized, as the distinct
-SplitValues prints per (state, pair deal) over every system's groups: under pass 0's
-policy (the stored first-decision fits, the chart after the first move), and again after
-pass 1, when the later plays first leave the chart.
+DRYRUNS
 
-The run's size and batch plan are set from those figures and the bootstrap measurement
-of section 4. The state file is read, never written.
+PROJECTION
+
+**Running it.** The run is FullIndexRun, from classes frozen from one commit, with the commit
+written beside them (it names the code in every checkpoint) and the catalog it reads from its
+working directory. It needs about 15 GB of free disk beyond its checkpoints, the tree store
+taking 14.9 GB (it refuses to start if the disk would be left with less than 3 GB), and
+should run plugged in; caffeinate -i keeps the machine awake.
+
+```sh
+R=/Users/justinbondurant/Documents/CardCountingEdgeCalculator
+W=$R/.worktrees/full-index
+SHA=$(git -C $W rev-parse --short HEAD)
+C=$R/runs/full-index/classes-$SHA
+# Freeze the commit's classes, once.
+T=$(mktemp -d) && git -C $W archive HEAD src counting-systems.json | tar -x -C $T \
+  && mkdir -p $C && javac -nowarn -d $C -cp $W/lib/mongo-java-driver-3.12.14.jar $T/src/*.java \
+  && git -C $W rev-parse HEAD > $C/commit.txt && cp $T/counting-systems.json $C/
+# The run: checkpoints and the tree store in runs/full-index/full-$SHA, progress in the log.
+cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+  FullIndexRun --states $R/runs/montreal-80.states --out $R/runs/full-index/full-$SHA \
+  --resamples RESAMPLES --threads 6 > $R/runs/full-index/full-$SHA.log 2>&1 &
+# After an interruption: the same command with --resume, appending to the log. It refuses
+# unless the classes, the state file and the settings are the run's own.
+cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+  FullIndexRun --states $R/runs/montreal-80.states --out $R/runs/full-index/full-$SHA \
+  --resamples RESAMPLES --threads 6 --resume >> $R/runs/full-index/full-$SHA.log 2>&1 &
+```
+
+The log takes a line as the first thread gets through each tenth of a round, one after each
+round and each scoring batch; at the end the run writes results.ser into its directory for
+the report, and prints each count's figures at 80%. The state file is read, never written.
 
 ## 7. What it does not do
 

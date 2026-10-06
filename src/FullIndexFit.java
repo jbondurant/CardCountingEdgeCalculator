@@ -2312,32 +2312,9 @@ final class FullIndexFit {
             if (perfect) {
                 out.perfect = fit.perfect;
             }
-            see.fitted(fits, fit);
             for (Strategy t : all) {
                 t.trim();
             }
-            double room = batchBytes;
-            if (room <= 0) {
-                double heap = heapFill * Runtime.getRuntime().maxMemory();
-                double held = FullIndexPilot.usedAfterGc();
-                room = heap - held;
-                Item big = largest(fits, items(fits));
-                if (big.bytes > room && keepSplits) {
-                    log("the largest scoring item, %s, holds %.2f GB, more than the %.2f GB left beside the %.2f GB the run "
-                            + "holds; the split values kept are let go to make room, and the last rounds value theirs "
-                            + "afresh", big.name, big.bytes / 1e9, room / 1e9, held / 1e9);
-                    fit.dropSplitCache();
-                    held = FullIndexPilot.usedAfterGc();
-                    room = heap - held;
-                }
-                if (big.bytes > room) {
-                    throw new IllegalStateException(String.format("the largest scoring item, %s, holds %.2f GB, more than "
-                            + "the %.2f GB left of %.0f%% of the heap beside the %.2f GB the run holds; the fit is "
-                            + "checkpointed, so resume it with a larger heap", big.name, big.bytes / 1e9, room / 1e9,
-                            100 * heapFill, held / 1e9));
-                }
-            }
-            log("every strategy fitted; scoring batches hold up to %.0f MB", room / 1e6);
 
             // The items, in order, and the parts already scored.
             List<int[]> items = new ArrayList<>();
@@ -2362,6 +2339,40 @@ final class FullIndexFit {
             if (todo.size() < items.size()) {
                 log("%d of %d scoring items were scored before", items.size() - todo.size(), items.size());
             }
+            // A count whose every item was scored before needs its strategies no more.
+            boolean[] waits = new boolean[counts.size()];
+            for (int[] it : todo) {
+                waits[it[0]] = true;
+            }
+            for (int k = 0; k < counts.size(); k++) {
+                if (!waits[k]) {
+                    fits.set(k, null);
+                }
+            }
+            see.fitted(fits, fit);
+
+            double room = batchBytes;
+            if (room <= 0) {
+                double heap = heapFill * Runtime.getRuntime().maxMemory();
+                double held = FullIndexPilot.usedAfterGc();
+                room = heap - held;
+                Item big = largest(fits, items(fits));
+                if (big.bytes > room && keepSplits) {
+                    log("the largest scoring item, %s, holds %.2f GB, more than the %.2f GB left beside the %.2f GB the run "
+                            + "holds; the split values kept are let go to make room, and the last rounds value theirs "
+                            + "afresh", big.name, big.bytes / 1e9, room / 1e9, held / 1e9);
+                    fit.dropSplitCache();
+                    held = FullIndexPilot.usedAfterGc();
+                    room = heap - held;
+                }
+                if (big.bytes > room) {
+                    throw new IllegalStateException(String.format("the largest scoring item, %s, holds %.2f GB, more than "
+                            + "the %.2f GB left of %.0f%% of the heap beside the %.2f GB the run holds; the fit is "
+                            + "checkpointed, so resume it with a larger heap", big.name, big.bytes / 1e9, room / 1e9,
+                            100 * heapFill, held / 1e9));
+                }
+            }
+            log("every strategy fitted; scoring batches hold up to %.0f MB", room / 1e6);
             out.scoreCpu = new double[counts.size()];
             SystemScorer.Result[] results = new SystemScorer.Result[counts.size()];
             for (int k = 0; k < counts.size(); k++) {

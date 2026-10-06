@@ -153,6 +153,9 @@ public final class FullIndexDryRun {
                 double fg = 0;
                 double lg = 0;
                 for (FullIndexFit.Fits f : fits) {
+                    if (f == null) {
+                        continue;
+                    }
                     for (FullIndexFit.Strategy t : f.all()) {
                         m.strategies++;
                         m.strategyRounds.add(t.passes + t.cleanUps);
@@ -497,6 +500,7 @@ public final class FullIndexDryRun {
             double[] valued = new double[k];
             double[] rounds = new double[k];
             double[] groups = new double[k];
+            double[] parts = new double[k];
             for (int i = 0; i < k; i++) {
                 java.util.Map<String, String> r = runs.get(i);
                 double cpu = d(r, "passTreeCpu") + d(r, "passWalkCpu") + d(r, "passSplitCpu");
@@ -511,6 +515,7 @@ public final class FullIndexDryRun {
                 valued[i] = d(r, "passSplitsValued") / states[i];
                 rounds[i] = d(r, "rounds");
                 groups[i] = d(r, "firstGroups");
+                parts[i] = d(r, "partBytes") / 1e6;
             }
             double[][] fit = {
                     row(out, "first-decision groups a strategy", states, groups, n, "%.2f"),
@@ -522,7 +527,8 @@ public final class FullIndexDryRun {
                     row(out, "last rounds, wall s a state", states, last, n, "%.4f"),
                     row(out, "scoring, wall s a state and resample", states, score, n, "%.3g"),
                     row(out, "split values kept, bytes a state", states, cache, n, "%.0f"),
-                    row(out, "plays and the rest held after the passes, MB", states, mb(plays), n, "%.0f")};
+                    row(out, "plays and the rest held after the passes, MB", states, mb(plays), n, "%.0f"),
+                    row(out, "items' checkpoints at 200 resamples, MB", states, parts, n, "%.0f")};
             double passes = (fit[3][1] + fit[4][1] + fit[5][1]) * n / 3600;
             double lastRounds = fit[6][1] * n / 3600;
 
@@ -547,11 +553,12 @@ public final class FullIndexDryRun {
             }
             out.printf("%nMemory at %,d states: %.2f GB held once fitted (the states and strategies' arrays as measured, "
                             + "the split values kept and the plays by their fits), leaving %.2f GB of 80%% of a 10 GiB heap "
-                            + "for a batch. The largest item holds %.2f GB%s; the %d items go in %d batches. The tree store "
-                            + "takes %.1f GB of disk; the checkpoints about %.1f GB.%n%n", n, held / 1e9, room / 1e9,
+                            + "for a batch. The largest item holds %.2f GB%s; the %d items go in %d batches. On disk: the "
+                            + "tree store %.1f GB; the fit checkpoint about %.2f GB (growing as the square root of the "
+                            + "states); the items' checkpoints about %.2f GB at 200 resamples and at most five times that "
+                            + "at 1,000, their resamples being most of them.%n%n", n, held / 1e9, room / 1e9,
                     most / 1e9, most > room ? ", MORE THAN FITS" : ", and fits", itemText.length, batches,
-                    TreeStore.bytes(n) / 1e9, (d(big, "checkpointBytes") * Math.sqrt(scale)
-                            + d(big, "partBytes") * scale) / 1e9);
+                    TreeStore.bytes(n) / 1e9, d(big, "checkpointBytes") * Math.sqrt(scale) / 1e9, fit[10][1] / 1e3);
             out.println("| Resamples | Passes h | Last rounds h | Scoring h | Total h |");
             out.println("|---|---|---|---|---|");
             for (int resamples : new int[]{200, 1000}) {
