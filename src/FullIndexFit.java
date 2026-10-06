@@ -1,3 +1,4 @@
+import java.io.PrintStream;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
@@ -780,7 +781,7 @@ final class FullIndexFit {
         /** Walks one state under the play in force, as its role asks. */
         void visit(int j, int s, PlayerTree.Counted counted, int role, Worker wk) {
             Policy pol = now;
-            PlayerTree.Walk walk = counted.walk(wk.play(this), PlayerTree.Mode.CONTESTED);
+            PlayerTree.Walk walk = wk.walk(counted, wk.play(this));
             if (values != null) {
                 record(pol, j, s, counted, walk, wk);
             } else {
@@ -1489,6 +1490,8 @@ final class FullIndexFit {
         int strategies;
         int states;
         long walks;
+        /** Walks worked out: a walk is shared by the strategies at a state that play the same later play (Worker.walk). */
+        long walksMade;
         long splitAsks;
         long splitChart;
         long splitKept;
@@ -1508,6 +1511,7 @@ final class FullIndexFit {
         synchronized void add(RoundStats o) {
             states += o.states;
             walks += o.walks;
+            walksMade += o.walksMade;
             splitAsks += o.splitAsks;
             splitChart += o.splitChart;
             splitKept += o.splitKept;
@@ -1533,6 +1537,8 @@ final class FullIndexFit {
         private SplitValues splitValues;
         private final Map<Integer, Set<String>> prints = new HashMap<>();
         private final IdentityHashMap<Strategy, PlayerTree.LaterPlay> plays = new IdentityHashMap<>();
+        private final IdentityHashMap<PlayerTree.LaterPlay, PlayerTree.Walk> walks = new IdentityHashMap<>();
+        private PlayerTree.Counted walked;
         /** This thread's sums of the round, per strategy, in the order first met. */
         private final IdentityHashMap<Strategy, Acc> accs = new IdentityHashMap<>();
         int n;
@@ -1564,11 +1570,34 @@ final class FullIndexFit {
             return plays.computeIfAbsent(t, Strategy::laterPlay);
         }
 
+        /**
+         * The contested walk of a count's tree under a later play, worked out once for every
+         * strategy at the state that plays the same LaterPlay: in pass 0 every strategy of a
+         * count plays the chart (PlayerTree.CHART), and walks the same tree the same way. A walk's
+         * values do not depend on who asks; its reach is spread again by each strategy, which
+         * reads it before the next one does.
+         */
+        PlayerTree.Walk walk(PlayerTree.Counted counted, PlayerTree.LaterPlay play) {
+            if (counted != walked) {
+                walks.clear();
+                walked = counted;
+            }
+            PlayerTree.Walk w = walks.get(play);
+            if (w == null) {
+                w = counted.walk(play, PlayerTree.Mode.CONTESTED);
+                walks.put(play, w);
+                stats.walksMade++;
+            }
+            return w;
+        }
+
         void beginState(int s) {
             state = s;
             dn = null;
             splitValues = null;
             prints.clear();
+            walks.clear();
+            walked = null;
         }
 
         void endState() {
@@ -1643,6 +1672,8 @@ final class FullIndexFit {
     /** Each state's round value with every decision of the dealt hand played best and split hands at the chart; NaN until worked out. */
     final double[] perfect;
     final List<RoundStats> rounds = new ArrayList<>();
+    /** Where a line goes after each round, and as the first thread gets through each tenth of its shoes; null for none. */
+    PrintStream log;
 
     /**
      * @param keepSplits keep every split value worked out, per state, for later rounds and later
@@ -1746,12 +1777,20 @@ final class FullIndexFit {
                     int first = k;
                     jobs.add(pool.submit(() -> {
                         Worker wk = new Worker();
+                        int mine = (shoes.size() - first + threads - 1) / threads;
+                        int done = 0;
                         for (int x = first; x < shoes.size(); x += threads) {
                             int[] range = shoes.get(x);
                             for (int s = range[0]; s < range[1]; s++) {
                                 state(s, byCount, local, wk);
                             }
                             wk.endShoe();
+                            done++;
+                            if (log != null && first == 0 && done * 10 / mine > (done - 1) * 10 / mine) {
+                                log.printf("  round %d, %d strategies: the first thread is %d%% through its shoes after %.0f s%n",
+                                        total.round, total.strategies, 100 * done / mine, (System.nanoTime() - start) / 1e9);
+                                log.flush();
+                            }
                         }
                         return wk;
                     }));
@@ -1774,6 +1813,16 @@ final class FullIndexFit {
                     t.endRound();
                 }
                 rounds.add(total);
+                if (log != null) {
+                    int left = 0;
+                    for (Strategy t : active) {
+                        left += t.done() || (holdFinal && t.phase == Phase.FINAL) ? 0 : 1;
+                    }
+                    log.printf("round %d done in %.1f s: %d strategies walked %d states; %d splits valued, %d of %d walks "
+                                    + "worked out; %d strategies go on%n", total.round, total.wall, total.strategies,
+                            total.states, total.splitValued, total.walksMade, total.walks, left);
+                    log.flush();
+                }
             }
         } finally {
             pool.shutdownNow();
@@ -1955,6 +2004,13 @@ final class FullIndexFit {
     static Scored scoreJoint(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens,
                              double batchBytes, int threads, boolean keepSplits, boolean perfect,
                              Map<CountKeys.Count, Double> widen, Watch watch) throws Exception {
+        return scoreJoint(scorer, trees, counts, pens, batchBytes, threads, keepSplits, perfect, widen, watch, null);
+    }
+
+    /** The same, with a line to log after each round and each batch; null for none. */
+    static Scored scoreJoint(SystemScorer scorer, Trees trees, List<CountKeys.Count> counts, int[] pens,
+                             double batchBytes, int threads, boolean keepSplits, boolean perfect,
+                             Map<CountKeys.Count, Double> widen, Watch watch, PrintStream log) throws Exception {
         Watch see = watch == null ? new Watch() {
         } : watch;
         Scored out = new Scored();
@@ -1965,6 +2021,7 @@ final class FullIndexFit {
             all.addAll(f.all());
         }
         FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), trees, threads, keepSplits, perfect);
+        fit.log = log;
         fit.run(all, true);
         out.fitWall = (System.nanoTime() - t0) / 1e9;
         out.rounds.add(new ArrayList<>(fit.rounds));
@@ -2039,6 +2096,12 @@ final class FullIndexFit {
                     results[batch.get(b)] = r;
                 }
                 out.scoreWall.add((System.nanoTime() - s0) / 1e9);
+                if (log != null) {
+                    log.printf("batch %d of %d counts: last round %.1f s, scored in %.1f s%n", out.batches.size() - 1,
+                            batch.size(), out.finalWall.get(out.finalWall.size() - 1),
+                            out.scoreWall.get(out.scoreWall.size() - 1));
+                    log.flush();
+                }
                 for (Strategy t : finals) {
                     t.release();
                 }

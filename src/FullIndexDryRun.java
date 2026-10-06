@@ -136,7 +136,7 @@ public final class FullIndexDryRun {
         long w0 = System.nanoTime();
         double budget = 0.45 * Runtime.getRuntime().maxMemory();
         m.scored = FullIndexFit.scoreJoint(scorer, FullIndexFit.built(st), counts, PENS, budget, threads, true, true, null,
-                watch);
+                watch, System.err);
         m.wall = (System.nanoTime() - w0) / 1e9;
         m.peakScore = FullIndexTimingReport.peakHeap();
         long with = FullIndexPilot.usedAfterGc();
@@ -156,9 +156,11 @@ public final class FullIndexDryRun {
                 PENS.length, sc.fitWall);
         roundTable(out, sc.rounds.get(0), m.st.size);
         FullIndexFit.RoundStats ft = FullIndexPilot.total(sc.rounds.get(0));
-        out.printf("%nIn all: %d state visits, %d walks; CPU a state visit: trees %.4f s, walks %.4f s (%.3f ms a walk), "
-                        + "splits %.4f s (%.1f ms a split valued); %.2f threads busy of %d.%n", ft.states, ft.walks,
-                ft.treeCpu / ft.states, ft.walkCpu / ft.states, 1000 * ft.walkCpu / ft.walks, ft.splitCpu / ft.states,
+        out.printf("%nIn all: %d state visits, %d walks, %d of them worked out; CPU a state visit: trees %.4f s, walks %.4f s "
+                        + "(%.3f ms a strategy's walk, its reach and sums included), splits %.4f s (%.1f ms a split valued); "
+                        + "%.2f threads busy of %d.%n",
+                ft.states, ft.walks, ft.walksMade, ft.treeCpu / ft.states, ft.walkCpu / ft.states,
+                1000 * ft.walkCpu / Math.max(1, ft.walks), ft.splitCpu / ft.states,
                 1000 * ft.splitCpu / Math.max(1, ft.splitValued), cpu(ft) / ft.wall, m.threads);
         out.printf("Rounds a strategy fitted (passes and clean-ups): %s; %d of %d capped. On average %.2f first-decision "
                 + "groups and %.2f later groups a strategy.%n", FullIndexPilot.histogram(m.strategyRounds), m.capped,
@@ -194,14 +196,15 @@ public final class FullIndexDryRun {
 
     /** One line a round: its strategies and what a state visit cost in it. */
     static void roundTable(PrintStream out, List<FullIndexFit.RoundStats> rounds, int states) {
-        out.println("| Round | Strategies | States | Walks a state | Wall s | CPU s a state: trees | walks | splits | "
-                + "Split asks a state | the chart's | already valued | valued | Distinct plays a pair deal | most | "
-                + "not the chart's, a state |");
-        out.println("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        out.println("| Round | Strategies | States | Walks a state | worked out | Wall s | CPU s a state: trees | walks | "
+                + "splits | Split asks a state | the chart's | already valued | valued | Distinct plays a pair deal | "
+                + "most | not the chart's, a state |");
+        out.println("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         for (FullIndexFit.RoundStats r : rounds) {
             double n = Math.max(1, r.states);
-            out.printf("| %d | %d | %d | %.1f | %.1f | %.4f | %.4f | %.4f | %.1f | %.1f | %.1f | %.2f | %.2f | %d | %.2f |%n",
-                    r.round, r.strategies, r.states, r.walks / n, r.wall, r.treeCpu / n, r.walkCpu / n, r.splitCpu / n,
+            out.printf("| %d | %d | %d | %.1f | %.1f | %.1f | %.4f | %.4f | %.4f | %.1f | %.1f | %.1f | %.2f | %.2f | %d | "
+                            + "%.2f |%n", r.round, r.strategies, r.states, r.walks / n, r.walksMade / n, r.wall, r.treeCpu / n,
+                    r.walkCpu / n, r.splitCpu / n,
                     r.splitAsks / n, r.splitChart / n, r.splitKept / n, r.splitValued / n,
                     r.pairDeals == 0 ? 0 : (double) r.distinctPlays / r.pairDeals, r.mostPlays, r.distinctOther / n);
         }

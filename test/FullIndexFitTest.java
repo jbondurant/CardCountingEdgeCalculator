@@ -1520,6 +1520,11 @@ public class FullIndexFitTest {
         for (FullIndexFit.RoundStats rs : joint.rounds.get(0)) {
             assertTrue(rs.states <= fx.st.size, "each state visited once a round");
         }
+        // In pass 0 every strategy of a count plays the chart after the first move, so a state's
+        // walk is worked out once a count and shared by its strategies there.
+        FullIndexFit.RoundStats pass0 = joint.rounds.get(0).get(0);
+        assertEquals((long) counts.size() * pass0.states, pass0.walksMade);
+        assertTrue(pass0.walks > pass0.walksMade, pass0.walks + " walks");
         assertArrayEquals(batched.perfect, joint.perfect, 0.0);
         assertSameResults(batched, joint, counts, pens);
     }
