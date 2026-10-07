@@ -19,7 +19,9 @@ import java.util.Locale;
  * card's first move (each move legal on a split hand put first, the chart's ranking after it),
  * keeping any change that raises V(Split), until a whole pass changes nothing. A local optimum:
  * delta is measured from below as far as the ascent stops short of the best SplitPlay, and the
- * report says so where it uses it.
+ * tool's own lines say so, as must anything that uses them. The mean is given at each penetration,
+ * over the sample's states of that penetration (summary), since each penetration's full-play bound
+ * takes its own margin.
  *
  * A state's delta, in the units of its round value, is the sum over the pair deals it can deal
  * of P(i) (1 - P(nat|i)) x (the best first move with Split at its best play, less the best first
@@ -192,25 +194,56 @@ final class SplitMargin {
         } finally {
             pool.shutdown();
         }
-        double num = 0;
-        double den = 0;
         long splits = 0;
-        for (int k = 0; k < delta.length; k++) {
-            double w = 1 / sample.get(k).q;
-            num += w * delta[k];
-            den += w;
-            splits += valued[k];
+        for (int v : valued) {
+            splits += v;
         }
-        double mean = num / den;
-        double ss = 0;
-        for (int k = 0; k < delta.length; k++) {
-            double w = 1 / sample.get(k).q;
-            ss += w * w * (delta[k] - mean) * (delta[k] - mean);
-        }
-        double se = Math.sqrt(ss) / den;
         out.printf("SplitMargin %s on %s: every %d-th record at 80%%, %d states, %d splits valued, %.0f s.%n",
                 FullIndexRun.commit(), file, every, sample.size(), splits, (System.nanoTime() - t0) / 1e9);
-        out.printf("Flat mean of delta, weighted 1/q: %.5f%% a round (SE %.5f%%); the margin at S = %d: %.4f%%.%n",
-                100 * mean, 100 * se, SystemScorer.SPREADS, 100 * SystemScorer.SPREADS * mean);
+        print(out, sample, delta);
+    }
+
+    /**
+     * The flat mean of delta at each penetration, weighted 1/q, over the sample's states of that
+     * penetration (depth under its cut): [penetration] {mean, its SE, states}.
+     */
+    static double[][] summary(List<StateStore.Record> sample, double[] delta) {
+        double[][] out = new double[SystemScorer.CUTS.length][];
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            double num = 0;
+            double den = 0;
+            int n = 0;
+            for (int k = 0; k < delta.length; k++) {
+                if (sample.get(k).depth < SystemScorer.CUTS[p]) {
+                    double w = 1 / sample.get(k).q;
+                    num += w * delta[k];
+                    den += w;
+                    n++;
+                }
+            }
+            double mean = num / den;
+            double ss = 0;
+            for (int k = 0; k < delta.length; k++) {
+                if (sample.get(k).depth < SystemScorer.CUTS[p]) {
+                    double w = 1 / sample.get(k).q;
+                    ss += w * w * (delta[k] - mean) * (delta[k] - mean);
+                }
+            }
+            out[p] = new double[]{mean, Math.sqrt(ss) / den, n};
+        }
+        return out;
+    }
+
+    /** summary's lines, each saying the mean is measured from below. */
+    static void print(PrintStream out, List<StateStore.Record> sample, double[] delta) {
+        out.println("Flat mean of delta, weighted 1/q, and the margin at S = " + SystemScorer.SPREADS + ": a lower bound, "
+                + "since the coordinate ascent stops at a local optimum of each state's split play; a full-play bound "
+                + "plus this margin is conditional on it.");
+        double[][] m = summary(sample, delta);
+        for (int p = 0; p < m.length; p++) {
+            out.printf(Locale.ROOT, "- %s: %.5f%% a round (SE %.5f%%) over %d states; the margin at S = %d, at least "
+                            + "%.4f%%.%n", SystemScorer.PENETRATIONS[p], 100 * m[p][0], 100 * m[p][1], (int) m[p][2],
+                    SystemScorer.SPREADS, 100 * SystemScorer.SPREADS * m[p][0]);
+        }
     }
 }

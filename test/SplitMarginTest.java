@@ -58,4 +58,32 @@ public class SplitMarginTest {
         }
         assertEquals(expected, d.delta, 1e-15);
     }
+
+    /**
+     * The tool's summary: at each penetration the mean of delta weighted 1/q over the sample's
+     * states of that penetration alone, and its lines call the mean and the margin a lower bound.
+     */
+    @Test
+    public void theMarginIsGivenPerPenetrationAndCalledALowerBound() throws Exception {
+        java.util.List<StateStore.Record> sample = new java.util.ArrayList<>();
+        int[] depths = {SystemScorer.CUTS[0] - 1, SystemScorer.CUTS[1] - 1, SystemScorer.CUTS[2] - 1, 10};
+        double[] q = {0.5, 0.25, 1, 0.1};
+        double[] delta = {0.001, 0.003, 0.010, 0.0};
+        for (int k = 0; k < depths.length; k++) {
+            sample.add(new StateStore.Record(k, 0, depths[k], q[k], new int[ShoeRun.KINDS], new double[StateStore.VALUES]));
+        }
+        double[][] m = SplitMargin.summary(sample, delta);
+        // 70%: the first and last states; 75%: and the second; 80%: all four.
+        assertEquals((2 * 0.001 + 10 * 0.0) / 12, m[0][0], 1e-15);
+        assertEquals((2 * 0.001 + 4 * 0.003 + 10 * 0.0) / 16, m[1][0], 1e-15);
+        assertEquals((2 * 0.001 + 4 * 0.003 + 1 * 0.010 + 10 * 0.0) / 17, m[2][0], 1e-15);
+        assertEquals(4, (int) m[2][2]);
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        SplitMargin.print(new java.io.PrintStream(bytes, true, "UTF-8"), sample, delta);
+        String text = new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(text.contains("a lower bound"), text);
+        for (String pen : SystemScorer.PENETRATIONS) {
+            assertTrue(text.contains("- " + pen + ": "), text);
+        }
+    }
 }
