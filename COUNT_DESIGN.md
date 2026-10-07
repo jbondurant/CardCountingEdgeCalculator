@@ -120,10 +120,11 @@ times its real value. The variant carries the divisor.
   of a running count is grain alone.
   **Measured, it is zero.** At D_r = 2,423 each of the 12 scores at g exactly what it scores at
   its own grain, every figure to the bit (calibration-1579078). With whole tags, its running
-  count only takes multiples of its tag unit (9,768 at K for Red Seven, its red seven's tag at g), so any divisor under the
-  unit keeps the keys in the order the catalog's have, and the scorer's figures depend on that
-  order alone. A divisor cannot make such a count finer; only a running count of real tags, as
-  F1r's are, is keyed finer at D_r. The true counts' grain parts run from +0.001% to +0.023%
+  count only takes multiples of its tag unit (9,768 at K for Red Seven, its red seven's tag at
+  g), up to the rounding of its tags at K, so a divisor under the unit but well above what that
+  rounding adds up to keeps the keys in the order the catalog's have, and the scorer's figures
+  depend on that order alone. A divisor cannot make such a count finer; only a running count of
+  real tags, as F1r's are, is keyed finer at D_r. The true counts' grain parts run from +0.001% to +0.023%
   at 80%, 1-8.
 - **The unrounded true count,** on which the report's BC and IC are computed, is not divided by
   D: a correlation does not see the scale.
