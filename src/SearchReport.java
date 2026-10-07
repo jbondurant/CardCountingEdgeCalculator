@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * java -Xmx8g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar SearchReport starts --states TWIN
  *   --divisor 500 [--threads 6] [--f1 TAGS --flat TAGS --betting TAGS]
  * java ... SearchReport report --states TWIN --logs DIR --floor NOISE.properties --divisor 500
- *   --running-divisor 2423 --betting TAGS --out FILE.md --candidates FILE.json
+ *   --running-divisor 2423 --betting TAGS --out FILE.md --candidates FILE.json [--eor TAGS]
  *   [--later TAGS --fullplay FILE.json] [--queue-log FILE] [--threads 6]
  * java ... SearchReport fullplay --results RESULTS.ser
  */
@@ -238,6 +238,30 @@ final class SearchReport {
             }
         }
         out.add(new Pair("the flat optimum for play, the betting direction for bets", flat, betting));
+        return out;
+    }
+
+    // ------------------------------------------------------------------ F1r's starts
+
+    /** KO's shift relative to its balanced part: its p0-weighted mean tag over the root of its spread. */
+    static double koShift() {
+        double[] ko = CountSearch.rankTags(CountSearch.catalogCount("KO (Knock-Out)"));
+        return CountKeys.mean(ko) / Math.sqrt(CountKeys.spread(ko));
+    }
+
+    /**
+     * F1r's two starts from F1's optimum (section 4): its tags, centred, with a shift of k times
+     * KO's relative to the balanced part's spread added to every tag, for each k given.
+     */
+    static double[][] f1rStarts(double[] f1, double... k) {
+        double m = CountKeys.mean(f1);
+        double root = Math.sqrt(CountKeys.spread(f1));
+        double[][] out = new double[k.length][11];
+        for (int j = 0; j < k.length; j++) {
+            for (int r = 1; r <= 10; r++) {
+                out[j][r] = f1[r] - m + k[j] * koShift() * root;
+            }
+        }
         return out;
     }
 
@@ -825,6 +849,18 @@ final class SearchReport {
         Direction flatBest = best(pub, 1).get(0);
         b.append("F1 flat's published start, the best by flat:\nstart\tF1 flat\t").append(flatBest.name).append('\t')
                 .append(Calibration.tagsText(flatBest.tags)).append('\t').append(flatBest.flat).append('\n');
+        if (f1 != null) {
+            double[] k = {0.5, 1.5};
+            double[][] r = f1rStarts(f1, k);
+            b.append(String.format(Locale.ROOT, "%nF1r's starts from F1's optimum, shifted by %s and %s times KO's relative "
+                    + "shift, %.6f, and from KO's own direction and balance:%n", k[0], k[1], koShift()));
+            for (int j = 0; j < k.length; j++) {
+                b.append("start\tF1r\tF1's optimum, shift ").append(k[j]).append(" KO's\t")
+                        .append(Calibration.tagsText(r[j])).append('\n');
+            }
+            b.append("start\tF1r\tKO\t").append(Calibration.tagsText(CountSearch.rankTags(
+                    CountSearch.catalogCount("KO (Knock-Out)")))).append('\n');
+        }
         if (f1 != null && flat != null && betting != null) {
             List<Pair> pairs = f2Starts(f1, flat, betting);
             List<Callable<Double>> jobs = new ArrayList<>();
@@ -925,6 +961,8 @@ final class SearchReport {
         Map<String, Double> sideCountAtG = new LinkedHashMap<>();
         /** The half counts scored on each half and the full twin: [h][0 own half, 1 other half, 2 full twin]. */
         double[][] halves;
+        /** The effects of removal off the top as tags by rank, for the tags' table; null for none. */
+        double[] eor;
         List<String> failures = new ArrayList<>();
     }
 
@@ -945,10 +983,12 @@ final class SearchReport {
         int threads = Integer.parseInt(o.getOrDefault("threads", "6"));
         double[] later = o.containsKey("later") ? CountSearch.parseTags(o.get("later")) : null;
         double[] betting = CountSearch.parseTags(need(o, "betting"));
+        double[] eor = o.containsKey("eor") ? CountSearch.parseTags(o.get("eor")) : null;
         List<Run> runs = runs(logs);
         ScoringStates st = twin(states);
         long t0 = System.nanoTime();
         Evidence e = evidence(st, runs, floor, d, dr, betting, threads, out);
+        e.eor = eor;
         String commit = FullIndexRun.commit();
         String text = reportText(e, commit, states, logs, o.containsKey("queue-log") ? Paths.get(o.get("queue-log")) : null,
                 (System.nanoTime() - t0) / 1e9);
@@ -1236,6 +1276,70 @@ final class SearchReport {
 
     // ------------------------------------------------------------------ the report's text
 
+    /**
+     * Each family's tags beside the effects of removal off the top and the best published counts'
+     * (the three best directions by 1-8, and Hi-Lo), every column centred and at Hi-Lo's spread,
+     * with each one's angle from F1.
+     */
+    static String tagsTable(Evidence e) {
+        List<String> names = new ArrayList<>();
+        List<double[]> cols = new ArrayList<>();
+        for (String fam : FAMILIES) {
+            List<Run> runs = e.families.get(fam);
+            if (runs == null || runs.isEmpty()) {
+                continue;
+            }
+            Run r = runs.get(0);
+            names.add(fam.equals("F2") ? "F2, play" : fam.equals("F1r") ? "F1r, balanced part" : fam);
+            cols.add(toDouble(r.play));
+            if (r.bet != null) {
+                names.add("F2, bets");
+                cols.add(toDouble(r.bet));
+            }
+        }
+        if (cols.isEmpty()) {
+            return "";
+        }
+        if (e.eor != null) {
+            names.add("Effects of removal");
+            cols.add(e.eor);
+        }
+        List<Direction> top = best(e.published, 0);
+        for (int k = 0; k < 3 && k < top.size(); k++) {
+            names.add(top.get(k).name);
+            cols.add(top.get(k).tags);
+        }
+        names.add("Hi-Lo");
+        cols.add(Calibration.sign());
+        StringBuilder b = new StringBuilder("\n## The tags\n\nEach family's count, the effects of removal off the top "
+                + "(EffectsOfRemoval, from the calibration) and the three best published directions by 1-8 with Hi-Lo, each "
+                + "centred and at Hi-Lo's spread (an F1r count's shift left out), and each one's angle from F1.\n\n| Rank");
+        for (String n : names) {
+            b.append(" | ").append(n);
+        }
+        b.append(" |\n|---");
+        for (int k = 0; k < names.size(); k++) {
+            b.append("|---");
+        }
+        b.append("|\n");
+        double[][] norm = new double[cols.size()][];
+        for (int k = 0; k < cols.size(); k++) {
+            norm[k] = CountKeys.normalised(cols.get(k));
+        }
+        for (int r = 1; r <= 10; r++) {
+            b.append("| ").append(Calibration.rank(r));
+            for (double[] c : norm) {
+                b.append(String.format(Locale.ROOT, " | %+.4f", c[r]));
+            }
+            b.append(" |\n");
+        }
+        b.append("| Angle from F1, degrees");
+        for (double[] c : norm) {
+            b.append(" | ").append(deg(Calibration.degrees(c, norm[0])));
+        }
+        return b.append(" |\n").toString();
+    }
+
     static String reportText(Evidence e, String commit, Path states, Path logs, Path queueLog, double seconds)
             throws IOException {
         StringBuilder b = new StringBuilder();
@@ -1287,6 +1391,8 @@ final class SearchReport {
         for (String f : e.failures) {
             b.append("  - ").append(f).append('\n');
         }
+
+        b.append(tagsTable(e));
 
         // The published directions.
         b.append("\n## Every published count's direction\n\nScored as the search scores a candidate (normalised, signed ")

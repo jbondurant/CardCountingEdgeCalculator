@@ -67,6 +67,22 @@ public class SearchReportTest {
         assertSame(ZEN, starts.get(starts.size() - 1).play);
     }
 
+    /** F1r's starts from F1's optimum keep its balanced part and carry k times KO's shift relative to it. */
+    @Test
+    public void f1rsStartsCarryAShareOfKosShift() {
+        double[] ko = CountSearch.rankTags(CountSearch.catalogCount("KO (Knock-Out)"));
+        assertEquals(1 / 13.0 / Math.sqrt(CountKeys.spread(ko)), SearchReport.koShift(), 1e-15);
+        double[] f1 = {0, -6694, 6353, 7604, 10986, 12732, 7640, 5972, 1195, -2264, -10881};
+        double[][] r = SearchReport.f1rStarts(f1, 0.5, 1.5);
+        for (int j = 0; j < 2; j++) {
+            assertEquals(1, CountSearch.cosine(r[j], f1), 1e-12, "the same balanced part");
+            assertEquals((j == 0 ? 0.5 : 1.5) * SearchReport.koShift(), CountKeys.mean(r[j]) / Math.sqrt(CountKeys.spread(r[j])),
+                    1e-12);
+        }
+        // KO itself carries a shift of one KO's.
+        assertEquals(SearchReport.koShift(), CountKeys.mean(ko) / Math.sqrt(CountKeys.spread(ko)), 0);
+    }
+
     private static CountSearch.Settings settings(String form, int maxEvals, String run) {
         CountSearch.Settings s = new CountSearch.Settings();
         s.form = form;
@@ -307,8 +323,11 @@ public class SearchReportTest {
         assertEquals(9 + 9 + SearchReport.TOP, e.slices8.size(), "the basis, the run's axes and the top published");
         assertNull(e.slicesFlat);
         assertTrue(e.failures.stream().noneMatch(s -> s.contains("below the start")), e.failures.toString());
+        e.eor = new double[]{0, -0.93, 0.71, 0.84, 1.12, 1.32, 0.87, 0.46, -0.08, -0.41, -0.97};
         String text = SearchReport.reportText(e, "c", Path.of("states"), dir, null, 0);
-        for (String section : new String[]{"## Summary", "## Every published count's direction", "## 1. Restarts agree",
+        assertTrue(text.contains("| Rank | F1 | Effects of removal | "), text);
+        assertTrue(text.contains("| Angle from F1, degrees | 0.0 | "), text);
+        for (String section : new String[]{"## Summary", "## The tags", "## Every published count's direction", "## 1. Restarts agree",
                 "### F1\n", "## 2. Slices at F1's optimum", "## 3. Every start is beaten", "## 5. The grain does not decide it"}) {
             assertTrue(text.contains(section), section);
         }
