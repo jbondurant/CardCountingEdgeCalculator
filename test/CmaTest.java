@@ -1,0 +1,194 @@
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Random;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * CMA-ES (Cma) reaches the known optima of standard test functions in 8 dimensions, and of a
+ * scale-invariant one scored through the counts' own normalisation, the same way for the same
+ * seed; and a search stopped and resumed from its log goes on exactly as it would have
+ * (COUNT_DESIGN.md, section 6).
+ */
+public class CmaTest {
+
+    private static final int N = 8;
+
+    interface F {
+        double of(double[] x);
+    }
+
+    /** Runs until the step is under tol or the evaluations are spent; gives the final mean. */
+    private static double[] maximise(Cma cma, F f, int maxEvals, double tol) {
+        while (cma.state.evaluations < maxEvals && cma.step() > tol) {
+            double[][] xs = cma.ask();
+            double[] v = new double[xs.length];
+            for (int k = 0; k < xs.length; k++) {
+                v[k] = f.of(xs[k]);
+            }
+            cma.tell(xs, v);
+        }
+        return cma.state.mean;
+    }
+
+    private static double[] optimum(long seed) {
+        Random rnd = new Random(seed);
+        double[] x = new double[N];
+        for (int i = 0; i < N; i++) {
+            x[i] = 2 * rnd.nextDouble() - 1;
+        }
+        return x;
+    }
+
+    private static double distance(double[] a, double[] b) {
+        double s = 0;
+        for (int i = 0; i < a.length; i++) {
+            s += (a[i] - b[i]) * (a[i] - b[i]);
+        }
+        return Math.sqrt(s);
+    }
+
+    /** A random rotation: Gram-Schmidt on Gaussian vectors. */
+    private static double[][] rotation(long seed) {
+        Random rnd = new Random(seed);
+        double[][] q = new double[N][N];
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                q[i][j] = rnd.nextGaussian();
+            }
+            for (int k = 0; k < i; k++) {
+                double d = 0;
+                for (int j = 0; j < N; j++) {
+                    d += q[i][j] * q[k][j];
+                }
+                for (int j = 0; j < N; j++) {
+                    q[i][j] -= d * q[k][j];
+                }
+            }
+            double n = 0;
+            for (int j = 0; j < N; j++) {
+                n += q[i][j] * q[i][j];
+            }
+            for (int j = 0; j < N; j++) {
+                q[i][j] /= Math.sqrt(n);
+            }
+        }
+        return q;
+    }
+
+    @Test
+    public void theSphere() {
+        double[] opt = optimum(1);
+        F f = x -> -Math.pow(distance(x, opt), 2);
+        double[] found = maximise(new Cma(N, 10, 1, new double[N], 1, 0), f, 20_000, 1e-9);
+        assertTrue(distance(found, opt) < 1e-6, "off by " + distance(found, opt));
+    }
+
+    @Test
+    public void aRotatedEllipsoid() {
+        double[] opt = optimum(2);
+        double[][] q = rotation(3);
+        F f = x -> {
+            double s = 0;
+            for (int i = 0; i < N; i++) {
+                double y = 0;
+                for (int j = 0; j < N; j++) {
+                    y += q[i][j] * (x[j] - opt[j]);
+                }
+                s += Math.pow(1e6, i / (N - 1.0)) * y * y;
+            }
+            return -s;
+        };
+        Cma cma = new Cma(N, 10, 2, new double[N], 1, 0);
+        double[] found = maximise(cma, f, 40_000, 1e-10);
+        assertTrue(distance(found, opt) < 1e-5, "off by " + distance(found, opt));
+        assertTrue(cma.condition() > 100, "it learned the ellipsoid's shape: " + cma.condition());
+    }
+
+    @Test
+    public void rosenbrock() {
+        F f = x -> {
+            double s = 0;
+            for (int i = 0; i < N - 1; i++) {
+                s += 100 * Math.pow(x[i + 1] - x[i] * x[i], 2) + Math.pow(1 - x[i], 2);
+            }
+            return -s;
+        };
+        double[] ones = new double[N];
+        java.util.Arrays.fill(ones, 1);
+        double[] found = maximise(new Cma(N, 10, 4, new double[N], 0.5, 0), f, 60_000, 1e-11);
+        assertTrue(distance(found, ones) < 1e-5, "off by " + distance(found, ones));
+    }
+
+    /**
+     * Scale-invariant: the cosine between a hidden direction and a candidate as the count search
+     * scores it (normalised, rounded at K, its sign fixed), with noise added. On the sphere it
+     * finds the direction to within a degree, and two searches of the same seed go the same way.
+     */
+    @Test
+    public void aHiddenDirectionThroughTheCountsNormalisation() {
+        double[] hidden = CountKeys.normalised(new double[]{0, -0.9, 0.4, 0.6, 0.8, 1.1, 0.7, 0.3, -0.1, -0.4, -0.85});
+        double[] sign = hidden.clone();
+        Random noise = new Random(5);
+        double[][] runs = new double[2][];
+        for (int run = 0; run < 2; run++) {
+            Random rnd = new Random(6);
+            F f = x -> {
+                int[] t = CountSearch.whole(x, sign);
+                double[] d = new double[11];
+                for (int r = 1; r <= 10; r++) {
+                    d[r] = t[r];
+                }
+                return CountSearch.cosine(d, hidden) + 1e-5 * rnd.nextGaussian();
+            };
+            double[] start = CountSearch.onSphere(CountSearch.coordinates(
+                    new double[]{0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1}));
+            Cma cma = new Cma(9, 12, 7, start, 0.3 * CountSearch.RADIUS, CountSearch.RADIUS);
+            runs[run] = maximise(cma, f, 3_000, Math.toRadians(0.05));
+            double r = 0;
+            for (double v : runs[run]) {
+                r += v * v;
+            }
+            assertEquals(CountSearch.RADIUS, Math.sqrt(r), 1e-12, "the mean stays on the sphere");
+            double cos = CountSearch.cosine(CountSearch.tags(runs[run]), hidden);
+            assertTrue(cos > Math.cos(Math.toRadians(1)), "the direction found is " + Math.toDegrees(Math.acos(cos))
+                    + " degrees off");
+        }
+        assertArrayEquals(runs[0], runs[1], 0, "the same seed goes the same way");
+        noise.nextInt();
+    }
+
+    /** A search stopped after any generation and resumed from its logged state ends where one never stopped ends. */
+    @Test
+    public void aResumedSearchGoesOnAsIfNeverStopped() throws Exception {
+        double[] opt = optimum(8);
+        F f = x -> -Math.pow(distance(x, opt), 2) - 0.1 * Math.abs(x[0]);
+        Cma whole = new Cma(N, 10, 9, new double[N], 1, 0);
+        double[] a = maximise(whole, f, 3_000, 0).clone();
+        Path dir = Files.createTempDirectory("cma");
+        Path file = dir.resolve("log.tsv");
+        Cma first = new Cma(N, 10, 9, new double[N], 1, 0);
+        try (CountSearch.SearchLog log = new CountSearch.SearchLog(file, "# test", false)) {
+            maximise(first, f, 1_230, 0);
+            log.state("r", first.state);
+        }
+        // Lines of a generation not finished, as an interruption leaves them, are cut on resuming.
+        Files.write(file, "eval\tr\t123\t0\t1.0\t0,0\n".getBytes(), java.nio.file.StandardOpenOption.APPEND);
+        Cma.State saved;
+        try (CountSearch.SearchLog log = new CountSearch.SearchLog(file, "# test", true)) {
+            saved = CountSearch.SearchLog.lastState(file, "r");
+        }
+        List<String> lines = Files.readAllLines(file);
+        assertTrue(lines.get(lines.size() - 1).startsWith("state\t"), "cut back to the last state");
+        Cma resumed = new Cma(N, 10, 9, new double[N], 1, 0);
+        resumed.restore(saved);
+        double[] b = maximise(resumed, f, 3_000, 0);
+        assertArrayEquals(a, b, 0);
+        assertEquals(whole.state.sigma, resumed.state.sigma, 0);
+        assertThrows(IllegalStateException.class, () -> new CountSearch.SearchLog(file, "# test", false));
+        assertThrows(IllegalStateException.class, () -> new CountSearch.SearchLog(file, "# another", true));
+    }
+}
