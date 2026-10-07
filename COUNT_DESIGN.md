@@ -544,7 +544,11 @@ only:
 Two checks tie the stored rows to the new code. If either fails, the run stops until the
 reason is found. (CeilingReport compares, to the bit, every estimate and resample of every
 entry of the three counts scored again; the refit check is run for the headline counts and
-Zen.)
+Zen. For the second it takes the published report, `--printed runs/report-final-26f0724.md`,
+required on the main file, prints its headline section again from the stored rows with
+ComparisonReport's own code, and requires every line of it, each row's estimate, SE, bias,
+interval, difference from Hi-Lo and simultaneous interval, and each penetration's average bet
+and multipliers, to read as published (CeilingReport.checkPrinted).)
 - Hi-Lo, Hi-Opt II with its side count, and Red Seven, a kind-aware count, are scored again
   with the new classes, and their entries must equal c06c061's to the bit.
 - c06c061's entries are set once beside report-final's printed figures: estimates, SE, bias
