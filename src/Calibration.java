@@ -64,7 +64,8 @@ import java.util.regex.Pattern;
  * custom counts it scores (the noise floor's directions, the colour check's rank average), the
  * theory pass's starts and the controls are written to OUT.candidates.json and read back, so the
  * counts that file lists are the counts scored, to the bit. It refuses the main state file
- * (CustomCounts.requireTwin) and writes nothing over an existing report.
+ * (CustomCounts.requireTwin), and any file whose header seed is not the twin's, and writes nothing over
+ * an existing report.
  *
  * Run from classes frozen from one commit with commit.txt and counting-systems.json beside them:
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar Calibration --states TWIN --out REPORT.md
@@ -259,6 +260,11 @@ final class Calibration {
     /** The calibration, from the parts already done if it was stopped. Writes the report and the candidates file. */
     static void run(Settings s, String commit, PrintStream log) throws Exception {
         CustomCounts.requireTwin(s.states);
+        long seed = StateStore.header(s.states).seed;
+        if (seed != CustomCounts.TWIN_SEED) {
+            throw new IllegalStateException(s.states + " has header seed " + seed + ", not the twin's, "
+                    + CustomCounts.TWIN_SEED + " (COUNT_DESIGN.md, section 4)");
+        }
         if (Files.exists(s.out)) {
             throw new IllegalStateException(s.out + " exists; write the calibration to a new file");
         }

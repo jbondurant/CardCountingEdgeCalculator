@@ -337,6 +337,32 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   out.
 - **The split margin.** The flat value of perfect split play, δ, on a sample of twin states,
   sized to take under an hour (section 2).
+- **As built** (Calibration), one command runs all of it and the theory pass below and writes
+  runs/custom-count/calibration-<sha>.md, from classes frozen from one commit (section 8, step 3).
+  Where the design left a choice, it is made so:
+  - the noise floor's directions are six, drawn at random perpendicular to Zen's in the search's
+    coordinates, the same six at every angle, each count whole at K as the search scores it; each
+    measure is the root mean square over the six at its angle, the sub-runs' spread divided by √8;
+    it is measured first at the default g, 1/20, and again at g if g is another grain;
+  - g is the coarsest of 1, 1/2, 1/4, 1/10, 1/20, 1/40, 1/100 and 1/200 past which no finer one
+    gains more than the noise floor at 1°, for Hi-Lo and for Zen alike;
+  - D_r is D times the cards left at the median depth of the 80% states, each weighted 1/q, over
+    52;
+  - the proxy check takes the main file's differences and paired SEs from full-c06c061's
+    results.ser, after requiring that its rows print report-final's headline to the digit
+    (CeilingReport.checkPrinted), and fails when, the rows taken as independent, chance would give
+    so few within 2 less than 1% of the time;
+  - the colour check pairs the two counts over 100 resamples, and calls Red Seven better beyond
+    noise when its 95% interval's lower end is above zero;
+  - the split margin's sample is sized from a pilot of 14 states to take about 50 minutes on 7
+    threads, states spread evenly through the file;
+  - one evaluation is the median of five on one thread, after two untimed, with nothing else of
+    the calibration running, for F1, F2, F2's betting block, F1r and F1 on a half; a generation of
+    twelve on the search's six threads, against the same twelve one after another, says what six
+    threads are worth, and the budget of section 7 is priced from these;
+  - the counts of our own it scores, the theory pass's starts at g and the controls are written to
+    a candidates file beside the report and read back, so that file lists the counts scored, to
+    the bit. Each section is kept as it finishes, so a calibration stopped part way resumes.
 
 **The theory pass, on the twin,** for starting points and for reading the result. One pass,
 every sum weighted 1/q (CountRegression, new):
@@ -795,6 +821,23 @@ its index before its first tree, so no store of this code stands without one
    runs/custom-count/calibration-<sha>.md, with the evaluation time, the proxy check, the
    noise floor both ways, g, every published row at g and the controls, the colour check, the
    split margin, the effects of removal, R, the later-play direction and the depth figure.
+   It is one command, from classes frozen from one commit with the commit and the catalog beside
+   them, as the full-index run's are; run again after an interruption, it resumes from the
+   sections it kept in calibration-<sha>.md.parts:
+
+   ```sh
+   R=/Users/justinbondurant/Documents/CardCountingEdgeCalculator
+   W=$R/.worktrees/count-design
+   SHA=$(git -C $W rev-parse --short HEAD)
+   C=$R/runs/custom-count/classes-$SHA
+   T=$(mktemp -d) && git -C $W archive HEAD src counting-systems.json | tar -x -C $T \
+     && mkdir -p $C && javac -nowarn -d $C -cp $W/lib/mongo-java-driver-3.12.14.jar $T/src/*.java \
+     && git -C $W rev-parse HEAD > $C/commit.txt && cp $T/counting-systems.json $C/
+   cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+     Calibration --states $R/runs/twin-80.states --out $R/runs/custom-count/calibration-$SHA.md \
+     --published $R/runs/full-index/full-c06c061/results.ser --printed $R/runs/report-final-26f0724.md \
+     --twin-log $R/runs/twin-80.log --threads 7 >> $R/runs/custom-count/calibration-$SHA.log 2>&1 &
+   ```
 4. **The searches and slices.** *Produces:* the evaluation logs and the candidate counts,
    with the convergence evidence of section 4.
 5. **The full-play choice,** on the twin. *Produces:* the full-play F1.

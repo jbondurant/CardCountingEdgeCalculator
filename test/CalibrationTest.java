@@ -147,13 +147,19 @@ public class CalibrationTest {
     }
 
     @Test
-    public void theMainFileIsRefusedBeforeAnythingIsWritten(@TempDir Path dir) throws Exception {
+    public void theMainFileAndAnyOtherButTheTwinAreRefusedBeforeAnythingIsWritten(@TempDir Path dir) throws Exception {
         Path main = CustomCountsTest.stateFile(dir, CustomCounts.MAIN_SEED);
         List<String> before = list(dir);
         Calibration.Settings s = small(main, dir.resolve("c.md"), dir.resolve("results.ser"), null, null);
         IllegalStateException e = assertThrows(IllegalStateException.class, () -> Calibration.run(s, "test", NOWHERE));
         assertTrue(e.getMessage().contains("main state file"), e.getMessage());
-        assertEquals(before, list(dir));
+        Path other = CustomCountsTest.stateFile(dir, 77);
+        List<String> withOther = list(dir);
+        Calibration.Settings o = small(other, dir.resolve("c.md"), dir.resolve("results.ser"), null, null);
+        e = assertThrows(IllegalStateException.class, () -> Calibration.run(o, "test", NOWHERE));
+        assertTrue(e.getMessage().contains("not the twin's"), e.getMessage());
+        assertEquals(before.size() + 2, withOther.size(), "the other file and its progress");
+        assertEquals(withOther, list(dir));
     }
 
     private static List<String> list(Path dir) throws Exception {
