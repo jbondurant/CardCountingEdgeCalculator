@@ -165,12 +165,20 @@ standard every published row is held to. Two parts of that need saying.
   F1, F2 and Zen are also scored with moves and insurance refitted on the training fold
   with each state's schedule bet as a weight, a labelled check row: the check
   FULL_INDEX_PLAYS.md section 4 plans for one system, which nothing has measured yet.
+  (SystemScorer.scheduleRefit.) The groups are held as the flat fit formed them; a training
+  state's bet is the 1-8 same-schedule bet its key gets when the schedule is handed out over
+  the training fold itself, by the advantage fitted there under the flat play; the test fold
+  is then bet as usual, the advantage fitted again under the refitted play. The bootstrap
+  refits all of it on every resample. At spread 1 every bet is 1 and the check is the flat
+  fit, to the bit (CeilingScoringTest).
 - **Finite data costs something.** Report-final's learning-curve column measures it: play
   and insurance fitted on half of each training fold lower the flat EV at 80% by 0.0015% for
   Hi-Lo and by up to 0.0027% (Canfield Expert), several times the decision bounds (0.0002% to
   0.0006%), and that is flat, not 1-8. So the ceiling is stated at about 30,370 training
   states a fold, and each registered custom count's half-fit change is given at 1-8 as well
-  as flat.
+  as flat. At 1-8 the bets' advantage is fitted on the same half as the play and insurance,
+  and the schedule handed out on the whole test fold (Entry.halfFitSame). It is worked out at
+  first decisions only; full play keeps the flat half fit it has.
 
 ## 2. Where the ceiling sits
 
@@ -201,9 +209,21 @@ each state's own value.
   review's scratch figure, 0.0097% a round flat on 84 states (FULL_INDEX_PLAYS.md, top table),
   is only a guide to its size: at S = 8 it would make the margin about 0.08% (by arithmetic).
   The report states the margin wherever it uses this row.
+  - **As built** (SplitMargin), δ at a state is what the best split play a count's tables could
+    give it adds to the perfect row's first moves: for each pair deal, the play a SplitPlay
+    draws from a hit or stand at each contested later total and a first move for each second
+    card, found by coordinate ascent from the chart's. The ascent stops at a local optimum, so
+    δ is measured from below, and the margin with it; the report says so.
 - **The ceiling count's own play and insurance, bet on each state's own round value under
   that play.** This is not a bound on other counts. It splits the ceiling's gap to perfection
   into what its betting loses and what its play loses.
+
+As built (SystemScorer.bounds, ownValueBets): a fold's test states with weight are sorted by
+their own value, states of equal value form one block, and each block gets the average over
+its weight of the reference bets laid out in order of chart advantage, as a count's keys do.
+The own-value row is an entry a scorer adds, when asked (ownValueRows), after a count's other
+entries, at first decisions and with full play, so every published Result keeps its entries
+in their places. FullIndexRun asks for it whenever it runs counts from a file.
 
 **Only flat and same-schedule cells have a bound.** Under the own ramp a count sets its own
 bets, clamp(â/0.25%, 1, S), and where its fitted advantage exceeds a state's perfect value it
@@ -317,6 +337,13 @@ every sum weighted 1/q (CountRegression, new):
   give a later-play direction for the full-play choice.
 - **Depth.** The R² that 1/n adds to the betting regression: how much the advantage moves
   with depth at an equal composition. No true count sees that; F1r can, in part.
+- **As built,** the later regression reads the shares at each decision from the keys of ten
+  indicator counts, one rank each at a tag of 1,000,000, whose true count gives the share to
+  1e-8; reach is spread from the deals whose first move, the chart's, is Hit, and the walk is
+  the chart's later play. A spot's worth is what deviating from the chart there gains, summed
+  over its nodes. The playing and later-play starts add each direction weighted by its gain or
+  worth, each first turned to lean Hi-Lo's way, since a count and its negative key a decision
+  alike.
 - **Effects of removal off the top** (EffectsOfRemoval, new). The full 8-deck shoe is valued
   by ExactRound with the chart, then with k cards of each rank removed and with k added
   (central differences): about 21 valuations of about a second each (COUNTING_COMPARISON.md
@@ -373,6 +400,12 @@ against each other) and does not depend on the choice of axes.
   direction and balance.
 - **Every evaluation is logged** (tags, objective, run, generation), so a search can be
   audited, its landscape inspected and a stopped search resumed.
+- **As built** (CountSearch, Cma): the sign reference is Hi-Lo unless one is given. F2's blocks
+  each take a seventh of the budget, over at most three cycles, and the joint polish a third,
+  so an F2 search may spend somewhat more than its cap; the polish runs on the eighteen
+  coordinates of both vectors, kept on the sphere of radius √2 times Hi-Lo's, each vector
+  normalised again before it is scored. F1r's sphere is its balanced part's, the shift scaled
+  with it.
 
 **How we know it found the maximum, or how close.** The objective has jumps, so no search can
 prove a global maximum. These show that nothing within the data's resolution was missed:
@@ -439,6 +472,9 @@ each headline row:
   Betting-only rows answer another question and are not comparators.
 - Every other custom row (F1r, F1r's tags as a true count, the half-twin counts, the refit
   check) is a labelled check, never promoted in any cell.
+- **As built,** a count's entry in custom-counts.json may name its comparators, "plain" or
+  "all"; without it the rule above applies, plain rows for a count with one vector and every
+  row for one with a betting vector (CustomCounts, CeilingReport).
 
 **One look.** The main-file tools refuse a custom-counts.json that is uncommitted or modified,
 and print its git blob hash. Each run appends a line to a committed ledger,
@@ -469,7 +505,9 @@ only:
 - the bound rows of section 2.
 
 Two checks tie the stored rows to the new code. If either fails, the run stops until the
-reason is found.
+reason is found. (CeilingReport compares, to the bit, every estimate and resample of every
+entry of the three counts scored again; the refit check is run for the headline counts and
+Zen.)
 - Hi-Lo, Hi-Opt II with its side count, and Red Seven, a kind-aware count, are scored again
   with the new classes, and their entries must equal c06c061's to the bit.
 - c06c061's entries are set once beside report-final's printed figures: estimates, SE, bias

@@ -56,6 +56,14 @@ public final class FullIndexRun {
     static final long DISK_MARGIN = 3_000_000_000L;
 
     public static void main(String[] args) throws Exception {
+        run(args, commit(), System.out, DISK_MARGIN);
+    }
+
+    /**
+     * The run, its classes' commit and the disk margin given rather than read and fixed, so a test
+     * can run it on classes built without a commit.txt and a disk of any size.
+     */
+    static void run(String[] args, String commit, PrintStream log, long diskMargin) throws Exception {
         Path states = null;
         Path out = null;
         Path treeFile = null;
@@ -114,8 +122,6 @@ public final class FullIndexRun {
         if (treeFile == null && !noTrees) {
             treeFile = out.resolve("trees.bin");
         }
-        String commit = commit();
-        PrintStream log = System.out;
         long t0 = System.nanoTime();
         int fileShoes = StateStore.shoesDone(states);
         if (shoes < 0) {
@@ -176,7 +182,7 @@ public final class FullIndexRun {
         }
         TreeStore store = noTrees ? null
                 : readOnlyTrees ? TreeStore.readOnly(st, treeFile, stateFile(states) + "\nstates " + st.size)
-                : new TreeStore(st, treeFile, treeIdentity, DISK_MARGIN);
+                : new TreeStore(st, treeFile, treeIdentity, diskMargin);
         FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, threads);
         run.trees = store != null ? store : FullIndexFit.built(st);
         run.checkpoint = ck;

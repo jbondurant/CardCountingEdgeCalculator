@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  *   "twin": "the twin file's header", "searchCommit": "...",      (registered)
  *   "cells": {...}, "comparators": {...},                           (registered, kept as text)
  *   "counts": [
- *     { "name": "...", "family": "F1", "role": "headline",
+ *     { "name": "...", "family": "F1", "role": "headline", "comparators": "plain" or "all",
  *       "form": "true" or "running", "divisor": 500,
  *       "tags": [A, 2, 3, 4, 5, 6, 7, 8, 9, T],                     whole numbers at K
  *       "betting": [A, ..., T] },                                   optional: F2's betting vector
@@ -60,11 +60,31 @@ final class CustomCounts {
         final CountKeys.Count count;
         final String family;
         final String role;
+        /**
+         * A headline row's comparators: "plain" for the catalog's counts playing their own fits,
+         * "all" for those and their side-count variants; null for the rule of section 5, plain for
+         * a count with one vector and all for one with a betting vector.
+         */
+        final String comparators;
 
         Entry(CountKeys.Count count, String family, String role) {
+            this(count, family, role, null);
+        }
+
+        Entry(CountKeys.Count count, String family, String role, String comparators) {
+            if (comparators != null && !comparators.equals("plain") && !comparators.equals("all")) {
+                throw new IllegalArgumentException(count.name + "'s comparators are \"plain\" or \"all\", not "
+                        + comparators);
+            }
             this.count = count;
             this.family = family;
             this.role = role;
+            this.comparators = comparators;
+        }
+
+        /** Whether the headline row is compared with the side-count variants too. */
+        boolean allComparators() {
+            return comparators == null ? count.betVector != null : comparators.equals("all");
         }
     }
 
@@ -173,7 +193,7 @@ final class CustomCounts {
         int[] tags = tags(file, name, c.get("tags"));
         int[] betting = c.containsKey("betting") ? tags(file, name, c.get("betting")) : null;
         CountKeys.Count count = CountKeys.whole(name, tags, betting, divisor.intValue(), form.equals("true"));
-        return new Entry(count, family, role);
+        return new Entry(count, family, role, c.getString("comparators"));
     }
 
     /** Ten whole numbers, A and 2 to 9 and T, as tags by rank 1 to 10. */

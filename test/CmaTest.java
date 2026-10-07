@@ -161,6 +161,51 @@ public class CmaTest {
         noise.nextInt();
     }
 
+    /**
+     * A slice through a point five degrees from a hidden direction, toward it, peaks five degrees
+     * along; its quadratic fit finds the peak and the headroom left; and a slice through the
+     * hidden direction itself peaks at it, with nothing left.
+     */
+    @Test
+    public void slicesPeakWhereTheObjectiveDoes() {
+        double[] hidden = CountSearch.coordinates(new double[]{0, -0.9, 0.4, 0.6, 0.8, 1.1, 0.7, 0.3, -0.1, -0.4, -0.85});
+        double[] h = CountSearch.onSphere(hidden);
+        CountSearch.Objective f = x -> {
+            double xy = 0;
+            double xx = 0;
+            for (int k = 0; k < 9; k++) {
+                xy += x[k] * h[k];
+                xx += x[k] * x[k];
+            }
+            return xy / Math.sqrt(xx) / CountSearch.RADIUS;
+        };
+        double[] other = CountSearch.onSphere(CountSearch.coordinates(new double[]{0, 0.2, 0.9, -0.3, 0.6, 0.1, 0.7, -0.5,
+                0.4, 0.3, -0.6}));
+        // The unit vector in the plane of the hidden direction and another, perpendicular to the first.
+        double hd = 0;
+        for (int k = 0; k < 9; k++) {
+            hd += h[k] * other[k];
+        }
+        double[] d = new double[9];
+        double dd = 0;
+        for (int k = 0; k < 9; k++) {
+            d[k] = other[k] - hd / (CountSearch.RADIUS * CountSearch.RADIUS) * h[k];
+            dd += d[k] * d[k];
+        }
+        double a = Math.toRadians(5);
+        double[] centre = new double[9];
+        for (int k = 0; k < 9; k++) {
+            centre[k] = Math.cos(a) * h[k] - Math.sin(a) * d[k] * CountSearch.RADIUS / Math.sqrt(dd);
+        }
+        double[] q = CountSearch.quadratic(CountSearch.slice(f, centre, d, Math.toRadians(4), 9));
+        assertEquals(5, Math.toDegrees(q[3]), 0.05, "the peak five degrees along");
+        assertEquals(1 - Math.cos(a), q[4], 1e-4, "the headroom is what the peak gains");
+        double[] at = CountSearch.quadratic(CountSearch.slice(f, h, d, Math.toRadians(4), 9));
+        assertEquals(0, Math.toDegrees(at[3]), 1e-6);
+        assertEquals(0, at[4], 1e-12);
+        assertEquals(0, CountSearch.slice(f, h, h, 0.1, 5).length, "no slice along the centre");
+    }
+
     /** A search stopped after any generation and resumed from its logged state ends where one never stopped ends. */
     @Test
     public void aResumedSearchGoesOnAsIfNeverStopped() throws Exception {

@@ -342,7 +342,8 @@ final class CountSearch {
                 int keep = 0;
                 for (int k = 0; k < lines.size(); k++) {
                     String l = lines.get(k);
-                    if (l.startsWith("#") || l.startsWith("state\t") || l.startsWith("final\t") || l.startsWith("note\t")) {
+                    if (l.startsWith("#") || l.startsWith("state\t") || l.startsWith("final\t") || l.startsWith("note\t")
+                            || l.startsWith("found\t")) {
                         keep = k + 1;
                     }
                 }
@@ -374,6 +375,12 @@ final class CountSearch {
 
         synchronized void finalMean(String run, double value, String tags, int evaluations) throws IOException {
             out.write("final\t" + run + "\t" + value + "\t" + tags + "\t" + evaluations + "\n");
+            out.flush();
+        }
+
+        /** A search's count, as candidates writes it: its form, divisor, tags (F2's betting tags after "|") and objective. */
+        synchronized void found(String run, String form, int divisor, String tags, double value) throws IOException {
+            out.write("found\t" + run + "\t" + form + "\t" + divisor + "\t" + tags + "\t" + value + "\n");
             out.flush();
         }
 
@@ -473,6 +480,28 @@ final class CountSearch {
         if (s.sign == null) {
             s.sign = rankTags(CountKeys.whole("Hi-Lo", new int[]{0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1}, null, 1, true));
         }
+        CountKeys.Count found = searchForm(sc, s, start, startBet, log, resume, out);
+        if (log != null) {
+            int[] play = new int[11];
+            int[] bet = null;
+            for (int r = 1; r <= 10; r++) {
+                play[r] = found.rankTag(r);
+            }
+            if (found.betVector != null) {
+                bet = new int[11];
+                for (int k = 0; k < ShoeRun.KINDS; k++) {
+                    bet[ShoeRun.rankOf(k)] = found.betVector[k];
+                }
+            }
+            CountKeys.Count v = CountKeys.bettingVariant(found);
+            double value = sc.estimate(found, v, s.pen)[v == null ? 0 : 2][s.metric];
+            log.found(s.run, s.form, s.divisor, tagText(play) + (bet == null ? "" : "|" + tagText(bet)), value);
+        }
+        return found;
+    }
+
+    private static CountKeys.Count searchForm(SystemScorer sc, Settings s, double[] start, double[] startBet,
+                                              SearchLog log, boolean resume, PrintStream out) throws Exception {
         switch (s.form) {
             case "F1": {
                 Final f = cmaRun(sc, s, f1(sc, s), onSphere(coordinates(start)), RADIUS, s.run, s.maxEvals, log, resume,
@@ -581,6 +610,20 @@ final class CountSearch {
 
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.ROOT);
+        if (args.length > 0 && args[0].equals("candidates")) {
+            // candidates OUT LOG...: the searches' final counts, as a candidates file for the twin.
+            List<Path> logs = new ArrayList<>();
+            for (int a = 2; a < args.length; a++) {
+                logs.add(Paths.get(args[a]));
+            }
+            Path out = Paths.get(args[1]);
+            if (Files.exists(out)) {
+                throw new IllegalStateException(out + " exists; write the candidates to a new file");
+            }
+            Files.write(out, candidates(logs).getBytes(StandardCharsets.UTF_8));
+            CustomCounts.read(out);
+            return;
+        }
         Path states = null;
         Path logFile = null;
         Settings s = new Settings();
@@ -657,6 +700,96 @@ final class CountSearch {
             log.note(s.run, "found " + found.describe());
         }
         out.printf("Found %s in %.0f s.%n", found.describe(), (System.nanoTime() - t0) / 1e9);
+    }
+
+    // ------------------------------------------------------------------ slices
+
+    /**
+     * A slice through a point on the sphere (COUNT_DESIGN.md, section 4, "Slices peak at the
+     * optimum"): the objective along the great circle from the centre toward a direction, at
+     * angles from -maxAngle to maxAngle in radians, points of them, as {angle, value} pairs. The
+     * direction is first made perpendicular to the centre; a direction along the centre has no
+     * slice and gives none.
+     */
+    static double[][] slice(Objective f, double[] centre, double[] direction, double maxAngle, int points) {
+        double[] c = onSphere(centre);
+        double cd = 0;
+        double cc = 0;
+        for (int k = 0; k < c.length; k++) {
+            cd += c[k] * direction[k];
+            cc += c[k] * c[k];
+        }
+        double[] d = new double[c.length];
+        double dd = 0;
+        for (int k = 0; k < c.length; k++) {
+            d[k] = direction[k] - cd / cc * c[k];
+            dd += d[k] * d[k];
+        }
+        if (!(dd > 1e-24 * cc)) {
+            return new double[0][];
+        }
+        for (int k = 0; k < c.length; k++) {
+            d[k] *= RADIUS / Math.sqrt(dd);
+        }
+        double[][] out = new double[points][];
+        for (int i = 0; i < points; i++) {
+            double a = points == 1 ? 0 : -maxAngle + 2 * maxAngle * i / (points - 1);
+            double[] x = new double[c.length];
+            for (int k = 0; k < c.length; k++) {
+                x[k] = Math.cos(a) * c[k] + Math.sin(a) * d[k];
+            }
+            out[i] = new double[]{a, f.of(x)};
+        }
+        return out;
+    }
+
+    /**
+     * The least-squares quadratic v = a + b t + c t^2 through a slice's points, and from it the peak:
+     * {a, b, c, the angle of the peak, the headroom (the peak's value less the value at 0)}, the
+     * peak NaN where the fit does not curve down. Near a maximum the loss grows as c t^2, so every
+     * angle under sqrt(noise / -c) costs less than the noise floor.
+     */
+    static double[] quadratic(double[][] pts) {
+        CountRegression.Wls w = new CountRegression.Wls(2);
+        for (double[] p : pts) {
+            w.add(new double[]{p[0], p[0] * p[0]}, p[1], 1);
+        }
+        double[] b = w.solve();
+        double peak = b[2] < 0 ? -b[1] / (2 * b[2]) : Double.NaN;
+        double headroom = b[2] < 0 ? b[1] * peak + b[2] * peak * peak : Double.NaN;
+        return new double[]{b[0], b[1], b[2], peak, headroom};
+    }
+
+    // ------------------------------------------------------------------ candidates
+
+    /**
+     * A candidates file (CustomCounts) of every search's count in the logs given, as each search's
+     * found line records it: named after its run, of its form and divisor, its whole-number tags
+     * (an F2 count's betting tags after "|"), with the objective it scored on the twin.
+     */
+    static String candidates(List<Path> logs) throws IOException {
+        StringBuilder b = new StringBuilder("{ \"kind\": \"candidates\", \"K\": " + CountKeys.K + ", \"counts\": [\n");
+        boolean first = true;
+        for (Path log : logs) {
+            for (String l : Files.readAllLines(log, StandardCharsets.UTF_8)) {
+                String[] f = l.split("\t", -1);
+                if (!f[0].equals("found")) {
+                    continue;
+                }
+                String[] vectors = f[4].split("\\|");
+                b.append(first ? "" : ",\n").append("  { \"name\": \"").append(f[1].replace("\"", "'"))
+                        .append("\", \"family\": \"").append(f[2]).append("\", \"role\": \"candidate\", \"form\": \"")
+                        .append(f[2].equals("F1r") ? "running" : "true").append("\", \"divisor\": ").append(f[3])
+                        .append(", \"objective\": ").append(f[5]).append(",\n    \"tags\": [").append(vectors[0])
+                        .append("]");
+                if (vectors.length > 1) {
+                    b.append(",\n    \"betting\": [").append(vectors[1]).append("]");
+                }
+                b.append(" }");
+                first = false;
+            }
+        }
+        return b.append(" ] }\n").toString();
     }
 
     static CountKeys.Count catalogCount(String system) {

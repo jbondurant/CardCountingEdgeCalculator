@@ -26,6 +26,12 @@ import java.util.concurrent.Future;
  * Every figure is in units of the bet, shown as a percentage. Differences are paired: a row
  * that plays its own fit is compared with Hi-Lo playing its own, and a betting-only row with
  * Hi-Lo betting only, on the same states and the same bootstrap resamples.
+ *
+ * With --published RESULTS --counts FILE it makes the ceiling count's report instead
+ * (CeilingReport): the published rows read from a full-index run's results.ser, and only the
+ * counts the file lists scored, beside the bound rows and the refit check.
+ * java -Xmx12g -cp ... ComparisonReport FILE --published runs/full-index/full-c06c061/results.ser
+ *      --counts custom-counts.json [--resamples N] [--threads T]
  */
 public final class ComparisonReport {
 
@@ -46,6 +52,9 @@ public final class ComparisonReport {
         int threads = 1;
         /** Disjoint sub-runs to calibrate the standard errors on; 0 for none. */
         int calibrate;
+        /** A full-index run's results.ser to read the published rows from, and the counts to score beside them. */
+        Path published;
+        Path counts;
     }
 
     public static void main(String[] args) throws Exception {
@@ -69,11 +78,24 @@ public final class ComparisonReport {
                 case "--calibrate":
                     o.calibrate = Integer.parseInt(args[++a]);
                     break;
+                case "--published":
+                    o.published = Paths.get(args[++a]);
+                    break;
+                case "--counts":
+                    o.counts = Paths.get(args[++a]);
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown option " + args[a]);
             }
         }
         Locale.setDefault(Locale.ROOT);
+        if ((o.published == null) != (o.counts == null)) {
+            throw new IllegalArgumentException("--published and --counts go together");
+        }
+        if (o.published != null) {
+            CeilingReport.run(Paths.get(args[0]), o.published, o.counts, o.resamples, Math.max(1, o.threads), System.out);
+            return;
+        }
         run(Paths.get(args[0]), o, System.out);
     }
 

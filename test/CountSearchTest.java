@@ -159,5 +159,20 @@ public class CountSearchTest {
         double v2 = sc.estimate(f2, CountKeys.bettingVariant(f2), s2.pen)[2][s2.metric];
         double v1 = sc.estimate(f1, null, s1.pen)[0][s1.metric];
         assertTrue(v2 > v1, "F2 " + v2 + " beats F1 " + v1);
+
+        // The searches' finals, written as a candidates file, read back as the counts found, to the bit.
+        Path file = dir.resolve("candidates.json");
+        Files.write(file, CountSearch.candidates(java.util.Arrays.asList(dir.resolve("f2.tsv"), dir.resolve("f1.tsv")))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        CustomCounts.Listing l = CustomCounts.read(file);
+        assertEquals(2, l.entries.size());
+        CountKeys.Count r2 = l.entries.get(0).count;
+        CountKeys.Count r1 = l.entries.get(1).count;
+        assertEquals("f2", r2.name);
+        assertArrayEquals(f2.tag, r2.tag);
+        assertArrayEquals(f2.betVector, r2.betVector);
+        assertEquals(f2.divisor(), r2.divisor());
+        assertArrayEquals(f1.tag, r1.tag);
+        assertNull(r1.betVector);
     }
 }
