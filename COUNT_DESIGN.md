@@ -803,7 +803,10 @@ its index before its first tree, so no store of this code stands without one
 7. **The main file, first decisions.** *Produces:* runs/report-ceiling-<sha>.md: every cell,
    the ladder, the grain and tag split, the difference from every published row, the headline
    bounds, the efficiencies against the bounds, the optimism, the learning curve and the
-   ledger.
+   ledger; and runs/report-ceiling-<sha>.ser, everything the run scored (`ComparisonReport
+   runs/montreal-80.states --published runs/full-index/full-c06c061/results.ser --printed
+   runs/report-final-26f0724.md --counts custom-counts.json --save runs/report-ceiling-<sha>.ser`).
+   The optimism needs the twin's figures beside it and is worked out from the two files.
 8. **The main file, full play.** *Produces:* full-play rows paired with c06c061's
    results.ser, and the full-play ladder.
 9. **The results,** written into this file as they are measured, as FULL_INDEX_PLAYS.md does:
