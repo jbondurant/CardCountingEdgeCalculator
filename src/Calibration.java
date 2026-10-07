@@ -587,9 +587,7 @@ final class Calibration {
     Part proxy() throws Exception {
         Text t = new Text();
         CeilingReport.Published p = CeilingReport.read(s.published);
-        if (s.printed != null) {
-            CeilingReport.checkPrinted(p, s.printed);
-        }
+        String tie = s.printed == null ? null : tie(p, s.printed);
         List<CountKeys.Count> catalog = CountKeys.catalog();
         List<double[][]> twin = estimateAll(estimates(), catalog);
         int hiLo = indexOf(catalog, HI_LO);
@@ -625,7 +623,13 @@ final class Calibration {
                         + "the main file's has an SE of about sqrt(2) times the main file's paired SE, and z is that "
                         + "difference over it. About 95%% should lie within 2.%n%n", SystemScorer.SPREADS, s.published,
                 mainHiLo.entries.get(0).boot[P80][SAME8].length, s.printed == null ? ""
-                        : ", whose stored rows print " + s.printed + "'s headline to the digit (CeilingReport.checkPrinted)");
+                        : tie == null ? ", whose stored rows print " + s.printed + "'s headline to the digit "
+                        + "(CeilingReport.checkPrinted)" : "");
+        if (s.printed != null && tie != null) {
+            t.printf("Its stored rows do NOT print %s's headline to the digit (CeilingReport.checkPrinted), so the "
+                    + "main-file report of step 7 refuses a look until the reason is found; the check below reads the "
+                    + "stored rows as they are. What it said:%n%n```%n%s%n```%n%n", s.printed, tie);
+        }
         t.println("| Row | Twin, less Hi-Lo (%) | Main file, less Hi-Lo (%) | Its paired SE (%) | z |");
         t.println("|---|---|---|---|---|");
         for (ProxyRow r : rows) {
@@ -643,7 +647,21 @@ final class Calibration {
         t.put("within", v[0]);
         t.put("chance", v[1]);
         t.put("ok", ok ? "yes" : "no");
+        t.put("tie", s.printed == null ? "not made" : tie == null ? "yes" : "no");
         return t.part();
+    }
+
+    /**
+     * The tie of the stored rows to the published report's printed headline (CeilingReport.checkPrinted):
+     * null when every line reads as printed, else what the check said.
+     */
+    static String tie(CeilingReport.Published p, Path printed) throws IOException {
+        try {
+            CeilingReport.checkPrinted(p, printed);
+            return null;
+        } catch (IllegalStateException e) {
+            return e.getMessage();
+        }
     }
 
     static SystemScorer.Entry entryNamed(CeilingReport.Published p, String name) {
@@ -1671,6 +1689,10 @@ final class Calibration {
         t.printf("- **The proxy check:** %d of %d published differences from Hi-Lo within 2 (chance of so few under "
                         + "independence %.3g): %s.%n", proxy.i("within"), proxy.i("rows"), proxy.d("chance"),
                 proxy.s("ok").equals("yes") ? "they agree within chance" : "THEY DISAGREE beyond chance");
+        if (proxy.s("tie").equals("no")) {
+            t.printf("- **The stored rows do NOT print report-final's headline to the digit** (the proxy check's "
+                    + "section says where): step 7 refuses a look until the reason is found.%n");
+        }
         t.printf("- **The noise floor** at g = %s, the smaller of the bootstrap SE and the sub-runs' scaled spread "
                 + "(the two measures beside it):", grainText(noise.i("divisor")));
         for (double a : ANGLES) {

@@ -48,6 +48,29 @@ public class CalibrationTest {
         return new Path[]{ser, printed};
     }
 
+    /** The tie to the printed report: none where every headline line reads as printed, the lines that differ where one does not. */
+    @Test
+    public void theTieToThePrintedReportIsRecordedNotFatal(@TempDir Path dir) throws Exception {
+        Path[] pub = published(dir);
+        CeilingReport.Published p = CeilingReport.read(pub[0]);
+        assertNull(Calibration.tie(p, pub[1]));
+        List<String> lines = Files.readAllLines(pub[1], StandardCharsets.UTF_8);
+        int zen = -1;
+        for (int k = 0; k < lines.size() && zen < 0; k++) {
+            if (lines.get(k).startsWith("| Zen Count |")) {
+                zen = k;
+            }
+        }
+        String[] cells = lines.get(zen).split("\\|");
+        cells[2] = " +9.999 ";
+        lines.set(zen, String.join("|", cells) + "|");
+        Path altered = dir.resolve("altered.md");
+        Files.write(altered, lines, StandardCharsets.UTF_8);
+        String said = Calibration.tie(p, altered);
+        assertNotNull(said);
+        assertTrue(said.contains("+9.999"), said);
+    }
+
     private static Calibration.Settings small(Path twin, Path out, Path ser, Path printed, Path log) {
         Calibration.Settings s = new Calibration.Settings();
         s.states = twin;
