@@ -233,6 +233,80 @@ public class CeilingScoringTest {
         }
     }
 
+    /**
+     * On states whose training folds hold shoes in the learning curve's half and out of it, the
+     * half fit's 1-8 figure is worked out here from its parts, each on the half: the half fits'
+     * play, insurance fitted on the half, the bets' advantage fitted on the half, and the schedule
+     * handed out over the whole test fold; on FullIndexFitTest's states, and on states made so the
+     * half and the rest disagree. There a count of the sevens finds the advantage falling with its
+     * key in the half and rising steeply in the rest, so the advantage fitted on the half pools
+     * every key and bets them alike, and fitted on the whole training fold it bets them apart: a
+     * half fit that fitted its bets on the whole fold would show.
+     */
+    @Test
+    public void theHalfFitAtOneToEightFitsItsBetsOnTheHalf() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        SystemScorer sc = new SystemScorer(fx.st, new Bootstrap(fx.st.shoes, 2, 1), 1);
+        for (CountKeys.Count c : Arrays.asList(FullIndexFitTest.HI_LO, f2())) {
+            SystemScorer.Result r = sc.score(c, CountKeys.bettingVariant(c));
+            for (SystemScorer.Entry e : r.entries) {
+                for (int p = 0; p < SystemScorer.CUTS.length && !e.bettingOnly; p++) {
+                    assertEquals(halfFitSame(sc, c, e.count, p, true), e.halfFitSame[p], 1e-14, e.name + " at " + p);
+                }
+            }
+        }
+
+        List<StateStore.Record> records = new ArrayList<>();
+        int shoes = 64;
+        for (int shoe = 0; shoe < shoes; shoe++) {
+            int key = (shoe >> 2) % 4;
+            double a = SystemScorer.inHalf(shoe) ? 0.03 - 0.01 * key : -0.05 + 0.04 * key;
+            records.add(SystemScorerTest.state(shoe, 0, SystemScorerTest.tenPoor(key), 1, (i, m) -> a));
+        }
+        SystemScorer made = new SystemScorer(SystemScorerTest.prepare(records, shoes), new Bootstrap(shoes, 2, 1), 1e9);
+        CountKeys.Count sevens = SystemScorerTest.sevens(1);
+        SystemScorer.Entry e = made.score(sevens, null).entries.get(0);
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            double onHalf = halfFitSame(made, sevens, sevens, p, true);
+            assertEquals(onHalf, e.halfFitSame[p], 1e-14, "the made states at " + p);
+            double onWhole = halfFitSame(made, sevens, sevens, p, false);
+            assertTrue(Math.abs(onWhole - onHalf) > 1e-3, "the half's bets " + onHalf + " against the whole fold's "
+                    + onWhole);
+        }
+    }
+
+    /**
+     * The 1-8 figure of a count's half fit, from its parts: play from the scorer's half fits; then,
+     * on the half of each training fold (or the whole fold, when half is false), insurance and the
+     * advantage of the bet key of betOn; the schedule handed out on the whole test fold.
+     */
+    private static double halfFitSame(SystemScorer sc, CountKeys.Count c, CountKeys.Count betOn, int p, boolean half) {
+        SystemScorer.Pen pen = sc.pen(p);
+        SystemScorer.Parts parts = sc.parts(c, pen);
+        SystemScorer.InsuranceParts ip = sc.insuranceParts(parts, pen);
+        SystemScorer.FoldPlay[] hp = sc.halfPlays(parts, pen, ip, pen.weight, null, null, null, null, null);
+        SystemScorer.BetKeys bk = sc.betKeys(betOn, pen);
+        double[] sums = new double[SystemScorer.METRICS + 1];
+        double[] rv = new double[pen.states.length];
+        for (int f = 0; f < 2; f++) {
+            List<Integer> use = new ArrayList<>();
+            for (int j : pen.train[f]) {
+                if (!half || (SystemScorer.inHalf(sc.st.shoe[pen.states[j]]) && pen.weight[j] != 0)) {
+                    use.add(j);
+                }
+            }
+            int[] on = use.stream().mapToInt(Integer::intValue).toArray();
+            assertTrue(!half || on.length < pen.train[f].length, "the half is not the whole fold");
+            double[] ins = SystemScorer.insuranceValues(ip, hp[f].insuranceGroup, SystemScorer.insuranceSums(ip,
+                    hp[f].insuranceGroup, hp[f].groups.count(), on, pen.weight));
+            for (int j = 0; j < rv.length; j++) {
+                rv[j] = hp[f].base[j] + ins[j];
+            }
+            SystemScorer.bets(bk, on, pen.test[f], pen.testByChart[f], pen.weight, rv, pen.chart, sums, null);
+        }
+        return sums[SystemScorer.same(SystemScorer.SPREADS)] / sums[SystemScorer.METRICS];
+    }
+
     // ------------------------------------------------------------------ the refit check
 
     /**
@@ -391,6 +465,77 @@ public class CeilingScoringTest {
             k = end;
         }
         return out;
+    }
+
+    /**
+     * A count's own-value row is a brute-force sort of its own round values: within each test fold
+     * the states in order of their value under the count's play and fitted insurance (not of their
+     * chart advantage), each handed its share of the reference bets laid out in order of chart
+     * advantage, worked out here from the step function directly (bruteBets), at every spread. On
+     * FullIndexFitTest's states, and on states made so the two orders disagree: half the shoes
+     * have the better chart advantage, where doubling loses a little, and the other half the worse
+     * one, where doubling gains 0.10; a count of the sevens, which tell them apart, doubles there,
+     * so its own values put the second half first, and the bets handed out in order of chart
+     * advantage would differ.
+     */
+    @Test
+    public void theOwnValueRowIsABruteForceSortOfTheCountsOwnValues() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        SystemScorer standard = new SystemScorer(fx.st, new Bootstrap(fx.st.shoes, 2, 1), 1);
+        List<StateStore.Record> records = new ArrayList<>();
+        int shoes = 40;
+        for (int shoe = 0; shoe < shoes; shoe++) {
+            boolean better = shoe % 4 < 2;
+            // Chart advantages of about 0.3% to 1%, where the reference bets differ.
+            double a = (better ? -0.01 : -0.03) + 0.001 * (shoe % 5);
+            double d = better ? -0.01 : 0.10;
+            records.add(SystemScorerTest.state(shoe, 0, SystemScorerTest.tenPoor(better ? 0 : 2), 1,
+                    (i, m) -> m == 2 ? a + d : a));
+        }
+        SystemScorer made = new SystemScorer(SystemScorerTest.prepare(records, shoes), new Bootstrap(shoes, 2, 1), 1);
+        int disagree = 0;
+        for (Object[] run : new Object[][]{{standard, FullIndexFitTest.HI_LO}, {standard, FullIndexFitTest.RED_SEVEN},
+                {standard, f2()}, {made, SystemScorerTest.sevens(1)}}) {
+            SystemScorer sc = (SystemScorer) run[0];
+            CountKeys.Count c = (CountKeys.Count) run[1];
+            sc.ownValueRows = true;
+            SystemScorer.Result r = sc.score(c, CountKeys.bettingVariant(c));
+            SystemScorer.Entry own = r.entries.get(r.entries.size() - 1);
+            assertTrue(own.ownValue);
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                SystemScorer.Pen pen = sc.pen(p);
+                SystemScorer.Held h = sc.hold(c, p);
+                double[][] v = new double[2][pen.states.length];
+                for (int f = 0; f < 2; f++) {
+                    SystemScorer.FoldPlay play = h.plays[f];
+                    double[] ins = SystemScorer.insuranceValues(h.ip, play.insuranceGroup, SystemScorer.insuranceSums(h.ip,
+                            play.insuranceGroup, play.groups.count(), pen.train[f], pen.weight));
+                    for (int j = 0; j < v[f].length; j++) {
+                        v[f][j] = play.base[j] + ins[j];
+                    }
+                }
+                for (int spread = 1; spread <= SystemScorer.SPREADS; spread++) {
+                    double num = 0;
+                    double den = 0;
+                    double byChart = 0;
+                    for (int f = 0; f < 2; f++) {
+                        double[] b = bruteBets(pen, f, v[f], spread);
+                        double[] bc = bruteBets(pen, f, pen.chart, spread);
+                        for (int j : pen.test[f]) {
+                            num += pen.weight[j] * b[j] * v[f][j];
+                            byChart += pen.weight[j] * bc[j] * v[f][j];
+                            den += pen.weight[j];
+                        }
+                    }
+                    assertEquals(num / den, own.estimate[p][SystemScorer.same(spread)], 1e-13, c.name + " at " + p
+                            + ", 1-" + spread);
+                    if (Math.abs(byChart - num) / den > 1e-4) {
+                        disagree++;
+                    }
+                }
+            }
+        }
+        assertTrue(disagree > 0, "on some states the own values' order is not the chart's");
     }
 
     /**
