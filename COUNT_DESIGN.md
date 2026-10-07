@@ -517,9 +517,11 @@ main file: whatever it shows, the tags and g stay as registered. A count changed
 main-file look is a second look and is reported as one; its held-out claim needs a fresh
 file, a third seed, before it may replace the headline. So that no figure needs a second look,
 the report saves everything it scores, every estimate and resample of the custom rows, the
-bound rows and the refit check, with R, to a new file before it prints (ComparisonReport
---save; CeilingReport.save and readSaved), and on the main file it refuses a look without one.
-Any figure the report does not print is worked out from that file.
+bound rows, the refit check and the reference rows, with R and each custom row's BC and IC, to
+a new file before it prints (ComparisonReport --save; CeilingReport.save and readSaved), and on
+the main file it refuses a look without one. It prints every spread of the same schedule, and
+PE, IE, BC and IC, for each custom row; any figure it does not print is worked out from that
+file.
 
 **On the main file the custom rows are scored like any count:**
 - each fold fitted on the other parity;

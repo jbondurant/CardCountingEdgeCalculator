@@ -112,6 +112,14 @@ public class CeilingReportTest {
         }
         assertArrayEquals(c.bounds.get(0).estimate[p], saved.bounds.get(0).estimate[p], 0);
         assertEquals(c.r, saved.r, 0);
+        assertEquals(3, saved.references.size());
+        assertArrayEquals(c.references.get(1).boot[p][SystemScorer.PLAY], saved.references.get(1).boot[p][SystemScorer.PLAY], 0);
+        assertEquals(c.correlations.keySet(), saved.correlations.keySet());
+        assertTrue(c.correlations.containsKey("F2 start + betting vector"));
+        for (String section : new String[]{"| Row | BC | IC |", "## Flat play, insurance and efficiencies of the counts "
+                + "scored here", "| 1-2 | 1-3 | 1-4 | 1-5 | 1-6 | 1-7 | 1-8 | Own ramp 1-8 |"}) {
+            assertTrue(report.contains(section), section);
+        }
         assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, ser, null, counts, save, RESAMPLES, 2, "test",
                 new PrintStream(new ByteArrayOutputStream(), true, "UTF-8")), "a saved file is never written over");
 

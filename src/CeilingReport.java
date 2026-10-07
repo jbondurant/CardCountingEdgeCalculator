@@ -229,6 +229,10 @@ final class CeilingReport {
         List<String> checked = new ArrayList<>();
         /** R: the betting regression's multiple correlation on these states, the ceiling of any linear count's BC. */
         double r = Double.NaN;
+        /** The reference rows (SystemScorer.references), the perfect flat row among them for PE and IE. */
+        List<SystemScorer.Entry> references = new ArrayList<>();
+        /** Each custom row playing its own fit, by name: {BC, IC}, as ComparisonReport computes them. */
+        java.util.Map<String, double[]> correlations = new java.util.LinkedHashMap<>();
     }
 
     /**
@@ -335,6 +339,16 @@ final class CeilingReport {
         }
         scoreCustom(c, threads);
         c.r = CountRegression.betting(st).r;
+        c.references = scorer.references();
+        AllStates all = AllStates.replay(StateStore.header(states), st.shoes, StateRun.montreal(), BasicStrategy.chart(), st);
+        for (SystemScorer.Result r : c.custom) {
+            for (SystemScorer.Entry e : r.entries) {
+                if (!e.bettingOnly && !e.ownValue) {
+                    c.correlations.put(e.name, new double[]{AllStates.bettingCorrelation(e.count, st),
+                            all.insuranceCorrelation(e.count)});
+                }
+            }
+        }
         if (save != null) {
             save(c, states, commit, save);
         }
@@ -352,13 +366,15 @@ final class CeilingReport {
         List<SystemScorer.Entry> refit;
         List<String> checked;
         double r;
+        List<SystemScorer.Entry> references;
+        java.util.Map<String, double[]> correlations;
     }
 
     /**
      * Writes everything the report scored, estimates and resamples, to a new file, in one move: its
      * identity (the classes' commit, the state file, the counts file and its blob, the resamples and
      * the stored rows' run), the counts' Results, the bound rows, the refit check, the counts checked
-     * to the bit, and R.
+     * to the bit, R, the reference rows, and each custom row's BC and IC.
      */
     static void save(Ceiling c, Path states, String commit, Path file) throws IOException {
         String identity = "CeilingReport\ncommit " + commit + "\n" + FullIndexRun.stateFile(states) + "\ncounts "
@@ -373,6 +389,8 @@ final class CeilingReport {
             o.writeObject(new ArrayList<>(c.refit));
             o.writeObject(new ArrayList<>(c.checked));
             o.writeDouble(c.r);
+            o.writeObject(new ArrayList<>(c.references));
+            o.writeObject(new java.util.LinkedHashMap<>(c.correlations));
         }
         Files.move(tmp, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
     }
@@ -389,6 +407,8 @@ final class CeilingReport {
             s.refit = (List<SystemScorer.Entry>) o.readObject();
             s.checked = (List<String>) o.readObject();
             s.r = o.readDouble();
+            s.references = (List<SystemScorer.Entry>) o.readObject();
+            s.correlations = (java.util.Map<String, double[]>) o.readObject();
             return s;
         }
     }
@@ -691,19 +711,25 @@ final class CeilingReport {
 
         grainPart(c, out);
         bettingCorrelations(c, out);
+        efficiencies(c, out);
 
         out.println("## Every cell of the counts scored here");
         for (SystemScorer.Result r : c.custom) {
             for (SystemScorer.Entry e : r.entries) {
                 out.println();
                 out.printf("### %s%n%n", e.name);
-                out.println("| Penetration | Flat | 1-2 | 1-4 | 1-8 | Own ramp 1-8 | Half fit change, flat | Half fit change, 1-8 "
-                        + "| Decision bound |");
-                out.println("|---|---|---|---|---|---|---|---|---|");
+                out.println("| Penetration | Flat | 1-2 | 1-3 | 1-4 | 1-5 | 1-6 | 1-7 | 1-8 | Own ramp 1-8 "
+                        + "| Half fit change, flat | Half fit change, 1-8 | Decision bound |");
+                out.println("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
                 for (int p = 0; p < SystemScorer.CUTS.length; p++) {
                     StringBuilder b = new StringBuilder("| " + SystemScorer.PENETRATIONS[p] + " |");
-                    for (int m : new int[]{SystemScorer.FLAT, SystemScorer.same(2), SystemScorer.same(4), s8,
-                            SystemScorer.own(SystemScorer.SPREADS)}) {
+                    int[] cells = new int[SystemScorer.SPREADS + 1];
+                    cells[0] = SystemScorer.FLAT;
+                    for (int sp = 2; sp <= SystemScorer.SPREADS; sp++) {
+                        cells[sp - 1] = SystemScorer.same(sp);
+                    }
+                    cells[SystemScorer.SPREADS] = SystemScorer.own(SystemScorer.SPREADS);
+                    for (int m : cells) {
                         Bootstrap.Interval iv = Bootstrap.interval(e.estimate[p][m], e.boot[p][m]);
                         b.append(' ').append(ComparisonReport.pct(iv.estimate)).append(' ').append(ComparisonReport.ci(iv))
                                 .append(" |");
@@ -796,14 +822,15 @@ final class CeilingReport {
         out.println();
     }
 
-    /** R beside every row's BC (section 2): no linear count's BC on these states can exceed it. */
+    /** R beside every row's BC (section 2): no linear count's BC on these states can exceed it; and each row's IC. */
     static void bettingCorrelations(Ceiling c, PrintStream out) {
         out.println("## The betting correlation and its ceiling");
         out.println();
         out.printf("R, the multiple correlation of the chart advantage regressed on the shares left over these %d valued "
-                + "states weighted 1/q, is %.4f: no linear count's BC on these states can exceed it.%n%n", c.st.size, c.r);
-        out.println("| Row | BC |");
-        out.println("|---|---|");
+                + "states weighted 1/q, is %.4f: no linear count's BC on these states can exceed it. BC and IC as the "
+                + "published report computes them (ComparisonReport, its correlations table).%n%n", c.st.size, c.r);
+        out.println("| Row | BC | IC |");
+        out.println("|---|---|---|");
         SystemScorer.Entry best = null;
         double bestBc = Double.NEGATIVE_INFINITY;
         for (SystemScorer.Result r : c.published.results) {
@@ -819,12 +846,37 @@ final class CeilingReport {
             }
         }
         if (best != null) {
-            out.printf("| Best published: %s | %.4f |%n", best.name, bestBc);
+            out.printf("| Best published: %s | %.4f |  |%n", best.name, bestBc);
         }
-        for (SystemScorer.Result r : c.custom) {
-            for (SystemScorer.Entry e : r.entries) {
-                if (!e.bettingOnly && !e.ownValue) {
-                    out.printf("| %s | %.4f |%n", e.name, AllStates.bettingCorrelation(e.count, c.st));
+        for (java.util.Map.Entry<String, double[]> e : c.correlations.entrySet()) {
+            out.printf("| %s | %.4f | %.4f |%n", e.getKey(), e.getValue()[0], e.getValue()[1]);
+        }
+        out.println();
+    }
+
+    /** PE and IE of each custom row, flat, as the published report gives them (ComparisonReport.efficiencies). */
+    static void efficiencies(Ceiling c, PrintStream out) {
+        out.println("## Flat play, insurance and efficiencies of the counts scored here");
+        out.println();
+        out.println("PE = (count - null) / (perfect - null) on play, IE the same on insurance, flat, the null count's "
+                + "stored row the baseline; intervals resample by resample, as in the published report.");
+        SystemScorer.Entry perfect = c.references.get(1);
+        SystemScorer.Entry none = c.published.nullCount().entries.get(0);
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            out.println();
+            out.printf("### %s penetration%n%n", SystemScorer.PENETRATIONS[p]);
+            out.println("| Row | Play | Insurance adds | PE | 95% CI | IE | 95% CI |");
+            out.println("|---|---|---|---|---|---|---|");
+            for (SystemScorer.Result r : c.custom) {
+                for (SystemScorer.Entry e : r.entries) {
+                    if (e.bettingOnly || e.ownValue) {
+                        continue;
+                    }
+                    Bootstrap.Interval[] eff = ComparisonReport.efficiencies(e, none, perfect, p);
+                    out.printf("| %s | %s | %s | %s | %s | %s | %s |%n", e.name, ComparisonReport.pct(e.estimate[p][
+                                    SystemScorer.PLAY]), ComparisonReport.pct(e.estimate[p][SystemScorer.INSURANCE]),
+                            ComparisonReport.ratio(eff[0].estimate), ComparisonReport.ratioCi(eff[0]),
+                            ComparisonReport.ratio(eff[1].estimate), ComparisonReport.ratioCi(eff[1]));
                 }
             }
         }
