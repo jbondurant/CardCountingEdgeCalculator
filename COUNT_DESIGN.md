@@ -853,6 +853,17 @@ Where the estimates come from:
   machine slept through much of the night on battery (pmset's log). StateRun, FullIndexRun and
   CountSearch resume after an interruption; ComparisonReport does not, so step 7 is rerun
   whole if it is cut off, which at about 3 hours is bearable.
+  **Measured again on 7 October.** Four of the five F1 flat runs took 35 minutes to 2.4 hours
+  each by the queue's clock (runs/custom-count/search/queue.log), against 55 to 169 s by their
+  own timers (each run's "Found ... in N s.", from System.nanoTime, which does not advance while
+  the machine sleeps). pmset's log has the reason: the lid was closed at 10:54:52 on battery,
+  "Entering Sleep state due to 'Clamshell Sleep'", and the machine stayed asleep until the lid
+  was opened at 19:18:23, waking only for maintenance every 15 minutes or so, a few seconds to
+  half a minute each, in which the searches crept on. `caffeinate -i` keeps the machine from
+  sleeping when idle, not when its lid is closed on battery, so a long run needs the lid open or
+  the charger in. Nothing about the flat objective is slower: the flat runs' own timers are those
+  of the 1-8 runs. The first flat run, from F1's optimum, took 594 s by its timer for 456
+  evaluations because a first SearchReport ran beside it, from 10:26.
 
 **Disk.** On 7 October the disk had 12 GB free, 95% used (df), and the full-c06c061 directory
 took 14 GB (du). The twin's 1.34 GB fits. A second whole-file tree store, 14.9 GB, does not.
