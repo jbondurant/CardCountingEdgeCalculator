@@ -69,7 +69,8 @@ rounds the true count to steps of g Hi-Lo units, with D = g × K. With D = 1, ev
 count keeps its keys bit for bit. The default g is 1/20; calibration sets it (section 4) as
 the coarsest step at which Hi-Lo and Zen, scored at that step, stop improving. **Calibration
 kept g = 1/20, D = 500** (runs/custom-count/calibration-b99ccbf.md; the first calibration,
-from classes 1579078, gave every figure but the timings to the bit): no finer grain gains on
+from classes 1579078, gave every figure to the bit but the timings and the split margin, whose
+sample the timings size): no finer grain gains on
 it by more than the noise floor at 1°, 0.0012% a round, for either count, while at 1/10 Zen
 still gains 0.0025% further down. Both gain most from the first halving: Hi-Lo from +0.300%
 at g = 1, its own keys, to +0.315% at 1/2, and +0.318% at 1/20, at 80%, 1-8 on the twin. The
@@ -234,6 +235,10 @@ each state's own value.
   review's scratch figure, 0.0097% a round flat on 84 states (FULL_INDEX_PLAYS.md, top table),
   is only a guide to its size: at S = 8 it would make the margin about 0.08% (by arithmetic).
   The report states the margin wherever it uses this row.
+  **Measured** (calibration-b99ccbf, SplitMargin on 890 twin states spread through the file):
+  the flat mean of δ is 0.00907% a round at 80% (SE 0.00073%), so the margin at S = 8 is at
+  least 0.073%; at least 0.046% at 70% and 0.057% at 75%. The first calibration's 909 states
+  gave 0.00961% (SE 0.00074%) at 80%. Each is a lower bound on the margin, as below.
   - **As built** (SplitMargin), δ at a state is what the best split play a count's tables could
     give it adds to the perfect row's first moves: for each pair deal, the play a SplitPlay
     draws from a hit or stand at each contested later total and a first move for each second
@@ -782,13 +787,14 @@ October. At 00:56 that day its log showed 138 of 186 items scored
 | Step | Machine time (estimate) | Disk |
 |---|---|---|
 | Twin file | 3.2 h on 7 threads, measured (11,637 s, runs/twin-80.log) | 1.34 GB |
-| Calibration and theory pass | 2 to 3 h | |
+| Calibration and theory pass | 1.0 h on 7 threads, measured (61 min, 45 of them the split margin's sample) | about 2 MB, with its classes |
 | Searches and slices | 5.0 to 6.1 h on 6 threads, priced from measured evaluations | logs |
 | Full-play choice on the twin | 1 to 3 h, after a dry run on 2,000 shoes | none, trees rebuilt |
 | Main file, first decisions, 1,000 resamples | about 3 h on 7 threads | a report |
 | Main file, full play | 4 to 8 h with the tree store, about 7 h more without; after a dry run | results |
 
-In all, about 21 to 30 machine hours with the tree store kept, more on the wall.
+In all, about 17 to 24 machine hours with the tree store kept, more on the wall: the first three
+rows measured, the rest estimates.
 
 Where the estimates come from:
 - **The searches.** Budgets in evaluations: F1 at 1-8, 16 runs of 1,500, 24,000, and up to
@@ -890,6 +896,12 @@ its index before its first tree, so no store of this code stands without one
      --published $R/runs/full-index/full-c06c061/results.ser --printed $R/runs/report-final-26f0724.md \
      --twin-log $R/runs/twin-80.log --threads 7 >> $R/runs/custom-count/calibration-$SHA.log 2>&1 &
    ```
+
+   *Run* on 7 October from classes b99ccbf: runs/custom-count/calibration-b99ccbf.md, with
+   calibration-b99ccbf.candidates.json beside it, in 61 minutes. A first run from classes
+   1579078 gave the same figures to the bit but the timings and the split margin's sample; its
+   report's wording of the split margin and the colour check was wrong, which b99ccbf's code
+   corrects.
 4. **The searches and slices.** *Produces:* the evaluation logs and the candidate counts,
    with the convergence evidence of section 4.
 5. **The full-play choice,** on the twin. *Produces:* the full-play F1.
