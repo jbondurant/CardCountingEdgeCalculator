@@ -83,4 +83,26 @@ public class FullIndexRunTest {
         assertTrue(e.getMessage().contains("candidates file"), e.getMessage());
         assertFalse(Files.exists(dir.resolve("run")));
     }
+
+    /**
+     * --trees naming a file that is not a tree store, the state file itself here, as a mistyped
+     * path to runs/montreal-80.states or a run's results.ser would: refused before anything is
+     * written, and the file left exactly as it was.
+     */
+    @Test
+    public void aTreePathThatIsNotAStoreIsRefused(@TempDir Path dir) throws Exception {
+        Path file = ComparisonReportTest.syntheticRun(dir, 80, 80, 4);
+        Path counts = CustomCountsTest.write(dir, "candidates.json", CustomCountsTest.CANDIDATES);
+        Path results = dir.resolve("results.ser");
+        Files.write(results, "a run's results".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        PrintStream log = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        for (Path wrong : new Path[]{file, results}) {
+            byte[] before = Files.readAllBytes(wrong);
+            java.io.IOException e = assertThrows(java.io.IOException.class, () -> FullIndexRun.run(args(file,
+                    dir.resolve("run"), counts, "--trees", wrong.toString()), "test", log, 0));
+            assertTrue(e.getMessage().contains("not a tree store"), e.getMessage());
+            assertArrayEquals(before, Files.readAllBytes(wrong));
+            assertFalse(Files.exists(dir.resolve("run")), "nothing written");
+        }
+    }
 }

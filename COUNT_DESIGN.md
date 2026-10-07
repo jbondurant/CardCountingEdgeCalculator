@@ -710,7 +710,12 @@ runs/full-index/full-c06c061/trees.bin, except through the read-only mode of ste
 mode keys on the state file and its states alone, opens the store read-only and never
 deletes it. FullIndexRun takes it as `--trees-read-only PATH`, and refuses a `--trees PATH`
 whose store another run kept, rather than starting it afresh; a tree the store does not hold
-is built in each round and not kept.
+is built in each round and not kept. Nor is anything at a `--trees` path that is not a tree
+store ever deleted: a file there without an index beside it (a mistyped path to
+runs/montreal-80.states, or to a run's results.ser or a store's index), a directory, or an
+index that does not read as one is refused before anything is written, and a new store writes
+its index before its first tree, so no store of this code stands without one
+(TreeStore.refuseNonStore).
 
 ## 8. Steps
 

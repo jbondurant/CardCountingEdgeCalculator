@@ -142,4 +142,48 @@ public class TreeStoreTest {
         assertArrayEquals(trees, Files.readAllBytes(file));
         assertArrayEquals(kept, Files.readAllBytes(index));
     }
+
+    /**
+     * Only a store is ever replaced: a file at the store's path without an index beside it (a
+     * state file, a run's results), a store's index given as the store, or a directory, is refused
+     * and left exactly as it was; and a new store writes its index before any tree, so a store's
+     * file never stands without one.
+     */
+    @Test
+    public void aFileThatIsNotAStoreIsNeverRemoved() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        ScoringStates st = fx.st;
+        Path dir = Files.createTempDirectory("not-a-store");
+        Path precious = dir.resolve("precious.states");
+        byte[] bytes = "a state file, or results.ser".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Files.write(precious, bytes);
+        java.io.IOException e = assertThrows(java.io.IOException.class, () -> new TreeStore(st, precious, "x", 0));
+        assertTrue(e.getMessage().contains("not a tree store"), e.getMessage());
+        assertArrayEquals(bytes, Files.readAllBytes(precious));
+        assertFalse(Files.exists(dir.resolve("precious.states.index")));
+
+        Path file = dir.resolve("trees.bin");
+        Path index = dir.resolve("trees.bin.index");
+        try (TreeStore store = new TreeStore(st, file, "kept", 0)) {
+            assertEquals("kept", TreeStore.identityOf(file), "the index is written before any tree");
+            store.of(0, new ExactRound(RULES));
+        }
+        byte[] kept = Files.readAllBytes(file);
+        byte[] keptIndex = Files.readAllBytes(index);
+        // The store's index given as the store: refused, the store and its index left as they are.
+        assertThrows(java.io.IOException.class, () -> new TreeStore(st, index, "x", 0));
+        assertArrayEquals(keptIndex, Files.readAllBytes(index));
+        assertArrayEquals(kept, Files.readAllBytes(file));
+        // A directory, and an index beside a path that does not read as one.
+        Files.createDirectories(dir.resolve("adir"));
+        assertThrows(java.io.IOException.class, () -> new TreeStore(st, dir.resolve("adir"), "x", 0));
+        Path odd = dir.resolve("odd.bin");
+        Files.write(dir.resolve("odd.bin.index"), bytes);
+        assertThrows(java.io.IOException.class, () -> new TreeStore(st, odd, "x", 0));
+        assertArrayEquals(bytes, Files.readAllBytes(dir.resolve("odd.bin.index")));
+        // A store of another identity is a store, and starts afresh as before.
+        try (TreeStore store = new TreeStore(st, file, "another", 0)) {
+            assertEquals(0, store.holds());
+        }
+    }
 }

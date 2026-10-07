@@ -27,6 +27,12 @@ import java.util.BitSet;
  * index and shoe, checked as it is read, and the index file an identity (the run's commit,
  * state file and states): a store opened with another identity starts afresh.
  *
+ * Only a store is ever replaced: a file at the store's path without an index beside it, which no
+ * store this class makes can be (a new store writes its index before its file), is refused and
+ * left as it is, as is anything there that is not a regular file or an index that does not read
+ * as one (refuseNonStore). So a mistyped path, to a state file or a run's results, is never
+ * deleted.
+ *
  * Opened read-only (readOnly), a store is keyed on its state file and states alone, not the
  * commit, so a run built from other classes can read the trees an earlier run kept. It is then
  * only read: a store of other states is refused, never deleted, a tree it does not hold is built
@@ -66,8 +72,11 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
         this.index = indexOf(file);
         this.identity = identity;
         this.readOnly = false;
+        refuseNonStore(file);
         BitSet kept = readIndex(index, identity, st.size);
-        if (kept == null) {
+        boolean fresh = kept == null;
+        if (fresh) {
+            // A store, its index beside it, of another identity or size.
             Files.deleteIfExists(index);
             Files.deleteIfExists(file);
             kept = new BitSet(st.size);
@@ -79,7 +88,53 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
             throw new IOException(String.format("the trees of %d states need %.1f GB more on disk; %.1f GB is free, and "
                     + "%.1f GB must be left", st.size, need / 1e9, free / 1e9, margin / 1e9));
         }
+        if (fresh) {
+            // The index first, holding no state, so the store's file never stands without one.
+            writeIndex(new BitSet(st.size));
+        }
         channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
+    }
+
+    /**
+     * Refuses a path where a store may not be opened afresh, deleting nothing: a file there that
+     * is not a tree store, having no index beside it, or not a regular file, or an index beside it
+     * that does not read as one.
+     */
+    static void refuseNonStore(Path file) throws IOException {
+        Path index = indexOf(file);
+        if (Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException(file + " is not a regular file, so not a tree store; it is left as it is");
+            }
+            if (!Files.exists(index)) {
+                throw new IOException(file + " is there and is not a tree store (no " + index.getFileName() + " beside "
+                        + "it); it is left as it is. Give the run a store path of its own");
+            }
+        }
+        if (Files.exists(index, java.nio.file.LinkOption.NOFOLLOW_LINKS) && !readsAsIndex(index)) {
+            throw new IOException(index + " is not a tree store's index; it and " + file.getFileName()
+                    + " are left as they are");
+        }
+    }
+
+    /** Whether a file reads as an index: an identity, a number of states, and the bits, filling it exactly. */
+    private static boolean readsAsIndex(Path index) throws IOException {
+        if (!Files.isRegularFile(index, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return false;
+        }
+        ByteBuffer b = ByteBuffer.wrap(Files.readAllBytes(index));
+        try {
+            int id = b.getInt();
+            if (id < 0 || id > b.remaining()) {
+                return false;
+            }
+            b.position(b.position() + id);
+            int size = b.getInt();
+            int bits = b.getInt();
+            return size >= 0 && bits >= 0 && bits == b.remaining();
+        } catch (java.nio.BufferUnderflowException e) {
+            return false;
+        }
     }
 
     /** A store opened read-only (readOnly). */
@@ -249,6 +304,11 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
         synchronized (held) {
             copy = (BitSet) held.clone();
         }
+        writeIndex(copy);
+    }
+
+    /** Records the states given as held, replacing the record before in one move. */
+    private void writeIndex(BitSet copy) throws IOException {
         Path tmp = index.resolveSibling(index.getFileName() + ".tmp");
         byte[] id = identity.getBytes(StandardCharsets.UTF_8);
         byte[] bits = copy.toByteArray();

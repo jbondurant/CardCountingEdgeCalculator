@@ -40,7 +40,8 @@ import java.util.List;
  * them changed is refused, saying what differs.
  *
  * The trees go in a store of the run's own (--trees PATH, by default trees.bin in the output
- * directory), and a store there of another run is refused, never replaced. --trees-read-only PATH
+ * directory), and a store there of another run is refused, never replaced, as is a file there
+ * that is not a tree store (TreeStore.refuseNonStore). --trees-read-only PATH
  * reads another run's store instead, keyed on its states alone, and writes nothing to it
  * (TreeStore.readOnly): the one way a run of other classes may open a kept store such as
  * runs/full-index/full-c06c061/trees.bin.
@@ -137,6 +138,9 @@ public final class FullIndexRun {
         ScoringStates st = FullIndexPilot.load(states, shoes);
         treeIdentity += st.size;
         if (treeFile != null && !readOnlyTrees) {
+            // A file there that is not a tree store, a mistyped path to a state file or a run's
+            // results, is refused and left as it is, before anything is written.
+            TreeStore.refuseNonStore(treeFile);
             String was = TreeStore.identityOf(treeFile);
             if (was != null && !was.equals(treeIdentity)) {
                 throw new IllegalStateException("the tree store " + treeFile + " was kept by another run; it is left as it "
