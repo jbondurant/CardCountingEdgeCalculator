@@ -107,8 +107,11 @@ public final class FullIndexDryRun {
         if (countsFile != null) {
             CustomCounts.Listing listing = CustomCounts.read(countsFile);
             if (CustomCounts.isMain(data)) {
-                String blob = CustomCounts.lookOnMain(listing, FullIndexRun.commit(), "FullIndexDryRun on the first "
-                        + shoes + " shoes, " + resamples + " resamples, penetrations " + java.util.Arrays.toString(pens));
+                // The refusals first, then the commit the ledger names.
+                String blob = CustomCounts.checkOnMain(listing);
+                CustomCounts.appendLedger(CustomCounts.ledgerOf(listing), FullIndexRun.commit(), blob, "FullIndexDryRun on "
+                        + "the first " + shoes + " shoes, " + resamples + " resamples, penetrations "
+                        + java.util.Arrays.toString(pens));
                 out.printf("Counts from %s, git blob %s.%n", countsFile, blob);
             }
             counts = listing.counts();
