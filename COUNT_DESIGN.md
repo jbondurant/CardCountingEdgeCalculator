@@ -252,7 +252,10 @@ valued states weighted 1/q, between the unrounded true count and the chart advan
 file: a row above it is a scoring bug. On the twin, where the search starts from them, the
 searched optimum is at or above every start, and F2 at or above F1 (section 4). On the main
 file those orderings are results, not checks: a published count may score above the searched
-one there, and F2 below F1 (section 5).
+one there, and F2 below F1 (section 5). As built, CeilingReport checks every first-decision row
+in flat and same-schedule cells: the counts scored, each with its own-value row, the stored
+rows, and the refit check, which plays count-based first decisions. Full-play rows are checked
+in the full-play report, against the full-play bound with the split margin.
 
 **Efficiency.** In each flat and same-schedule cell the report gives (row − null) /
 (perfect bound − null) for the cell's registered ceiling row and for the best published row
@@ -494,6 +497,13 @@ each headline row:
 - **As built,** a count's entry in custom-counts.json may name its comparators, "plain" or
   "all"; without it the rule above applies, plain rows for a count with one vector and every
   row for one with a betting vector (CustomCounts, CeilingReport).
+- **As built,** the registration's "cells" names the counts reported in the flat cells, on the
+  same schedule at every spread, and on the own ramp, at every penetration: exactly one headline
+  count of one vector, and at most one with a betting vector beside it, none in the flat cells;
+  every headline count is named somewhere. A headline claim is made for those (count, cell)
+  pairs alone, so a cell's claims are at most two, the Bonferroni pair below. Each cell's claims
+  are a statement of their own, not covered jointly with the other cells; the headline is 80%,
+  1-8.
 
 **One look.** The main-file tools refuse a custom-counts.json that is uncommitted or modified,
 and print its git blob hash. Each run appends a line to a committed ledger,

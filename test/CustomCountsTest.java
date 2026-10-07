@@ -105,9 +105,50 @@ public class CustomCountsTest {
         throw new IllegalArgumentException(system);
     }
 
+    /** The cells of the registration below: F1 start in every cell, F2 start beside it where the bets vary. */
+    static final String CELLS = "{\"flat\": [\"F1 start\"], \"same\": [\"F1 start\", \"F2 start\"], "
+            + "\"own\": [\"F1 start\", \"F2 start\"]}";
+
+    /** CANDIDATES as a registration: F1 start and F2 start the headline counts, named in the cells. */
     static String registered() {
-        return CANDIDATES.replace("\"kind\": \"candidates\"", "\"kind\": \"registered\", \"twin\": \"runs/twin-80.states, "
-                + "seed 20261007\", \"searchCommit\": \"abc\", \"cells\": {\"80% 1-8\": \"F1 start\"}");
+        return headline(CANDIDATES).replace("\"kind\": \"candidates\"", "\"kind\": \"registered\", \"twin\": "
+                + "\"runs/twin-80.states, seed 20261007\", \"searchCommit\": \"abc\", \"cells\": " + CELLS);
+    }
+
+    /** CANDIDATES' F1 start and F2 start given the headline role. */
+    static String headline(String candidates) {
+        return candidates.replace("\"role\": \"candidate\"", "\"role\": \"headline\"")
+                .replace("\"family\": \"F2\",", "\"family\": \"F2\", \"role\": \"headline\",");
+    }
+
+    /**
+     * A registration's cells: the counts reported in each, read as given; refused where a cell is
+     * missing or unknown, names a count the file lists not or one not a headline count, names two
+     * counts of one vector or a betting vector in the flat cells, or a headline count is in no cell.
+     */
+    @Test
+    public void aRegistrationsCellsAreReadAndChecked() throws Exception {
+        Path dir = Files.createTempDirectory("cells");
+        CustomCounts.Listing l = CustomCounts.read(write(dir, "registered.json", registered()));
+        assertEquals(Arrays.asList("F1 start"), l.cells.get("flat"));
+        assertEquals(Arrays.asList("F1 start", "F2 start"), l.cells.get("same"));
+        assertEquals(Arrays.asList("F1 start", "F2 start"), l.cells.get("own"));
+        assertEquals(1, l.indexOf("F2 start"));
+        assertNull(CustomCounts.read(write(dir, "candidates.json", CANDIDATES)).cells, "a candidates file may name none");
+        String r = registered();
+        for (String bad : new String[]{
+                r.replace(", \"cells\": " + CELLS, ""),
+                r.replace("\"own\": [\"F1 start\", \"F2 start\"]", "\"own ramp\": [\"F1 start\"]"),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": [\"F1 start\", \"F2 start\"]"),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": [\"F1 start\", \"F1r start\"]"),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": []"),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": [\"F9\"]"),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": [\"Hi-Lo\"]"),
+                r.replace("\"name\": \"F1r start\", \"family\": \"F1r\",",
+                        "\"name\": \"F1r start\", \"family\": \"F1r\", \"role\": \"headline\","),
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": \"F1 start\"")}) {
+            assertThrows(IllegalArgumentException.class, () -> CustomCounts.read(write(dir, "bad.json", bad)), bad);
+        }
     }
 
     /** A small state file with the seed given, for the refusals that read a header. */

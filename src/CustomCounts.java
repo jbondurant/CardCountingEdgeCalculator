@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -26,7 +28,9 @@ import java.util.concurrent.TimeUnit;
  * <pre>
  * { "kind": "candidates" or "registered", "K": 10000,
  *   "twin": "the twin file's header", "searchCommit": "...",      (registered)
- *   "cells": {...}, "comparators": {...},                           (registered, kept as text)
+ *   "cells": { "flat": ["F1 flat"], "same": ["F1", "F2"], "own": ["F1", "F2"] },
+ *                                                                   (registered; optional for candidates)
+ *   "comparators": {...},                                           (optional, kept as text)
  *   "counts": [
  *     { "name": "...", "family": "F1", "role": "headline", "comparators": "plain" or "all",
  *       "form": "true" or "running", "divisor": 500,
@@ -38,6 +42,13 @@ import java.util.concurrent.TimeUnit;
  * catalog has it when no divisor is given; it keeps its systems, so its side-count variant comes
  * with it. Tags are read as whole numbers and nothing is normalised or rounded, so the count
  * scored is the count registered, to the bit.
+ *
+ * "cells" names the count reported in each cell, at every penetration (section 5): "flat", the
+ * flat cells; "same", the same schedule at every spread from 1-2 to 1-8; "own", the own ramp.
+ * Each cell names exactly one headline count of one vector and at most one with a betting vector,
+ * and none with a betting vector in the flat cells, whose bets do not vary; every headline count
+ * is named in some cell. These are the only (count, cell) pairs a headline claim is made for, so
+ * a cell's claims are at most two, the Bonferroni pair of section 5.
  *
  * The rules (section 5, "One look"): the search, calibration and theory-pass tools refuse the
  * main file (requireTwin); a main-file tool given counts refuses a file that is not the
@@ -95,12 +106,13 @@ final class CustomCounts {
         final List<Entry> entries;
         final String twin;
         final String searchCommit;
-        /** The cells and comparators as the file holds them, for the report to print. */
-        final String cells;
+        /** The counts reported in each cell, "flat", "same" and "own", by name; null where the file names none. */
+        final Map<String, List<String>> cells;
+        /** The comparators as the file holds them, for the report to print. */
         final String comparators;
 
-        Listing(Path file, boolean registered, List<Entry> entries, String twin, String searchCommit, String cells,
-                String comparators) {
+        Listing(Path file, boolean registered, List<Entry> entries, String twin, String searchCommit,
+                Map<String, List<String>> cells, String comparators) {
             this.file = file;
             this.registered = registered;
             this.entries = Collections.unmodifiableList(entries);
@@ -117,7 +129,20 @@ final class CustomCounts {
             }
             return out;
         }
+
+        /** The place in entries of the count of this name, or -1. */
+        int indexOf(String name) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).count.name.equals(name)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
     }
+
+    /** The cells a registration names a count for: flat, the same schedule at every spread, and the own ramp. */
+    static final List<String> CELLS = Collections.unmodifiableList(java.util.Arrays.asList("flat", "same", "own"));
 
     private CustomCounts() {
     }
@@ -153,9 +178,73 @@ final class CustomCounts {
             throw new IllegalArgumentException(file + ": a registration names the twin file and the search's commit");
         }
         Object cells = d.get("cells");
+        if (registered && cells == null) {
+            throw new IllegalArgumentException(file + ": a registration names the count reported in each cell");
+        }
         Object comparators = d.get("comparators");
-        return new Listing(file, registered, entries, twin, commit, cells == null ? null : cells.toString(),
+        return new Listing(file, registered, entries, twin, commit, cells == null ? null : cells(file, cells, entries),
                 comparators == null ? null : comparators.toString());
+    }
+
+    /** The cells as a file names them, each cell's counts checked against the rules above. */
+    private static Map<String, List<String>> cells(Path file, Object o, List<Entry> entries) {
+        if (!(o instanceof Document)) {
+            throw new IllegalArgumentException(file + ": \"cells\" maps flat, same and own to the counts reported there");
+        }
+        Document d = (Document) o;
+        for (String key : d.keySet()) {
+            if (!CELLS.contains(key)) {
+                throw new IllegalArgumentException(file + ": the cells are flat, same and own, not " + key);
+            }
+        }
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        List<String> named = new ArrayList<>();
+        for (String cell : CELLS) {
+            Object v = d.get(cell);
+            if (!(v instanceof List)) {
+                throw new IllegalArgumentException(file + ": the cell " + cell + " lists the counts reported there");
+            }
+            List<String> names = new ArrayList<>();
+            int plain = 0;
+            int betting = 0;
+            for (Object x : (List<?>) v) {
+                Entry e = null;
+                for (Entry y : entries) {
+                    if (y.count.name.equals(x)) {
+                        e = y;
+                    }
+                }
+                if (e == null) {
+                    throw new IllegalArgumentException(file + ": the cell " + cell + " names " + x + ", which it lists not");
+                }
+                if (!"headline".equals(e.role)) {
+                    throw new IllegalArgumentException(file + ": " + x + " is reported in the cell " + cell
+                            + ", but its role is " + e.role + ", not headline");
+                }
+                if (e.count.betVector != null) {
+                    betting++;
+                    if (cell.equals("flat")) {
+                        throw new IllegalArgumentException(file + ": " + x + " has a betting vector, and the flat cells' "
+                                + "bets do not vary");
+                    }
+                } else {
+                    plain++;
+                }
+                names.add(e.count.name);
+            }
+            if (plain != 1 || betting > 1) {
+                throw new IllegalArgumentException(file + ": the cell " + cell + " names " + names + "; a cell reports "
+                        + "one count of one vector, and at most one with a betting vector beside it");
+            }
+            named.addAll(names);
+            out.put(cell, Collections.unmodifiableList(names));
+        }
+        for (Entry e : entries) {
+            if ("headline".equals(e.role) && !named.contains(e.count.name)) {
+                throw new IllegalArgumentException(file + ": " + e.count.name + " is a headline count reported in no cell");
+            }
+        }
+        return Collections.unmodifiableMap(out);
     }
 
     private static Entry entry(Path file, Document c) {

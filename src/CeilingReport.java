@@ -23,11 +23,15 @@ import java.util.List;
  * (CustomCounts), and the look is written to the ledger.
  *
  * The published families' max-|t| multipliers are not touched: the custom rows do not join them.
- * Each headline row is compared with each of its comparators, paired, and the claim "better than
- * the best published count" is made where every difference's lower end is above zero; the
- * smallest lower end is the gain (section 5). Every row is checked against its bound on every
- * resample, in flat and same-schedule cells; a row above it is a scoring bug, and the report says
- * so and fails.
+ * A headline claim is made only for the (count, cell) pairs the file's "cells" name (CustomCounts):
+ * each such row is compared with each of its comparators, paired, and the claim "better than the
+ * best published count" is made where every difference's lower end is above zero; the smallest
+ * lower end is the gain (section 5). A cell names at most two rows, so its claims, each at the
+ * 95% interval's lower end, hold together at 95% (Bonferroni); a file naming no cells has no
+ * claims. Every first-decision row, the counts', the stored rows' and the refit check's, is
+ * checked against its bound on every resample, in flat and same-schedule cells; a row above it is
+ * a scoring bug, and the report says so and fails. Full-play rows are not checked, since their
+ * bound needs the split margin (section 2).
  */
 final class CeilingReport {
 
@@ -303,19 +307,20 @@ final class CeilingReport {
         return out;
     }
 
-    /** Rows above their bound on some resample, in flat and same-schedule cells: each "row at cell", empty when none. */
+    /**
+     * Rows above their bound on some resample, in flat and same-schedule cells: each "row at cell",
+     * empty when none. The rows are every first-decision row: the counts scored here, each with its
+     * own-value row, the stored rows, and the refit check, which plays count-based first decisions
+     * and so is under the perfect first move's bound.
+     */
     static List<String> aboveBound(Ceiling c) {
         List<String> out = new ArrayList<>();
-        List<SystemScorer.Entry> rows = new ArrayList<>();
-        for (SystemScorer.Result r : c.custom) {
-            rows.addAll(r.entries);
-        }
-        for (SystemScorer.Result r : c.published.results) {
-            rows.addAll(r.entries);
-        }
-        for (SystemScorer.Entry e : rows) {
+        for (SystemScorer.Entry e : boundChecked(c)) {
             SystemScorer.Entry bound = c.bounds.get(e.bettingOnly ? 1 : 0);
             for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                if (e.estimate[p] == null) {
+                    continue;
+                }
                 for (int s = 0; s <= SystemScorer.SPREADS; s++) {
                     int m = s == 0 ? SystemScorer.FLAT : SystemScorer.same(s);
                     boolean over = e.estimate[p][m] > bound.estimate[p][m] + 1e-12;
@@ -327,6 +332,45 @@ final class CeilingReport {
                     }
                 }
             }
+        }
+        return out;
+    }
+
+    /** The rows aboveBound checks: every first-decision row, the counts', the stored rows' and the refit check's. */
+    static List<SystemScorer.Entry> boundChecked(Ceiling c) {
+        List<SystemScorer.Entry> rows = new ArrayList<>();
+        for (SystemScorer.Result r : c.custom) {
+            rows.addAll(r.entries);
+        }
+        for (SystemScorer.Result r : c.published.results) {
+            rows.addAll(r.entries);
+        }
+        rows.addAll(c.refit);
+        return rows;
+    }
+
+    /** The cells a claim is made in at each penetration, as {their key in the file's "cells", their label}. */
+    static final String[][] CLAIM_CELLS = {{"same", "1-8"}, {"flat", "flat"}, {"own", "own ramp 1-8"}};
+
+    static int claimMetric(String cell) {
+        switch (cell) {
+            case "flat":
+                return SystemScorer.FLAT;
+            case "same":
+                return SystemScorer.same(SystemScorer.SPREADS);
+            default:
+                return SystemScorer.own(SystemScorer.SPREADS);
+        }
+    }
+
+    /** The headline rows the file names for a cell, in its order; empty where it names no cells. */
+    static List<SystemScorer.Result> claimed(Ceiling c, String cell) {
+        List<SystemScorer.Result> out = new ArrayList<>();
+        if (c.counts.cells == null) {
+            return out;
+        }
+        for (String name : c.counts.cells.get(cell)) {
+            out.add(c.custom.get(c.counts.indexOf(name)));
         }
         return out;
     }
@@ -344,13 +388,19 @@ final class CeilingReport {
         out.printf("Scored again with these classes and equal to the stored rows to the bit: %s.%n%n",
                 String.join(", ", c.checked));
         if (c.counts.registered) {
-            out.printf("Registered from the twin %s at commit %s. The count reported in each cell: %s.%n%n", c.counts.twin,
-                    c.counts.searchCommit, c.counts.cells);
+            out.printf("Registered from the twin %s at commit %s. The counts reported in each cell, at every penetration: "
+                    + "flat %s; the same schedule, every spread, %s; the own ramp %s.%n%n", c.counts.twin,
+                    c.counts.searchCommit, c.counts.cells.get("flat"), c.counts.cells.get("same"), c.counts.cells.get("own"));
         }
         List<String> over = aboveBound(c);
         out.println("## Bounds");
         out.println();
-        out.println(over.isEmpty() ? "No row is above its bound on any resample, flat or on the same schedule."
+        out.printf("Checked on every resample, flat and on the same schedule at every spread: every first-decision row, "
+                + "%d in all (the counts scored here with their own-value rows, the stored rows and the refit check), "
+                + "each playing its own fit against the perfect first move's bound and each betting only against the "
+                + "chart's with perfect insurance. Full-play rows are not checked here: their bound needs the split "
+                + "margin (COUNT_DESIGN.md, section 2).%n%n", boundChecked(c).size());
+        out.println(over.isEmpty() ? "No row checked is above its bound on any resample."
                 : "ROWS ABOVE THEIR BOUND, A SCORING BUG: " + String.join("; ", over) + ".");
         out.println();
 
@@ -396,28 +446,31 @@ final class CeilingReport {
 
         out.println("## Headline claims");
         out.println();
-        out.println("Each headline row less each of its comparators, paired resample by resample, at the 95% interval's "
-                + "lower end (a one-sided 97.5% bound). The claim holds where every lower end is above zero; the "
-                + "smallest is the gain, a lower bound on the row less the best published row, whichever that is.");
-        for (int i = 0; i < c.custom.size(); i++) {
-            CustomCounts.Entry reg = c.counts.entries.get(i);
-            if (!"headline".equals(reg.role)) {
-                continue;
-            }
-            SystemScorer.Result r = c.custom.get(i);
-            SystemScorer.Entry k = row(r);
+        if (c.counts.cells == null) {
+            out.printf("%s names no cells, so no claim is made.%n%n", c.counts.file);
+        } else {
+            out.println("Only the counts the file names for each cell. Each such row less each of its comparators, paired "
+                    + "resample by resample, at the 95% interval's lower end (a one-sided 97.5% bound). The claim holds "
+                    + "where every lower end is above zero; the smallest is the gain, a lower bound on the row less the "
+                    + "best published row, whichever that is. A cell names at most two rows, so its claims hold together "
+                    + "at 95% (Bonferroni); each cell is a statement of its own, not covered jointly with the others, and "
+                    + "the headline is 80%, 1-8.");
             for (int p = 0; p < SystemScorer.CUTS.length; p++) {
-                for (int metric : new int[]{s8, SystemScorer.FLAT}) {
-                    Claim cl = claim(k, comparators(c, r), p, metric);
-                    out.printf("%n- %s at %s, %s: gain %s; best comparator %s, difference %s %s; %d comparators; claim %s.",
-                            k.name, SystemScorer.PENETRATIONS[p], metric == SystemScorer.FLAT ? "flat" : "1-8",
-                            ComparisonReport.pct(cl.gain), cl.best.name, ComparisonReport.pct(cl.fromBest.estimate),
-                            ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made");
+                for (String[] cell : CLAIM_CELLS) {
+                    int metric = claimMetric(cell[0]);
+                    for (SystemScorer.Result r : claimed(c, cell[0])) {
+                        SystemScorer.Entry k = row(r);
+                        Claim cl = claim(k, comparators(c, r), p, metric);
+                        out.printf("%n- %s at %s, %s: gain %s; best comparator %s, difference %s %s; %d comparators; "
+                                        + "claim %s.", k.name, SystemScorer.PENETRATIONS[p], cell[1],
+                                ComparisonReport.pct(cl.gain), cl.best.name, ComparisonReport.pct(cl.fromBest.estimate),
+                                ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made");
+                    }
                 }
             }
+            out.println();
+            out.println();
         }
-        out.println();
-        out.println();
 
         out.println("## Every cell of the counts scored here");
         for (SystemScorer.Result r : c.custom) {
