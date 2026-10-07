@@ -13,7 +13,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * values linear in the composition along a hidden direction, and a chart advantage that rises
  * along it. The count search, scoring candidates by SystemScorer.estimate as on the twin, must
  * find the hidden direction from Hi-Lo; with one direction for the bets and another for the
- * plays, F2 must find both and F1 land between them.
+ * plays, F2 must find both and F1 land between them; and F1r keeps its balanced part on the
+ * sphere, as F1 does.
  */
 public class CountSearchTest {
 
@@ -21,6 +22,8 @@ public class CountSearchTest {
     private static final int DOUBLE = 2;
     private static final int SHOES = 1200;
     private static final double[] HI_LO = {0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1};
+    /** The Ten Count's tags: a betting start some 43 degrees from F2's planted betting direction. */
+    private static final double[] TEN_COUNT = {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, -2.25};
 
     /** The true count of real tags by rank, per 52 cards, over the cards left: -52 sum t (p - p0). */
     static double trueCount(double[] t, int[] dealt) {
@@ -125,7 +128,10 @@ public class CountSearchTest {
 
     /**
      * With the bets rising along one direction and the plays flipping along another, F2 finds
-     * each (cosine at least 0.98), and F1, one vector for both, lands between them.
+     * each (cosine at least 0.98), the bets from the Ten Count, 43 degrees off, and F1, one vector
+     * for both, lands between them. F2's joint polish runs (it spends evaluations), F2 ends at or
+     * above its start and every block's end in its log, and at or above the planted pair less a
+     * hundredth of a point.
      */
     @Test
     public void f2FindsBothDirectionsAndF1LandsBetween() throws Exception {
@@ -137,13 +143,39 @@ public class CountSearchTest {
         CountSearch.Settings s2 = settings("F2", 1200);
         s2.run = "f2";
         CountKeys.Count f2;
-        try (CountSearch.SearchLog log = new CountSearch.SearchLog(dir.resolve("f2.tsv"), "# test", false)) {
-            f2 = CountSearch.search(sc, s2, HI_LO, HI_LO, log, false, null);
+        Path f2Log = dir.resolve("f2.tsv");
+        try (CountSearch.SearchLog log = new CountSearch.SearchLog(f2Log, "# test", false)) {
+            f2 = CountSearch.search(sc, s2, HI_LO, TEN_COUNT, log, false, null);
         }
+        assertTrue(CountSearch.cosine(TEN_COUNT, bet) < 0.75, "the betting start is far from the planted bets");
         double cp = CountSearch.cosine(playTags(f2), play);
         double cb = CountSearch.cosine(betTags(f2), bet);
         assertTrue(cp >= 0.98, "the play vector is at cosine " + cp);
         assertTrue(cb >= 0.98, "the betting vector is at cosine " + cb);
+
+        double found = sc.estimate(f2, CountKeys.bettingVariant(f2), s2.pen)[2][s2.metric];
+        List<String> lines = Files.readAllLines(f2Log);
+        long jointEvals = lines.stream().filter(l -> l.startsWith("eval\tf2/joint\t")).count();
+        assertTrue(jointEvals > 0, "the joint polish spent no evaluations");
+        int finals = 0;
+        for (String l : lines) {
+            String[] f = l.split("\t", -1);
+            if (f[0].equals("final") && f[1].startsWith("f2/")) {
+                finals++;
+                assertTrue(found >= Double.parseDouble(f[2]), "F2 ends at " + found + ", below " + f[1] + "'s end " + f[2]);
+            }
+            if (f[0].equals("note") && f[1].equals("f2") && f[2].startsWith("start ")) {
+                double start = Double.parseDouble(f[2].split(" ")[1]);
+                assertTrue(found >= start, "F2 ends at " + found + ", below its start " + start);
+                finals++;
+            }
+        }
+        assertTrue(finals >= 1 + 2 + 1, "the start, a cycle's two blocks at least, and the joint polish: " + finals);
+        CountKeys.Count planted = CountKeys.whole("planted", CountSearch.whole(CountSearch.onSphere(
+                CountSearch.coordinates(play)), s2.sign), CountSearch.whole(CountSearch.onSphere(
+                CountSearch.coordinates(bet)), s2.sign), s2.divisor, true);
+        double atPlanted = sc.estimate(planted, CountKeys.bettingVariant(planted), s2.pen)[2][s2.metric];
+        assertTrue(found >= atPlanted - 1e-4, "F2 ends at " + found + ", the planted pair scores " + atPlanted);
 
         CountSearch.Settings s1 = settings("F1", 720);
         s1.run = "f1";
@@ -174,5 +206,78 @@ public class CountSearchTest {
         assertEquals(f2.divisor(), r2.divisor());
         assertArrayEquals(f1.tag, r1.tag);
         assertNull(r1.betVector);
+    }
+
+    /**
+     * F1r, the running form, from KO's direction and balance: every generation's mean has its
+     * balanced part on the sphere of Hi-Lo's spread, the shift scaled with it, so its step is an
+     * angle and the least angle stops it as it stops F1; and it ends above KO.
+     */
+    @Test
+    public void f1rKeepsItsBalancedPartOnTheSphere() throws Exception {
+        double[] hidden = {0, -0.6, 0.5, 0.7, 0.9, 1.2, 0.8, 0.4, 0, -0.3, -0.9};
+        ScoringStates st = planted(hidden, hidden, 1);
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(SHOES, 0, 1), 1);
+        Path dir = Files.createTempDirectory("search");
+        CountSearch.Settings s = settings("F1r", 600);
+        s.divisor = 3 * CountKeys.K / 10;
+        s.minAngle = Math.toRadians(1);
+        s.run = "f1r";
+        double[] ko = CountSearch.rankTags(CountSearch.catalogCount("KO (Knock-Out)"));
+        Path file = dir.resolve("f1r.tsv");
+        CountKeys.Count found;
+        try (CountSearch.SearchLog log = new CountSearch.SearchLog(file, "# test", false)) {
+            found = CountSearch.search(sc, s, ko, null, log, false, null);
+        }
+        assertFalse(found.trueCounted);
+        int states = 0;
+        double lastStep = Double.NaN;
+        for (String l : Files.readAllLines(file)) {
+            String[] f = l.split("\t", -1);
+            if (!f[0].equals("state")) {
+                continue;
+            }
+            states++;
+            String[] x = f[5].split(",");
+            assertEquals(10, x.length);
+            double n = 0;
+            for (int k = 0; k < 9; k++) {
+                n += Math.pow(Double.parseDouble(x[k]), 2);
+            }
+            assertEquals(CountSearch.RADIUS, Math.sqrt(n), 1e-9, "generation " + f[2] + "'s balanced part on the sphere");
+            lastStep = Double.parseDouble(f[4]) / CountSearch.RADIUS;
+        }
+        assertTrue(states > 0);
+        int evals = Integer.parseInt(CountSearch.SearchLog.finalOf(file, "f1r")[2]);
+        assertTrue(evals + s.lambda > s.maxEvals || lastStep < s.minAngle, "it stopped by its budget or its angle");
+        CountKeys.Count start = CountKeys.whole("KO", CountSearch.wholeRunning(startCoordinates(ko), s.sign), null,
+                s.divisor, false);
+        double v = sc.estimate(found, null, s.pen)[0][s.metric];
+        double v0 = sc.estimate(start, null, s.pen)[0][s.metric];
+        assertTrue(v > v0, "F1r " + v + " beats its start " + v0);
+    }
+
+    /** F1r's ten coordinates of a start's tags, as the search makes them: its balanced part's nine and its shift. */
+    private static double[] startCoordinates(double[] tags) {
+        double[] x = java.util.Arrays.copyOf(CountSearch.coordinates(tags), 10);
+        x[9] = CountKeys.mean(tags);
+        return x;
+    }
+
+    /** A search's log names its sign reference, so a resume with another one is refused. */
+    @Test
+    public void aResumeWithAnotherSignIsRefused() throws Exception {
+        CountSearch.Settings s = settings("F1", 720);
+        String hiLo = CountSearch.header("c", "states x", 20261007L, -1, 100, 1, s, HI_LO, null);
+        s.sign = new double[]{0, -2, 1, 1, 2, 2, 2, 1, 0, 0, -2};
+        String zen = CountSearch.header("c", "states x", 20261007L, -1, 100, 1, s, HI_LO, null);
+        assertTrue(hiLo.contains("sign Hi-Lo"), hiLo);
+        assertNotEquals(hiLo, zen);
+        Path file = Files.createTempDirectory("sign").resolve("log.tsv");
+        try (CountSearch.SearchLog log = new CountSearch.SearchLog(file, zen, false)) {
+            log.note("r", "begun");
+        }
+        assertThrows(IllegalStateException.class, () -> new CountSearch.SearchLog(file, hiLo, true));
+        new CountSearch.SearchLog(file, zen, true).close();
     }
 }

@@ -34,15 +34,19 @@ import java.util.concurrent.Future;
  *   row, at the 1-8 same schedule or flat, at 80%;
  * - F2: a play vector and a betting vector; its objective the betting variant's row. The search
  *   alternates two blocks, the betting vector with the play held (SystemScorer.hold and betOn,
- *   cheap), then the play vector, until neither moves the objective by more than the noise floor
- *   or after three cycles, and ends with both together;
+ *   cheap), then the play vector, until a cycle moves the objective by no more than the noise
+ *   floor or after three cycles, and ends with both together. Each block after the first of its
+ *   kind, and the joint polish, start from the step the block before them ended at, and each
+ *   block's end is taken only where it scores at least what its start did, so F2 ends at or
+ *   above its start and every block's end;
  * - F1r: the ten tags keyed on the running count with a running divisor; the constant shift is a
- *   tenth coordinate, and the sphere is the balanced part's.
+ *   tenth coordinate, and the sphere is the balanced part's, the shift scaled with it.
  *
  * Every evaluation is logged with its run, generation, objective and whole-number tags, and after
  * every generation the search's state, so a search can be audited and a stopped one resumed: it
  * then goes on exactly as it would have (Cma's generations are seeded by number). The log is a
- * tab-separated file; its header names the state file, its header seed, and the settings.
+ * tab-separated file; its header names the state file, its header seed, and the settings, the sign
+ * reference among them, so a resume with any of them changed is refused.
  *
  * java -Xmx12g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar CountSearch --states TWIN --log FILE
  *   --form F1|F2|F1r [--metric same8|flat] [--pen 2] --divisor D [--start A,2,...,T | --start-count NAME
@@ -258,16 +262,18 @@ final class CountSearch {
 
     // ------------------------------------------------------------------ one run
 
-    /** A run's end: its final mean and what that scores. */
+    /** A run's end: its final mean, what that scores, and the step it ended at, as an angle. */
     static final class Final {
         final double[] mean;
         final double value;
         final int evaluations;
+        final double step;
 
-        Final(double[] mean, double value, int evaluations) {
+        Final(double[] mean, double value, int evaluations, double step) {
             this.mean = mean;
             this.value = value;
             this.evaluations = evaluations;
+            this.step = step;
         }
     }
 
@@ -315,7 +321,7 @@ final class CountSearch {
         if (log != null) {
             log.finalMean(run, value, w.of(mean), cma.state.evaluations);
         }
-        return new Final(mean, value, cma.state.evaluations);
+        return new Final(mean, value, cma.state.evaluations, cma.step());
     }
 
     // ------------------------------------------------------------------ the log
@@ -387,6 +393,15 @@ final class CountSearch {
         synchronized void note(String run, String text) throws IOException {
             out.write("note\t" + run + "\t" + text.replace('\t', ' ').replace('\n', ' ') + "\n");
             out.flush();
+        }
+
+        /** A note, unless the log holds it already, as a resumed search that records it again would. */
+        synchronized void noteOnce(String run, String text) throws IOException {
+            String line = "note\t" + run + "\t" + text.replace('\t', ' ').replace('\n', ' ');
+            out.flush();
+            if (!Files.readAllLines(file, StandardCharsets.UTF_8).contains(line)) {
+                note(run, text);
+            }
         }
 
         /** A run's last state in the log, or null. */
@@ -504,8 +519,8 @@ final class CountSearch {
                                               SearchLog log, boolean resume, PrintStream out) throws Exception {
         switch (s.form) {
             case "F1": {
-                Final f = cmaRun(sc, s, f1(sc, s), onSphere(coordinates(start)), RADIUS, s.run, s.maxEvals, log, resume,
-                        x -> tagText(whole(x, s.sign)));
+                Final f = cmaRun(s, f1(sc, s), onSphere(coordinates(start)), RADIUS, 9, s.sigma, s.run, s.maxEvals, log,
+                        resume, x -> tagText(whole(x, s.sign)));
                 return CountKeys.whole(s.run, whole(f.mean, s.sign), null, s.divisor, true);
             }
             case "F1r": {
@@ -521,7 +536,9 @@ final class CountSearch {
                 for (int k = 0; k < 10; k++) {
                     x[k] *= f0;
                 }
-                Final f = cmaRun(sc, s, f1r(sc, s), x, 0, s.run, s.maxEvals, log, resume,
+                // On the sphere of the balanced part, the shift scaled with it: the objective sees
+                // only the ten coordinates' direction, and a step keeps its angle.
+                Final f = cmaRun(s, f1r(sc, s), x, RADIUS, 9, s.sigma, s.run, s.maxEvals, log, resume,
                         y -> tagText(wholeRunning(y, s.sign)));
                 return CountKeys.whole(s.run, wholeRunning(f.mean, s.sign), null, s.divisor, false);
             }
@@ -532,64 +549,103 @@ final class CountSearch {
         }
     }
 
-    private static Final cmaRun(SystemScorer sc, Settings s, Objective f, double[] mean, double radius, String run,
-                                int maxEvals, SearchLog log, boolean resume, Writer w) throws Exception {
+    /**
+     * One run of CMA-ES from the mean given, on the sphere of that radius over its first sphereDims
+     * coordinates, starting at the step given as an angle in radians; resumed from the log when
+     * asked, or given as the log has it when it had ended.
+     */
+    private static Final cmaRun(Settings s, Objective f, double[] mean, double radius, int sphereDims, double step,
+                                String run, int maxEvals, SearchLog log, boolean resume, Writer w) throws Exception {
+        Cma cma = new Cma(mean.length, s.lambda, s.seed + run.hashCode(), mean, step * radius, radius, sphereDims);
         if (resume && log != null) {
+            Cma.State last = SearchLog.lastState(log.file, run);
             String[] done = SearchLog.finalOf(log.file, run);
             if (done != null) {
                 // This run ended before the search stopped: its end, as logged.
-                Cma.State last = SearchLog.lastState(log.file, run);
-                return new Final(last == null ? mean : last.mean, Double.parseDouble(done[0]), Integer.parseInt(done[2]));
+                return new Final(last == null ? cma.state.mean.clone() : last.mean, Double.parseDouble(done[0]),
+                        Integer.parseInt(done[2]), last == null ? cma.step() : last.sigma / radius);
             }
-        }
-        double scale = radius > 0 ? radius : RADIUS;
-        Cma cma = new Cma(mean.length, s.lambda, s.seed + run.hashCode(), mean, s.sigma * scale, radius);
-        if (resume && log != null) {
-            Cma.State last = SearchLog.lastState(log.file, run);
             if (last != null) {
                 cma.restore(last);
             }
         }
-        return run(cma, f, maxEvals, s.minAngle * (radius > 0 ? 1 : RADIUS), s.threads, log, run, w);
+        return run(cma, f, maxEvals, s.minAngle, s.threads, log, run, w);
+    }
+
+    /**
+     * The step a block after the first of its kind starts from: the step the block before it ended
+     * at, no more than the starting step and no less than twice the least angle, so it runs.
+     */
+    static double nextStep(Settings s, double ended) {
+        return Math.min(s.sigma, Math.max(ended, 2 * s.minAngle));
     }
 
     /**
      * F2: from a play vector and a betting vector, the betting block (the play held), then the
-     * play block (the bets held), each a run of CMA-ES with a third of the budget left over three
-     * cycles, until a cycle moves the objective by no more than the noise floor; then both
-     * together, a joint polish with what is left of the budget, at most a third of it.
+     * play block (the bets held), each a run of CMA-ES with a seventh of the budget, over at most
+     * three cycles, until a cycle moves the objective by no more than the noise floor; then both
+     * together, a joint polish with a third of the budget, on the eighteen coordinates kept on the
+     * sphere of radius sqrt(2) times Hi-Lo's, each vector on its own sphere at the start.
+     *
+     * The first block of each kind starts at the search's step; each later one, and the polish,
+     * from the step the block before it of its kind ended at (nextStep), so a later block refines
+     * where the one before left off rather than searching afresh. A block's (or the polish's) end
+     * is taken only where it scores at least what its start does, otherwise its start is kept and
+     * the log says so; so F2 ends at or above its start and every block's end. The start's score is
+     * logged as a note.
      */
     private static CountKeys.Count searchF2(SystemScorer sc, Settings s, double[] play, double[] bet, SearchLog log,
                                             boolean resume, PrintStream out) throws Exception {
         int[] p = whole(onSphere(coordinates(play)), s.sign);
         int[] b = whole(onSphere(coordinates(bet)), s.sign);
         int block = Math.max(s.lambda, s.maxEvals / 7);
-        double best = f2Joint(sc, s).of(join(coordinates(toDouble(p)), coordinates(toDouble(b))));
+        double value = f2Joint(sc, s).of(join(onSphere(coordinates(toDouble(p))), onSphere(coordinates(toDouble(b)))));
+        if (log != null) {
+            log.noteOnce(s.run, "start " + value + " " + tagText(p) + "|" + tagText(b));
+        }
+        double betStep = s.sigma;
+        double playStep = s.sigma;
         for (int cycle = 1; cycle <= 3; cycle++) {
-            double before = best;
-            int[] pp = p;
-            Final fb = cmaRun(sc, s, f2Bet(sc, s, pp), onSphere(coordinates(toDouble(b))), RADIUS,
-                    s.run + "/cycle" + cycle + "/bet", block, log, resume, x -> tagText(whole(x, s.sign)));
-            b = whole(fb.mean, s.sign);
-            int[] bb = b;
-            Final fp = cmaRun(sc, s, f2Play(sc, s, bb), onSphere(coordinates(toDouble(p))), RADIUS,
-                    s.run + "/cycle" + cycle + "/play", block, log, resume, x -> tagText(whole(x, s.sign)));
-            p = whole(fp.mean, s.sign);
-            best = fp.value;
-            if (out != null) {
-                out.printf(Locale.ROOT, "F2 cycle %d: %.6f%% after the betting block, %.6f%% after the play block%n", cycle,
-                        100 * fb.value, 100 * fp.value);
+            double before = value;
+            String name = s.run + "/cycle" + cycle;
+            Final fb = cmaRun(s, f2Bet(sc, s, p), onSphere(coordinates(toDouble(b))), RADIUS, 9, betStep, name + "/bet",
+                    block, log, resume, x -> tagText(whole(x, s.sign)));
+            betStep = nextStep(s, fb.step);
+            if (fb.value >= value) {
+                b = whole(fb.mean, s.sign);
+                value = fb.value;
+            } else if (log != null) {
+                log.noteOnce(name + "/bet", "kept its start, " + value + ", above its end");
             }
-            if (Math.abs(best - before) <= s.noise) {
+            Final fp = cmaRun(s, f2Play(sc, s, b), onSphere(coordinates(toDouble(p))), RADIUS, 9, playStep, name + "/play",
+                    block, log, resume, x -> tagText(whole(x, s.sign)));
+            playStep = nextStep(s, fp.step);
+            if (fp.value >= value) {
+                p = whole(fp.mean, s.sign);
+                value = fp.value;
+            } else if (log != null) {
+                log.noteOnce(name + "/play", "kept its start, " + value + ", above its end");
+            }
+            if (out != null) {
+                out.printf(Locale.ROOT, "F2 cycle %d: %.6f%% after the betting block, %.6f%% after the play block, "
+                        + "%.6f%% kept%n", cycle, 100 * fb.value, 100 * fp.value, 100 * value);
+            }
+            if (value - before <= s.noise) {
                 break;
             }
         }
-        double[] joint = join(coordinates(toDouble(p)), coordinates(toDouble(b)));
-        Final fj = cmaRun(sc, s, f2Joint(sc, s), joint, RADIUS * Math.sqrt(2), s.run + "/joint",
+        double[] joint = join(onSphere(coordinates(toDouble(p))), onSphere(coordinates(toDouble(b))));
+        double jointStep = Math.max(2 * s.minAngle, Math.max(betStep, playStep) / Math.sqrt(2));
+        Final fj = cmaRun(s, f2Joint(sc, s), joint, RADIUS * Math.sqrt(2), 18, jointStep, s.run + "/joint",
                 Math.max(s.lambda, s.maxEvals / 3), log, resume,
                 x -> tagText(whole(Arrays.copyOf(x, 9), s.sign)) + "|" + tagText(whole(Arrays.copyOfRange(x, 9, 18), s.sign)));
-        return CountKeys.whole(s.run, whole(Arrays.copyOf(fj.mean, 9), s.sign),
-                whole(Arrays.copyOfRange(fj.mean, 9, 18), s.sign), s.divisor, true);
+        if (fj.value >= value) {
+            p = whole(Arrays.copyOf(fj.mean, 9), s.sign);
+            b = whole(Arrays.copyOfRange(fj.mean, 9, 18), s.sign);
+        } else if (log != null) {
+            log.noteOnce(s.run + "/joint", "kept its start, " + value + ", above its end");
+        }
+        return CountKeys.whole(s.run, p, b, s.divisor, true);
     }
 
     private static double[] toDouble(int[] t) {
@@ -685,12 +741,8 @@ final class CountSearch {
             st = st.subRun(half, 2);
         }
         SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, 0, Bootstrap.SEED), mPlay);
-        String head = "# CountSearch " + FullIndexRun.commit() + ", " + FullIndexRun.stateFile(states) + ", header seed "
-                + header.seed + (half >= 0 ? ", half " + half : "") + ", " + st.size + " valued states; form " + s.form
-                + ", metric " + s.metric + ", penetration " + s.pen + ", divisor " + s.divisor + ", M_play " + mPlay
-                + ", lambda " + s.lambda + ", sigma " + s.sigma + ", max evaluations " + s.maxEvals + ", least angle "
-                + Math.toDegrees(s.minAngle) + " degrees, noise " + s.noise + ", seed " + s.seed + ", run " + s.run
-                + ", start " + Arrays.toString(start) + (startBet == null ? "" : ", betting start " + Arrays.toString(startBet));
+        String head = header(FullIndexRun.commit(), FullIndexRun.stateFile(states), header.seed, half, st.size, mPlay, s,
+                start, startBet);
         PrintStream out = System.out;
         out.println(head);
         long t0 = System.nanoTime();
@@ -700,6 +752,22 @@ final class CountSearch {
             log.note(s.run, "found " + found.describe());
         }
         out.printf("Found %s in %.0f s.%n", found.describe(), (System.nanoTime() - t0) / 1e9);
+    }
+
+    /**
+     * The log's header line: the commit, the state file and its seed, and every setting that sets
+     * the search's course, the sign reference among them ("Hi-Lo" when none is given), so a resume
+     * with any of them changed is refused (SearchLog).
+     */
+    static String header(String commit, String stateFile, long seed, int half, int size, double mPlay, Settings s,
+                         double[] start, double[] startBet) {
+        return "# CountSearch " + commit + ", " + stateFile + ", header seed " + seed + (half >= 0 ? ", half " + half : "")
+                + ", " + size + " valued states; form " + s.form + ", metric " + s.metric + ", penetration " + s.pen
+                + ", divisor " + s.divisor + ", M_play " + mPlay + ", lambda " + s.lambda + ", sigma " + s.sigma
+                + ", max evaluations " + s.maxEvals + ", least angle " + Math.toDegrees(s.minAngle) + " degrees, noise "
+                + s.noise + ", seed " + s.seed + ", sign " + (s.sign == null ? "Hi-Lo" : Arrays.toString(s.sign))
+                + ", run " + s.run + ", start " + Arrays.toString(start)
+                + (startBet == null ? "" : ", betting start " + Arrays.toString(startBet));
     }
 
     // ------------------------------------------------------------------ slices

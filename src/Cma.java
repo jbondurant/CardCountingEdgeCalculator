@@ -11,7 +11,11 @@ import java.util.Random;
  *
  * On a sphere (radius > 0), the mean is put back on the sphere after every generation and the
  * step scaled with it, so a step keeps its angle: the search over directions the count search
- * makes, where the objective sees only a candidate's direction.
+ * makes, where the objective sees only a candidate's direction. The sphere may be that of the
+ * first coordinates alone (sphereDims), the rest scaled with them, as for F1r, whose shift is a
+ * tenth coordinate scaled with its balanced part. The step given at the start is the step at the
+ * sphere's radius: the mean given is put on the sphere and the step taken as it is, so a start
+ * given at any scale keeps the angle asked for.
  *
  * It is deterministic: generation g draws from a generator seeded from the seed and g alone, so a
  * search stopped after any generation and resumed from its State goes on exactly as it would have.
@@ -50,6 +54,8 @@ final class Cma {
     final long seed;
     /** The sphere the mean is kept on; 0 for none. */
     final double radius;
+    /** How many of the first coordinates the sphere is of; the rest are scaled with them. */
+    final int sphereDims;
     private final double[] weights;
     private final double mueff;
     private final double cc;
@@ -64,7 +70,15 @@ final class Cma {
     private double[] d;
 
     Cma(int n, int lambda, long seed, double[] mean, double sigma, double radius) {
-        if (n < 1 || lambda < 2 || mean.length != n || !(sigma > 0)) {
+        this(n, lambda, seed, mean, sigma, radius, n);
+    }
+
+    /**
+     * A search of n coordinates from the mean given with step sigma; on a sphere of the radius
+     * given (0 for none) over the first sphereDims coordinates, sigma the step at that radius.
+     */
+    Cma(int n, int lambda, long seed, double[] mean, double sigma, double radius, int sphereDims) {
+        if (n < 1 || lambda < 2 || mean.length != n || !(sigma > 0) || sphereDims < 1 || sphereDims > n) {
             throw new IllegalArgumentException("a search needs dimensions, two candidates a generation and a step");
         }
         this.n = n;
@@ -72,6 +86,7 @@ final class Cma {
         this.mu = lambda / 2;
         this.seed = seed;
         this.radius = radius;
+        this.sphereDims = sphereDims;
         weights = new double[mu];
         double sum = 0;
         for (int i = 0; i < mu; i++) {
@@ -101,7 +116,8 @@ final class Cma {
         s.ps = new double[n];
         restore(s);
         if (radius > 0) {
-            onSphere();
+            // The step is given at the sphere's radius: only the mean is moved onto it.
+            onSphere(false);
         }
     }
 
@@ -217,16 +233,19 @@ final class Cma {
         s.generation++;
         s.evaluations += lambda;
         if (radius > 0) {
-            onSphere();
+            onSphere(true);
         }
         decompose();
     }
 
-    /** Puts the mean back on the sphere and scales the step with it, so the step keeps its angle. */
-    private void onSphere() {
+    /**
+     * Puts the mean back on the sphere, scaling it whole by the radius over the length of its
+     * first sphereDims coordinates, and with step, the step alike, so the step keeps its angle.
+     */
+    private void onSphere(boolean step) {
         double r = 0;
-        for (double v : state.mean) {
-            r += v * v;
+        for (int i = 0; i < sphereDims; i++) {
+            r += state.mean[i] * state.mean[i];
         }
         r = Math.sqrt(r);
         if (!(r > 0)) {
@@ -235,7 +254,9 @@ final class Cma {
         for (int i = 0; i < n; i++) {
             state.mean[i] *= radius / r;
         }
-        state.sigma *= radius / r;
+        if (step) {
+            state.sigma *= radius / r;
+        }
     }
 
     /** B and D from C, by Jacobi rotations; C is kept symmetric. */

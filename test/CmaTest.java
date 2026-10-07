@@ -206,6 +206,54 @@ public class CmaTest {
         assertEquals(0, CountSearch.slice(f, h, h, 0.1, 5).length, "no slice along the centre");
     }
 
+    /**
+     * A start given off the sphere, at any scale, is put on it with the step taken as given, so a
+     * run starts at the angle asked for (F2's joint polish starts from whole-number tags at K); and
+     * on the sphere of the first coordinates alone (F1r's balanced part), the mean is scaled whole,
+     * the rest with them, every generation, the step keeping its angle.
+     */
+    @Test
+    public void aStartIsPutOnTheSphereWithTheStepAsGiven() {
+        double[] start = CountSearch.onSphere(CountSearch.coordinates(new double[]{0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1}));
+        double r = CountSearch.RADIUS;
+        for (double scale : new double[]{1, 1e4, 1e-3}) {
+            double[] x = start.clone();
+            for (int i = 0; i < x.length; i++) {
+                x[i] *= scale;
+            }
+            Cma cma = new Cma(9, 12, 3, x, 0.3 * r, r);
+            assertEquals(0.3, cma.step(), 1e-15, "at scale " + scale);
+            assertArrayEquals(start, cma.state.mean, 1e-12);
+        }
+        double[] ten = java.util.Arrays.copyOf(start, 10);
+        ten[9] = 0.4;
+        for (int i = 0; i < 10; i++) {
+            ten[i] *= 7;
+        }
+        Cma cma = new Cma(10, 12, 4, ten, 0.2 * r, r, 9);
+        assertEquals(0.2, cma.step(), 1e-15);
+        assertEquals(0.4, cma.state.mean[9], 1e-12, "the shift scaled with the balanced part");
+        Random rnd = new Random(5);
+        for (int g = 0; g < 20; g++) {
+            double[][] xs = cma.ask();
+            double[] v = new double[xs.length];
+            for (int k = 0; k < xs.length; k++) {
+                v[k] = rnd.nextGaussian();
+            }
+            double before = cma.state.sigma;
+            double[] mean = cma.state.mean.clone();
+            cma.tell(xs, v);
+            double n = 0;
+            for (int i = 0; i < 9; i++) {
+                n += cma.state.mean[i] * cma.state.mean[i];
+            }
+            assertEquals(r, Math.sqrt(n), 1e-12, "generation " + g + ": the balanced part on the sphere");
+            assertNotEquals(mean[9], cma.state.mean[9]);
+            assertTrue(cma.state.sigma != before);
+        }
+        assertThrows(IllegalArgumentException.class, () -> new Cma(10, 12, 4, ten, 1, r, 11));
+    }
+
     /** A search stopped after any generation and resumed from its logged state ends where one never stopped ends. */
     @Test
     public void aResumedSearchGoesOnAsIfNeverStopped() throws Exception {

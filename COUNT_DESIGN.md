@@ -400,12 +400,19 @@ against each other) and does not depend on the choice of axes.
   direction and balance.
 - **Every evaluation is logged** (tags, objective, run, generation), so a search can be
   audited, its landscape inspected and a stopped search resumed.
-- **As built** (CountSearch, Cma): the sign reference is Hi-Lo unless one is given. F2's blocks
-  each take a seventh of the budget, over at most three cycles, and the joint polish a third,
-  so an F2 search may spend somewhat more than its cap; the polish runs on the eighteen
-  coordinates of both vectors, kept on the sphere of radius √2 times Hi-Lo's, each vector
-  normalised again before it is scored. F1r's sphere is its balanced part's, the shift scaled
-  with it.
+- **As built** (CountSearch, Cma): the sign reference is Hi-Lo unless one is given, and the log's
+  header names it, so a resume with another is refused. A run's starting step is an angle,
+  whatever the scale of the start it is given. F2's blocks each take a seventh of the budget,
+  over at most three cycles, and the joint polish a third, so an F2 search may spend somewhat
+  more than its cap; the polish runs on the eighteen coordinates of both vectors, kept on the
+  sphere of radius √2 times Hi-Lo's, each vector put on its own sphere at the start and
+  normalised again before it is scored. The first block of each kind starts at the search's
+  step; each later block, and the polish, at the step the block before it of its kind ended at
+  (no less than twice the least angle), so it refines rather than searches afresh. A block's
+  end, or the polish's, is taken only where it scores at least what its start does, so F2 ends
+  at or above its start and every block's end; the log notes the start's score and any end not
+  taken. F1r's sphere is its balanced part's, the shift scaled with it, so its step too is an
+  angle and the least angle stops it.
 
 **How we know it found the maximum, or how close.** The objective has jumps, so no search can
 prove a global maximum. These show that nothing within the data's resolution was missed:
