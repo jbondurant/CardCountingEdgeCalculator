@@ -27,6 +27,9 @@ import java.util.concurrent.Future;
  * that plays its own fit is compared with Hi-Lo playing its own, and a betting-only row with
  * Hi-Lo betting only, on the same states and the same bootstrap resamples.
  *
+ * --counts FILE alone, on the twin file only, scores the counts a candidates file lists beside the
+ * catalog, in every table, for the calibration (COUNT_DESIGN.md, section 4).
+ *
  * With --published RESULTS --counts FILE it makes the ceiling count's report instead
  * (CeilingReport): the published rows read from a full-index run's results.ser, and only the
  * counts the file lists scored, beside the bound rows and the refit check.
@@ -89,8 +92,8 @@ public final class ComparisonReport {
             }
         }
         Locale.setDefault(Locale.ROOT);
-        if ((o.published == null) != (o.counts == null)) {
-            throw new IllegalArgumentException("--published and --counts go together");
+        if (o.published != null && o.counts == null) {
+            throw new IllegalArgumentException("--published needs --counts: the counts to score beside the stored rows");
         }
         if (o.published != null) {
             CeilingReport.run(Paths.get(args[0]), o.published, o.counts, o.resamples, Math.max(1, o.threads), System.out);
@@ -157,6 +160,12 @@ public final class ComparisonReport {
     }
 
     static Scored score(Path file, Options o) throws Exception {
+        if (o.counts != null) {
+            // Counts of our own beside the catalog, scored with it and in its tables: on the twin
+            // alone, for the calibration (COUNT_DESIGN.md, section 4); the main file takes them only
+            // through --published.
+            CustomCounts.requireTwin(file);
+        }
         Scored sc = new Scored();
         long t0 = System.nanoTime();
         StateStore.Header header = StateStore.header(file);
@@ -180,6 +189,9 @@ public final class ComparisonReport {
         sc.header = header;
         sc.scorer = new SystemScorer(sc.st, new Bootstrap(shoes, o.resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
         sc.counts = select(CountKeys.catalog(), o.systems);
+        if (o.counts != null) {
+            sc.counts.addAll(CustomCounts.read(o.counts).counts());
+        }
         sc.threads = Math.max(1, o.threads);
         sc.results = scoreAll(sc.scorer, sc.counts, sc.threads);
         sc.nullCount = sc.results.get(0);

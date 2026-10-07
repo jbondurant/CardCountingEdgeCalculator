@@ -728,7 +728,10 @@ is built in each round and not kept.
    - c06c061's files kept readable: the serialised classes only gain fields, a zero divisor
      reads as 1 and a missing betting vector as the play vector. If that cannot be kept, the
      arrays needed are first exported from results.ser to a plain format with
-     classes-c06c061;
+     classes-c06c061. (It is kept: every class those files reach already declares
+     serialVersionUID 1, as serialver on classes-c06c061 confirms, so no export is needed;
+     CeilingScoringTest reads a Result those classes write, and StoredResultsTest a part the
+     run wrote.);
    - the refusals, and every test of section 6.
 
    *Produces:* commits, with the suite passing.

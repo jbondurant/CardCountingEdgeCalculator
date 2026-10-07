@@ -94,6 +94,29 @@ public class CeilingReportTest {
         assertEquals(5, CeilingReport.comparators(c, c.custom.get(0)).size(), "F1's are the plain rows");
     }
 
+    /** On the twin, counts of our own are scored beside the catalog in every table; the main file refuses them so. */
+    @Test
+    public void onTheTwinCandidatesJoinTheCatalogsTables(@TempDir Path dir) throws Exception {
+        Path counts = CustomCountsTest.write(dir, "candidates.json", CustomCountsTest.CANDIDATES);
+        ComparisonReport.Options o = new ComparisonReport.Options();
+        o.systems = Arrays.asList("Zen Count");
+        o.resamples = 5;
+        o.threads = 2;
+        o.counts = counts;
+        Path twin = ComparisonReportTest.syntheticRun(dir, CustomCounts.TWIN_SEED, CustomCounts.TWIN_SEED, 12);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ComparisonReport.run(twin, o, new PrintStream(bytes, true, "UTF-8"));
+        String report = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        for (String row : new String[]{"| F1 start |", "| F2 start + betting vector |", "| F1r start |",
+                "| Hi-Opt II at grain 500/10000 + ace side count |", "| Zen Count |"}) {
+            assertTrue(report.contains(row), row);
+        }
+        Path main = ComparisonReportTest.syntheticRun(dir, 81, CustomCounts.MAIN_SEED, 4);
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> ComparisonReport.run(main, o,
+                new PrintStream(new ByteArrayOutputStream(), true, "UTF-8")));
+        assertTrue(e.getMessage().contains("main state file"), e.getMessage());
+    }
+
     @Test
     public void storedRowsThatDoNotPairAreRefused(@TempDir Path dir) throws Exception {
         Path file = ComparisonReportTest.syntheticRun(dir, 78, 78, 16);
