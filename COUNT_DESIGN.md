@@ -222,7 +222,9 @@ each state's own value.
     give it adds to the perfect row's first moves: for each pair deal, the play a SplitPlay
     draws from a hit or stand at each contested later total and a first move for each second
     card, found by coordinate ascent from the chart's. The ascent stops at a local optimum, so
-    δ is measured from below, and the margin with it; the report says so.
+    δ is measured from below, and the margin with it; the tool's lines say so, at each
+    penetration over the sampled states of that penetration, and a full-play bound plus this
+    margin is stated as conditional on it.
 - **The ceiling count's own play and insurance, bet on each state's own round value under
   that play.** This is not a bound on other counts. It splits the ceiling's gap to perfection
   into what its betting loses and what its play loses.
@@ -366,7 +368,9 @@ every sum weighted 1/q (CountRegression, new):
   single-deck ones converted to many decks less accurate; this does the same.
 
 The same regression is run on the main file only after the counts are registered (section 5),
-to print R beside the report's BC column.
+to print R beside the report's BC column. As built, CeilingReport runs it on the states it
+scores, within the registered look, and prints R beside every row's BC; CountRegression itself
+refuses the main file.
 
 **One evaluation** is SystemScorer's estimate at 80% with no resamples, no decision resolution
 and no half fits:
@@ -511,7 +515,11 @@ custom-count-ledger.tsv (commit, blob hash, time, what ran), and the tools refus
 while the ledger has uncommitted lines. The report prints the ledger. Nothing is chosen on the
 main file: whatever it shows, the tags and g stay as registered. A count changed after a
 main-file look is a second look and is reported as one; its held-out claim needs a fresh
-file, a third seed, before it may replace the headline.
+file, a third seed, before it may replace the headline. So that no figure needs a second look,
+the report saves everything it scores, every estimate and resample of the custom rows, the
+bound rows and the refit check, with R, to a new file before it prints (ComparisonReport
+--save; CeilingReport.save and readSaved), and on the main file it refuses a look without one.
+Any figure the report does not print is worked out from that file.
 
 **On the main file the custom rows are scored like any count:**
 - each fold fitted on the other parity;
@@ -558,6 +566,10 @@ comparators j, paired.
   counts' ratios (FULL_INDEX_PLAYS.md section 4).
 - The tags part of a gain is bounded the same way, against the controls at g.
 - The point difference from the best published row is reported either way.
+- **As built,** CeilingReport prints beside each claim its tags part, the smallest lower end
+  against the registered controls (role "control"; the plain ones for a count of one vector,
+  their side-count variants too for one with a betting vector), and the floor below; and a table
+  of the grain part, each control at g less the same count's stored row, paired.
 
 **What the interval means.** On the main file the tags are fixed inputs. A custom row's
 interval is therefore for that count's EV on new shoes, the same claim made for a published
@@ -569,6 +581,8 @@ result is a lower bound on the linear ceiling, stated two ways:
   registered and published rows, each taken with the max-|t| multiplier over those rows' EVs,
   so choosing the largest is covered;
 - **the gain:** the smallest lower end of the headline claim above.
+
+As built, the floor is printed beside each claim, at its cell, over the row and its comparators.
 
 Three measurements say how far below the ceiling that may sit:
 - **Optimism,** for every registered custom row: (row − Zen) on the twin, less (row − Zen) on

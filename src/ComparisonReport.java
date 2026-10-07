@@ -32,9 +32,11 @@ import java.util.concurrent.Future;
  *
  * With --published RESULTS --counts FILE it makes the ceiling count's report instead
  * (CeilingReport): the published rows read from a full-index run's results.ser, and only the
- * counts the file lists scored, beside the bound rows and the refit check.
+ * counts the file lists scored, beside the bound rows and the refit check. --save OUT keeps
+ * everything it scores, estimates and resamples, in a new file; the main file refuses a look
+ * without it.
  * java -Xmx12g -cp ... ComparisonReport FILE --published runs/full-index/full-c06c061/results.ser
- *      --counts custom-counts.json [--resamples N] [--threads T]
+ *      --counts custom-counts.json --save runs/report-ceiling-SHA.ser [--resamples N] [--threads T]
  */
 public final class ComparisonReport {
 
@@ -58,6 +60,8 @@ public final class ComparisonReport {
         /** A full-index run's results.ser to read the published rows from, and the counts to score beside them. */
         Path published;
         Path counts;
+        /** Where the ceiling report saves everything it scores (CeilingReport.save); needed on the main file. */
+        Path save;
     }
 
     public static void main(String[] args) throws Exception {
@@ -87,6 +91,9 @@ public final class ComparisonReport {
                 case "--counts":
                     o.counts = Paths.get(args[++a]);
                     break;
+                case "--save":
+                    o.save = Paths.get(args[++a]);
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown option " + args[a]);
             }
@@ -96,7 +103,8 @@ public final class ComparisonReport {
             throw new IllegalArgumentException("--published needs --counts: the counts to score beside the stored rows");
         }
         if (o.published != null) {
-            CeilingReport.run(Paths.get(args[0]), o.published, o.counts, o.resamples, Math.max(1, o.threads), System.out);
+            CeilingReport.run(Paths.get(args[0]), o.published, o.counts, o.save, o.resamples, Math.max(1, o.threads),
+                    FullIndexRun.commit(), System.out);
             return;
         }
         run(Paths.get(args[0]), o, System.out);

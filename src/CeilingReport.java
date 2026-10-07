@@ -1,6 +1,7 @@
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,6 +33,14 @@ import java.util.List;
  * checked against its bound on every resample, in flat and same-schedule cells; a row above it is
  * a scoring bug, and the report says so and fails. Full-play rows are not checked, since their
  * bound needs the split margin (section 2).
+ *
+ * Beside each claim it gives the tags part, the same bound against the registered controls at g,
+ * and the floor, the largest lower end among the row and its family's published rows under the
+ * max-|t| multiplier over them; then the grain part, each control at g less the same count at its
+ * own grain, paired; and R, the betting regression's multiple correlation on these states, beside
+ * every row's BC. Everything scored is saved (save, readSaved) before anything is printed, so a
+ * figure the report does not print is worked out from the file, never by looking at the main file
+ * again; on the main file a look without a file to save to is refused before it is made.
  */
 final class CeilingReport {
 
@@ -143,6 +152,8 @@ final class CeilingReport {
         List<SystemScorer.Entry> bounds;
         List<SystemScorer.Entry> refit = new ArrayList<>();
         List<String> checked = new ArrayList<>();
+        /** R: the betting regression's multiple correlation on these states, the ceiling of any linear count's BC. */
+        double r = Double.NaN;
     }
 
     /**
@@ -215,26 +226,89 @@ final class CeilingReport {
 
     /**
      * The report from a state file, the stored rows and the counts given: the counts file and the
-     * ledger checked on the main file, the stored rows checked, the look written to the ledger,
-     * then the counts scored and the report printed.
+     * ledger checked on the main file, and a file to save to given there and new, the stored rows
+     * checked, the look written to the ledger, then the counts scored, everything scored saved to
+     * save when given, and the report printed. commit names the classes in the ledger and the file.
      */
-    static Ceiling run(Path states, Path results, Path countsFile, int resamples, int threads, PrintStream out)
-            throws Exception {
+    static Ceiling run(Path states, Path results, Path countsFile, Path save, int resamples, int threads, String commit,
+                       PrintStream out) throws Exception {
         CustomCounts.Listing counts = CustomCounts.read(countsFile);
         boolean main = CustomCounts.isMain(states);
         String blob = main ? CustomCounts.checkOnMain(counts) : null;
+        if (main && save == null) {
+            throw new IllegalStateException("a main-file look saves everything it scores, so no figure needs a second "
+                    + "look: give --save FILE (COUNT_DESIGN.md, section 5)");
+        }
+        if (save != null && Files.exists(save)) {
+            throw new IllegalStateException(save + " exists; save the report's figures to a new file");
+        }
         Published p = read(results);
         ScoringStates st = FullIndexPilot.load(states, StateStore.shoesDone(states));
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
         Ceiling c = check(states, st, scorer, p, counts, threads);
         c.blob = blob;
         if (main) {
-            CustomCounts.appendLedger(CustomCounts.ledgerOf(counts), FullIndexRun.commit(), blob, "ComparisonReport "
-                    + "--published " + results + ", " + resamples + " resamples");
+            CustomCounts.appendLedger(CustomCounts.ledgerOf(counts), commit, blob, "ComparisonReport "
+                    + "--published " + results + ", " + resamples + " resamples, saved to " + save);
         }
         scoreCustom(c, threads);
+        c.r = CountRegression.betting(st).r;
+        if (save != null) {
+            save(c, states, commit, save);
+        }
         print(c, states, out);
         return c;
+    }
+
+    // ------------------------------------------------------------------ what is saved
+
+    /** What save writes: the run's identity, and everything scored beside the stored rows. */
+    static final class Saved {
+        String identity;
+        List<SystemScorer.Result> custom;
+        List<SystemScorer.Entry> bounds;
+        List<SystemScorer.Entry> refit;
+        List<String> checked;
+        double r;
+    }
+
+    /**
+     * Writes everything the report scored, estimates and resamples, to a new file, in one move: its
+     * identity (the classes' commit, the state file, the counts file and its blob, the resamples and
+     * the stored rows' run), the counts' Results, the bound rows, the refit check, the counts checked
+     * to the bit, and R.
+     */
+    static void save(Ceiling c, Path states, String commit, Path file) throws IOException {
+        String identity = "CeilingReport\ncommit " + commit + "\n" + FullIndexRun.stateFile(states) + "\ncounts "
+                + c.counts.file.toAbsolutePath().normalize() + (c.blob == null ? "" : ", blob " + c.blob) + "\nresamples "
+                + c.scorer.boot.resamples + ", seed " + Bootstrap.SEED + "\nstored rows of " + c.published.line("commit ");
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        try (ObjectOutputStream o = new ObjectOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(tmp),
+                1 << 20))) {
+            o.writeUTF(identity);
+            o.writeObject(new ArrayList<>(c.custom));
+            o.writeObject(new ArrayList<>(c.bounds));
+            o.writeObject(new ArrayList<>(c.refit));
+            o.writeObject(new ArrayList<>(c.checked));
+            o.writeDouble(c.r);
+        }
+        Files.move(tmp, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    /** Reads what save wrote. */
+    @SuppressWarnings("unchecked")
+    static Saved readSaved(Path file) throws IOException, ClassNotFoundException {
+        try (ObjectInputStream o = new ObjectInputStream(new java.io.BufferedInputStream(Files.newInputStream(file),
+                1 << 20))) {
+            Saved s = new Saved();
+            s.identity = o.readUTF();
+            s.custom = (List<SystemScorer.Result>) o.readObject();
+            s.bounds = (List<SystemScorer.Entry>) o.readObject();
+            s.refit = (List<SystemScorer.Entry>) o.readObject();
+            s.checked = (List<String>) o.readObject();
+            s.r = o.readDouble();
+            return s;
+        }
     }
 
     static CountKeys.Count catalogEntry(String system) {
@@ -290,6 +364,56 @@ final class CeilingReport {
         boolean holds() {
             return gain > 0;
         }
+    }
+
+    /**
+     * The registered controls' rows a headline row's tags part is bounded against: each control at
+     * g playing its own fit, its side-count variant too for a count with a betting vector (as its
+     * comparators are chosen); empty where none is registered.
+     */
+    static List<SystemScorer.Entry> controls(Ceiling c, SystemScorer.Result r) {
+        int i = c.custom.indexOf(r);
+        boolean all = i >= 0 ? c.counts.entries.get(i).allComparators() : r.count.betVector != null;
+        List<SystemScorer.Entry> out = new ArrayList<>();
+        for (int k = 0; k < c.custom.size(); k++) {
+            if (!"control".equals(c.counts.entries.get(k).role)) {
+                continue;
+            }
+            for (SystemScorer.Entry e : c.custom.get(k).entries) {
+                if (!e.bettingOnly && !e.ownValue && (all || e.count.base == null)) {
+                    out.add(e);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The floor (section 5) at one cell: among the row and the published rows of its family, each
+     * estimate less the max-|t| multiplier over their EVs times its SE, the largest; {floor, the
+     * multiplier}, and the row it comes from in floorRow[0].
+     */
+    static double[] floor(SystemScorer.Entry row, List<SystemScorer.Entry> family, int p, int m,
+                          SystemScorer.Entry[] floorRow) {
+        List<SystemScorer.Entry> rows = new ArrayList<>();
+        rows.add(row);
+        rows.addAll(family);
+        double[] est = new double[rows.size()];
+        double[][] boots = new double[rows.size()][];
+        for (int k = 0; k < est.length; k++) {
+            est[k] = rows.get(k).estimate[p][m];
+            boots[k] = rows.get(k).boot[p][m];
+        }
+        double mult = Bootstrap.maxT(est, boots);
+        double best = Double.NEGATIVE_INFINITY;
+        for (int k = 0; k < est.length; k++) {
+            double lo = est[k] - mult * Bootstrap.interval(est[k], boots[k]).se;
+            if (lo > best) {
+                best = lo;
+                floorRow[0] = rows.get(k);
+            }
+        }
+        return new double[]{best, mult};
     }
 
     static Claim claim(SystemScorer.Entry row, List<SystemScorer.Entry> comparators, int p, int m) {
@@ -460,17 +584,31 @@ final class CeilingReport {
                     int metric = claimMetric(cell[0]);
                     for (SystemScorer.Result r : claimed(c, cell[0])) {
                         SystemScorer.Entry k = row(r);
-                        Claim cl = claim(k, comparators(c, r), p, metric);
+                        List<SystemScorer.Entry> family = comparators(c, r);
+                        Claim cl = claim(k, family, p, metric);
+                        List<SystemScorer.Entry> controls = controls(c, r);
+                        String tags = "no controls registered";
+                        if (!controls.isEmpty()) {
+                            Claim tc = claim(k, controls, p, metric);
+                            tags = ComparisonReport.pct(tc.gain) + " against " + controls.size() + " controls at g";
+                        }
+                        SystemScorer.Entry[] from = new SystemScorer.Entry[1];
+                        double[] fl = floor(k, family, p, metric, from);
                         out.printf("%n- %s at %s, %s: gain %s; best comparator %s, difference %s %s; %d comparators; "
-                                        + "claim %s.", k.name, SystemScorer.PENETRATIONS[p], cell[1],
+                                        + "claim %s. Tags part: %s. Floor %s, from %s (max-|t| %.2f over %d rows).",
+                                k.name, SystemScorer.PENETRATIONS[p], cell[1],
                                 ComparisonReport.pct(cl.gain), cl.best.name, ComparisonReport.pct(cl.fromBest.estimate),
-                                ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made");
+                                ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made",
+                                tags, ComparisonReport.pct(fl[0]), from[0].name, fl[1], family.size() + 1);
                     }
                 }
             }
             out.println();
             out.println();
         }
+
+        grainPart(c, out);
+        bettingCorrelations(c, out);
 
         out.println("## Every cell of the counts scored here");
         for (SystemScorer.Result r : c.custom) {
@@ -539,6 +677,76 @@ final class CeilingReport {
         if (!over.isEmpty()) {
             throw new IllegalStateException("rows above their bound: " + String.join("; ", over));
         }
+    }
+
+    /**
+     * The grain part (section 1): each registered control at a grain of its own, less the same
+     * catalog count at its own grain as the stored rows hold it, paired, at 1-8 and flat.
+     */
+    static void grainPart(Ceiling c, PrintStream out) {
+        int s8 = SystemScorer.same(SystemScorer.SPREADS);
+        out.println("## The grain part");
+        out.println();
+        out.println("Each control at g less the same count at its own grain, the stored row, paired resample by resample.");
+        out.println();
+        out.println("| Control at g | Penetration | 1-8 | 95% CI | Flat | 95% CI |");
+        out.println("|---|---|---|---|---|---|");
+        for (int i = 0; i < c.custom.size(); i++) {
+            SystemScorer.Result r = c.custom.get(i);
+            if (!"control".equals(c.counts.entries.get(i).role) || r.count.systems.isEmpty() || r.count.divisor() == 1) {
+                continue;
+            }
+            SystemScorer.Result stored = c.published.of(r.count.systems.get(0));
+            for (int e = 0; e < Math.min(r.entries.size(), stored.entries.size()); e++) {
+                SystemScorer.Entry g = r.entries.get(e);
+                if (g.bettingOnly || g.ownValue) {
+                    continue;
+                }
+                for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                    Bootstrap.Interval d8 = SystemScorer.difference(g, stored.entries.get(e), p, s8, 1);
+                    Bootstrap.Interval df = SystemScorer.difference(g, stored.entries.get(e), p, SystemScorer.FLAT, 1);
+                    out.printf("| %s | %s | %s | %s | %s | %s |%n", g.name, SystemScorer.PENETRATIONS[p],
+                            ComparisonReport.pct(d8.estimate), ComparisonReport.ci(d8), ComparisonReport.pct(df.estimate),
+                            ComparisonReport.ci(df));
+                }
+            }
+        }
+        out.println();
+    }
+
+    /** R beside every row's BC (section 2): no linear count's BC on these states can exceed it. */
+    static void bettingCorrelations(Ceiling c, PrintStream out) {
+        out.println("## The betting correlation and its ceiling");
+        out.println();
+        out.printf("R, the multiple correlation of the chart advantage regressed on the shares left over these %d valued "
+                + "states weighted 1/q, is %.4f: no linear count's BC on these states can exceed it.%n%n", c.st.size, c.r);
+        out.println("| Row | BC |");
+        out.println("|---|---|");
+        SystemScorer.Entry best = null;
+        double bestBc = Double.NEGATIVE_INFINITY;
+        for (SystemScorer.Result r : c.published.results) {
+            for (SystemScorer.Entry e : r.entries) {
+                if (e.bettingOnly || r.count.systems.isEmpty()) {
+                    continue;
+                }
+                double bc = AllStates.bettingCorrelation(e.count, c.st);
+                if (bc > bestBc) {
+                    bestBc = bc;
+                    best = e;
+                }
+            }
+        }
+        if (best != null) {
+            out.printf("| Best published: %s | %.4f |%n", best.name, bestBc);
+        }
+        for (SystemScorer.Result r : c.custom) {
+            for (SystemScorer.Entry e : r.entries) {
+                if (!e.bettingOnly && !e.ownValue) {
+                    out.printf("| %s | %.4f |%n", e.name, AllStates.bettingCorrelation(e.count, c.st));
+                }
+            }
+        }
+        out.println();
     }
 
     /** The learning curve's change at 1-8 for an entry that has it: the half fit's figure less the whole fit's, paired. */

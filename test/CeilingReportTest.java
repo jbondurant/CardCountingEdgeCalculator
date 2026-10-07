@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class CeilingReportTest {
 
-    private static final int RESAMPLES = 12;
+    static final int RESAMPLES = 12;
 
     /** A results.ser as FullIndexRun writes it, of the counts given scored at first decisions. */
     static Path results(Path dir, Path file, ScoringStates st, List<SystemScorer.Result> results) throws Exception {
@@ -60,7 +60,9 @@ public class CeilingReportTest {
         byte[] before = Files.readAllBytes(file);
 
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        CeilingReport.Ceiling c = CeilingReport.run(file, ser, counts, RESAMPLES, 2, new PrintStream(bytes, true, "UTF-8"));
+        Path save = dir.resolve("ceiling.ser");
+        CeilingReport.Ceiling c = CeilingReport.run(file, ser, counts, save, RESAMPLES, 2, "test",
+                new PrintStream(bytes, true, "UTF-8"));
         String report = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         assertArrayEquals(before, Files.readAllBytes(file), "the state file is only read");
         assertEquals(Arrays.asList("Hi-Lo = Hi-Lo Lite", "Hi-Opt II", "Red Seven (Red 7)"), c.checked);
@@ -98,6 +100,42 @@ public class CeilingReportTest {
         assertEquals(least, claim.gain, 0);
         assertEquals(5, CeilingReport.comparators(c, c.custom.get(0)).size(), "F1's are the plain rows");
 
+        // Everything scored is saved, and reads back to the bit.
+        CeilingReport.Saved saved = CeilingReport.readSaved(save);
+        assertTrue(saved.identity.contains("commit test"), saved.identity);
+        assertEquals(c.custom.size(), saved.custom.size());
+        for (int k = 0; k < c.custom.size(); k++) {
+            CeilingScoringTest.sameResult(c.custom.get(k), saved.custom.get(k));
+        }
+        for (int k = 0; k < c.refit.size(); k++) {
+            assertArrayEquals(c.refit.get(k).boot[p][SystemScorer.same(8)], saved.refit.get(k).boot[p][SystemScorer.same(8)], 0);
+        }
+        assertArrayEquals(c.bounds.get(0).estimate[p], saved.bounds.get(0).estimate[p], 0);
+        assertEquals(c.r, saved.r, 0);
+        assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, ser, counts, save, RESAMPLES, 2, "test",
+                new PrintStream(new ByteArrayOutputStream(), true, "UTF-8")), "a saved file is never written over");
+
+        // The tags part against the controls, the floor, the grain part, and R above every BC.
+        List<SystemScorer.Entry> controls = CeilingReport.controls(c, f2);
+        assertEquals(3, controls.size(), "Hi-Opt II at g, its side-count variant, and Hi-Lo");
+        assertEquals(2, CeilingReport.controls(c, c.custom.get(0)).size(), "F1's are the plain controls");
+        assertTrue(report.contains("Tags part: ") && report.contains(" against 3 controls at g. Floor "), report);
+        SystemScorer.Entry[] from = new SystemScorer.Entry[1];
+        double[] floor = CeilingReport.floor(row, against, p, SystemScorer.same(8), from);
+        assertTrue(floor[1] > 1, "the max-|t| multiplier " + floor[1]);
+        assertTrue(floor[0] < from[0].estimate[p][SystemScorer.same(8)]);
+        assertTrue(report.contains("## The grain part"));
+        assertTrue(report.contains("| Hi-Opt II at grain 500/10000 + ace side count | 80% |"), report);
+        assertTrue(report.contains("## The betting correlation and its ceiling"));
+        for (SystemScorer.Result r : c.custom) {
+            for (SystemScorer.Entry e : r.entries) {
+                assertTrue(AllStates.bettingCorrelation(e.count, st) <= c.r + 1e-12, e.name + " above R " + c.r);
+            }
+        }
+        for (SystemScorer.Result r : stored.subList(1, stored.size())) {
+            assertTrue(AllStates.bettingCorrelation(r.count, st) <= c.r + 1e-12, r.count.name);
+        }
+
         // A refit-check row planted above its bound on one resample: the check finds it and the report fails.
         int s8 = SystemScorer.same(8);
         assertEquals(4, c.refit.size(), "F1 start, F2 start and its variant, and Zen");
@@ -134,7 +172,7 @@ public class CeilingReportTest {
                 "\"name\": \"F1r start\", \"family\": \"F1r\",", "\"name\": \"F1r start\", \"family\": \"F1r\", "
                         + "\"role\": \"headline\","));
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        CeilingReport.run(file, ser, counts, RESAMPLES, 2, new PrintStream(bytes, true, "UTF-8"));
+        CeilingReport.run(file, ser, counts, null, RESAMPLES, 2, "test", new PrintStream(bytes, true, "UTF-8"));
         String report = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         for (String pen : new String[]{"70%", "75%", "80%"}) {
             for (String[] claim : new String[][]{{"F1r start", "flat"}, {"F1 start", "1-8"}, {"F1 start", "own ramp 1-8"},
@@ -183,15 +221,15 @@ public class CeilingReportTest {
         Path ser = results(dir, file, st, stored);
         PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> CeilingReport.run(file, ser, counts, RESAMPLES + 1, 2, nowhere));
+                () -> CeilingReport.run(file, ser, counts, null, RESAMPLES + 1, 2, "test", nowhere));
         assertTrue(e.getMessage().contains("do not pair"), e.getMessage());
 
         // One resample of Red Seven's stored row moved by the last bit: scored again, it differs.
         SystemScorer.Entry red = stored.get(3).entries.get(0);
         red.boot[1][SystemScorer.FLAT][4] = Math.nextUp(red.boot[1][SystemScorer.FLAT][4]);
         Path tampered = results(dir, file, st, stored);
-        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, tampered, counts, RESAMPLES, 2,
-                nowhere));
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, tampered, counts, null, RESAMPLES, 2,
+                "test", nowhere));
         assertTrue(e.getMessage().contains("scored again, Red Seven"), e.getMessage());
     }
 }
