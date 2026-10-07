@@ -112,6 +112,11 @@ public class CalibrationTest {
         assertTrue(report.contains("Over its first hour (" + log + "): 8 shoes, 9 states valued in 3000 s"), report);
         assertTrue(report.contains("0 equal one of the main file's"), "no seed shared with the main file");
         assertTrue(report.contains("a LOWER bound"), "the split margin is called a lower bound");
+        assertTrue(report.contains("So the margin the full-play bound needs at 80%, 1-8 is at least"), report);
+        // At the synthetic twin's g, 1/200, D_r is 218: fine enough that the rounding of one count's tags at K
+        // splits its keys, so not all twelve need score as at their own grain; the line says how many do.
+        assertTrue(report.contains(" of the 12 running counts score at g exactly as at their own grain"), report);
+        assertTrue(report.contains("Red Seven at g scores exactly what Red Seven scores at its own grain"), report);
         assertTrue(report.contains("Hi-Lo at g = 1 keys as Hi-Lo does, so its figures must equal Hi-Lo's own to the "
                 + "bit: they do."), "Hi-Lo at g = 1 is Hi-Lo");
 
@@ -347,6 +352,14 @@ public class CalibrationTest {
         assertEquals(0, black, "Red Seven tags a black seven 0");
         assertTrue(red > 0);
         assertEquals(Math.rint((red + black) / 2.0), avg.rankTag(7), 0);
+    }
+
+    /** The colour check's verdict: better or worse only where the interval excludes zero. */
+    @Test
+    public void theColourVerdictNeedsTheIntervalToExcludeZero() {
+        assertEquals("better", Calibration.colourVerdict(Bootstrap.interval(0.001, new double[]{0.0009, 0.0011, 0.0010})));
+        assertEquals("worse", Calibration.colourVerdict(Bootstrap.interval(-0.001, new double[]{-0.0009, -0.0011, -0.001})));
+        assertEquals("neither", Calibration.colourVerdict(Bootstrap.interval(0.0001, new double[]{-0.001, 0.001, 0.0})));
     }
 
     /** The proxy check: z in units of sqrt(2) times the main file's SE, and the binomial chance of so few within 2. */

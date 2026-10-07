@@ -1212,6 +1212,41 @@ final class Calibration {
                 own.add(r);
             }
         }
+        int running = 0;
+        int runningSame = 0;
+        double leastTrue = Double.POSITIVE_INFINITY;
+        double mostTrue = Double.NEGATIVE_INFINITY;
+        for (int c = 0; c < catalog.size(); c++) {
+            boolean same = true;
+            for (int e = 0; e < v.get(c).length; e++) {
+                String name = rowName(catalog.get(c), e);
+                for (int m : new int[]{SAME8, FLAT}) {
+                    same &= Double.doubleToLongBits(v.get(c)[e][m])
+                            == Double.doubleToLongBits(proxy.d("native." + m + "." + name));
+                }
+                if (catalog.get(c).trueCounted && e % 2 == 0) {
+                    double part = v.get(c)[e][SAME8] - proxy.d("native." + SAME8 + "." + name);
+                    leastTrue = Math.min(leastTrue, part);
+                    mostTrue = Math.max(mostTrue, part);
+                }
+            }
+            if (!catalog.get(c).trueCounted) {
+                running++;
+                runningSame += same ? 1 : 0;
+            }
+        }
+        t.println("");
+        t.printf("%d of the %d running counts score at g exactly as at their own grain, their 1-8 and flat figures equal "
+                        + "to the bit in every row. A running count of whole tags only takes multiples of its tag unit, up "
+                        + "to the rounding of its tags at K, so a divisor under that unit but well above what that rounding "
+                        + "adds up to over a shoe (here D_r = %d) keeps its keys in the order the catalog's have, and the "
+                        + "scorer's figures depend on that order alone: a divisor cannot make such a count finer. The true "
+                        + "counts' grain parts, playing their own fits, run from %+.4f%% to %+.4f%%.%n", runningSame,
+                running, dr, 100 * leastTrue, 100 * mostTrue);
+        t.put("running", running);
+        t.put("runningSame", runningSame);
+        t.put("grainLeast", leastTrue);
+        t.put("grainMost", mostTrue);
         own.sort((a, b) -> Double.compare(v.get(b[0])[b[1]][SAME8], v.get(a[0])[a[1]][SAME8]));
         List<Integer> controls = new ArrayList<>();
         t.println("");
@@ -1291,8 +1326,11 @@ final class Calibration {
             db[r] = v.get(0)[1 + r] - v.get(1)[1 + r];
         }
         Bootstrap.Interval iv = Bootstrap.interval(diff, db);
-        boolean better = iv.lo > 0;
+        String verdict = colourVerdict(iv);
+        boolean better = verdict.equals("better");
         double floor = noise.d("floor." + ANGLES[0]);
+        double own = estimates().estimate(CountSearch.catalogCount(RED_SEVEN), null, P80)[0][SAME8];
+        boolean sameAsOwn = Double.doubleToLongBits(own) == Double.doubleToLongBits(v.get(0)[0]);
         t.println("## The colour check");
         t.println("");
         t.printf("Red Seven at g as a catalog entry (CountKeys.atGrain, running, D_r = %d) against its rank average, a "
@@ -1305,8 +1343,17 @@ final class Calibration {
                 degreesText(ANGLES[0]), 100 * floor);
         t.printf("- %s%n%n", better ? "Red Seven is better beyond noise: section 1's argument that colour carries "
                 + "nothing about the cards to come is NOT borne out here, and the report says so."
-                : "Red Seven is not better beyond noise, as section 1 argues (the seven's colour says nothing about the "
-                + "cards to come).");
+                : verdict.equals("worse") ? "Red Seven is not better beyond noise, as section 1 argues; it is worse "
+                + "beyond noise, by the difference above."
+                : "Red Seven is neither better nor worse beyond noise, as section 1 argues.");
+        if (sameAsOwn) {
+            t.printf("Red Seven at g scores exactly what Red Seven scores at its own grain, %+.4f%%, to the bit: its whole "
+                    + "tags give a running count that only takes multiples of its tag unit (%d at K, its red seven's tag "
+                    + "at g), up to the rounding of its tags at K, so D_r keeps its keys in the order Red Seven's have. Its rank average's "
+                    + "seven, at half that unit, gives running counts in half units, which D_r keys apart. So the two are "
+                    + "not at the same grain, and part of the difference may be grain rather than colour.%n%n", 100 * own,
+                    rs.tag[kindOf(7, true)]);
+        }
         if (seven[7] != avg.rankTag(7)) {
             t.printf("The seven's two kinds average %.1f, rounded to %d; that moves the rank average's deck sum by %d "
                     + "of %d.%n%n", seven[7], avg.rankTag(7), CountKeys.deckSum(avg.tag) - rs.deckSum, rs.deckSum);
@@ -1316,7 +1363,15 @@ final class Calibration {
         t.put("lo", iv.lo);
         t.put("hi", iv.hi);
         t.put("better", better ? "yes" : "no");
+        t.put("verdict", verdict);
+        t.put("ownGrain", own);
+        t.put("sameAsOwnGrain", sameAsOwn ? "yes" : "no");
         return t.part();
+    }
+
+    /** Red Seven against its rank average: "better" or "worse" when the 95% interval of the difference excludes zero, else "neither". */
+    static String colourVerdict(Bootstrap.Interval iv) {
+        return iv.lo > 0 ? "better" : iv.hi < 0 ? "worse" : "neither";
     }
 
     /** The first kind of a rank of one colour. */
@@ -1583,10 +1638,11 @@ final class Calibration {
                 : "the pair deals " + Arrays.toString(s.splitDeals) + " alone", sizing, seconds, s.threads);
         SplitMargin.print(t.out, sample, delta);
         t.println("");
-        t.printf("So a count with full play can beat the full-play perfect row by at least %.4f%% a round at 80%%, 1-%d "
-                + "(the margin is a LOWER bound on what the bound needs: delta is measured from below), and any "
-                + "full-play bound plus this margin is conditional on it.%n%n", 100 * SystemScorer.SPREADS * m[P80][0],
-                SystemScorer.SPREADS);
+        t.printf("So the margin the full-play bound needs at 80%%, 1-%d is at least %.4f%% a round: S times the mean of "
+                        + "delta, with delta measured from below, since the ascent stops at a local optimum. This is a LOWER "
+                        + "bound on the margin. A full-play bound plus %.4f%% is therefore conditional on the ascent having "
+                        + "found each state's best split play; had it fallen short, the margin needed is larger.%n%n",
+                SystemScorer.SPREADS, 100 * SystemScorer.SPREADS * m[P80][0], 100 * SystemScorer.SPREADS * m[P80][0]);
         for (int p = 0; p < m.length; p++) {
             t.put("mean." + p, m[p][0]);
             t.put("se." + p, m[p][1]);
@@ -1719,7 +1775,13 @@ final class Calibration {
         t.printf(". The controls: %s.%n", String.join("; ", controls));
         t.printf("- **The colour check:** Red Seven less its rank average %+.4f%% [%+.4f%%, %+.4f%%]: %s.%n",
                 100 * colour.d("diff"), 100 * colour.d("lo"), 100 * colour.d("hi"), colour.s("better").equals("yes")
-                        ? "better beyond noise, so section 1's argument is NOT borne out" : "not better beyond noise");
+                        ? "better beyond noise, so section 1's argument is NOT borne out"
+                        : colour.s("verdict").equals("worse") ? "not better beyond noise; worse beyond it"
+                        : "neither better nor worse beyond noise");
+        if ("yes".equals(colour.s("sameAsOwnGrain"))) {
+            t.printf("  The two are not at the same grain: Red Seven at g scores as at its own grain, its rank average in "
+                    + "half units.%n");
+        }
         t.printf("- **R** = %.5f, the ceiling of any linear count's BC; the depth figure %.6f; the insurance check 1 - R "
                 + "squared = %.2e.%n", theory.d("r"), theory.d("depth"), theory.d("insurance"));
         t.printf("- **The effects of removal off the top**, as tags: %s.%n", CountRegression.text(parseTags(eor.s("tags"))));
