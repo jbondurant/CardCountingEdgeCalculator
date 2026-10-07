@@ -381,6 +381,10 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   that need be colour. Red Seven at g scores as Red Seven does (its grain part is zero, as
   above), while its rank average, the seven at half a unit, has running counts in half units
   that Red Seven's whole tags cannot reach, so the two are not at the same grain.
+  **Accepted as it stands.** It is evidence that colour does not pay in this game, which is
+  all section 1 needs. For a running count the check cannot separate colour from the finer
+  lattice of the rank average's half-unit tag, so it does not say how much of the 0.0204% each
+  accounts for.
 - **The split margin.** The flat value of perfect split play, δ, on a sample of twin states,
   sized to take under an hour (section 2).
 - **As built** (Calibration), one command runs all of it and the theory pass below and writes
@@ -473,11 +477,20 @@ against each other) and does not depend on the choice of axes.
   puts its mean back on the sphere every generation and scales its step with it, so a step
   keeps its angle. The sign is fixed so the count rises with the advantage, since an isotonic
   bet only rises.
-- **Settings.** A population of about 12, a starting step of about 0.3 radians, at most 1,500
-  evaluations a run. A run reports its final mean, not its best single evaluation, which
-  tends to be the one that fit noise best. The objective is deterministic but piecewise
-  constant at small scales, since groups and moves change in jumps, so steps are not pursued
-  below the noise floor.
+- **Settings.** A population of 12, a starting step of 0.3 radians, at most 1,500 evaluations a
+  run, and a least angle of 1° (`--min-angle 1`): a run stops when its step falls under 1°.
+  Calibration measured that directions closer than about 2° cannot be told apart (bootstrap SE
+  of a difference 0.0012% at 1°, 0.0014% at 2°), so steps below 1° only chase noise. A run
+  reports its final mean, not its best single evaluation, which tends to be the one that fit
+  noise best. The objective is deterministic but piecewise constant at small scales, since
+  groups and moves change in jumps, so steps are not pursued below the noise floor. F2's noise
+  floor for its cycles is the bootstrap's at 2°, 0.00136% a round, given as `--noise
+  1.3584162342953336E-5`: the objective is a fraction of a unit a round, so 0.00136% is
+  1.36e-5 there.
+- **The machine.** Searches use at most 6 threads, since the laptop is shared with its owner.
+  One search at a time on 6 threads made 4.7 evaluations a second; two at once on 3 threads
+  each made 2.8 between them (measured on 7 October over the first F1 runs), so they run one
+  after another.
 - **Starts.** Every published count's direction is scored once, kind-aware counts by their
   rank averages. One run starts from each of these, 16 in all:
   - the eight best of them;
@@ -512,6 +525,20 @@ against each other) and does not depend on the choice of axes.
   at or above its start and every block's end; the log notes the start's score and any end not
   taken. F1r's sphere is its balanced part's, the shift scaled with it, so its step too is an
   angle and the least angle stops it.
+
+- **As built** (SearchReport starts): every published direction is scored as the search
+  scores a candidate, true-counted at D, at the 1-8 same schedule and flat; the eight best by
+  1-8 are F1's published starts and the best by flat is F1 flat's. The random directions are
+  CountSearch's `--start-random` with seeds 1 to 4 (F1) and 5 and 6 (F1 flat), ten Gaussian
+  tags by rank. Vidámi, Szilágyi and Iclanzan's Table 2 vectors are, A, 2 to 9, T: AN 0, 2.8,
+  2.68, 3.55, 4.67, 3.52, 2.99, 1.32, −0.13, −5.35 and AR −2.36, 2.7, 3.9, 4.62, 4.93, 4.51, 3.1,
+  0, −1.16, −5.06. Given F1's and F1 flat's optima, it scores F2's starts as F2's search scores
+  its start; the side-count pairs are the eight of CountKeys.SIDE_COUNTED. F1r's two starts
+  from F1's optimum add to every tag a shift of ½ and 1½ times KO's, relative to the balanced
+  part's spread (KO's p⁰-weighted mean tag over its balanced part's root spread), bracketing
+  KO's own, the third start. The half-twin searches start from the eight of F1's sixteen starts
+  that score best as starts on the whole twin, so the halves' starts are chosen without the
+  full search's outcomes.
 
 **How we know it found the maximum, or how close.** The objective has jumps, so no search can
 prove a global maximum. These show that nothing within the data's resolution was missed:
