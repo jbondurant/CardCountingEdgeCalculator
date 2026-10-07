@@ -1295,7 +1295,11 @@ final class SearchReport {
 
     static final Pattern FOUND_IN = Pattern.compile("^Found .* in (\\d+) s\\.$");
 
-    /** Wall seconds a search ran as its own output says ("Found ... in N s."), beside its log as NAME.out; null if none. */
+    /**
+     * Seconds a search ran as its own output says ("Found ... in N s."), beside its log as NAME.out,
+     * summed over its starts; null if none. Its timer is System.nanoTime, which on this machine does
+     * not advance while the machine sleeps, so it is the time the search ran awake.
+     */
     static Double outSeconds(Path log) throws IOException {
         Path out = log.resolveSibling(log.getFileName().toString().replaceAll("\\.log$", ".out"));
         if (!Files.exists(out)) {
@@ -1468,7 +1472,9 @@ final class SearchReport {
         b.append("\n## 1. Restarts agree\n\nEach run's start scored as its search scores candidates, its count's objective, ")
                 .append("its gap below the family's best and its angle from it. A run agrees when it ends within the ")
                 .append("noise floor at that angle and within ").append(deg(FEW_DEGREES)).append(" degrees. Runs within ")
-                .append(deg(FEW_DEGREES)).append(" degrees of each other, joined link by link, are one region.\n");
+                .append(deg(FEW_DEGREES)).append(" degrees of each other, joined link by link, are one region. ")
+                .append("Wall s is the queue's clock from start to end; awake s the run's own timer, which stops while ")
+                .append("the machine sleeps.\n");
         for (String fam : FAMILIES) {
             List<Run> runs = e.families.get(fam);
             if (runs.isEmpty()) {
@@ -1476,11 +1482,12 @@ final class SearchReport {
             }
             Run best = runs.get(0);
             b.append("\n### ").append(fam).append("\n\n| Run | Start | Objective | Below the best | Angle, degrees | ")
-                    .append("Evaluations | Wall s | Agrees |\n|---|---|---|---|---|---|---|---|\n");
+                    .append("Evaluations | Wall s | Awake s | Agrees |\n|---|---|---|---|---|---|---|---|---|\n");
             int agree = 0;
             int followed = 0;
             int evals = 0;
             double secs = 0;
+            double awake = 0;
             for (Run r : runs) {
                 boolean ok = agrees(r, best, fl);
                 Run up = ok ? null : followUp(r, runs);
@@ -1488,20 +1495,24 @@ final class SearchReport {
                 agree += ok ? 1 : 0;
                 followed += upOk ? 1 : 0;
                 evals += r.evaluations;
-                Double w = wall.containsKey(r.name) ? wall.get(r.name) : outSeconds(r.log);
+                Double w = wall.get(r.name);
+                Double a = outSeconds(r.log);
                 secs += w == null ? 0 : w;
+                awake += a == null ? 0 : a;
                 b.append("| ").append(r.name).append(r.lambda != 12 ? " (population " + r.lambda + ", cap " + r.maxEvals
                         + ")" : "").append(" | ").append(pct(e.startValue.get(r))).append(" | ").append(pct(r.value))
                         .append(" | ").append(pts(best.value - r.value)).append(" | ")
                         .append(deg(degrees(r.play, best.play))).append(" | ").append(r.evaluations).append(" | ")
                         .append(w == null ? "" : String.format(Locale.ROOT, "%.0f", w)).append(" | ")
+                        .append(a == null ? "" : String.format(Locale.ROOT, "%.0f", a)).append(" | ")
                         .append(ok ? "yes" : up == null ? "no" : "no; followed up by " + up.name + ", which "
                                 + (upOk ? "agrees" : "does not")).append(" |\n");
             }
             List<List<Run>> regions = regions(runs);
             b.append("\n").append(agree).append(" of ").append(runs.size()).append(" runs agree with the best. ")
                     .append(evals).append(" evaluations, ").append(String.format(Locale.ROOT, "%.0f", secs))
-                    .append(" s on the wall. ").append(regions.size()).append(regions.size() == 1 ? " region" : " regions");
+                    .append(" s on the wall by the queue's clock, ").append(String.format(Locale.ROOT, "%.0f", awake))
+                    .append(" s awake by the runs' own. ").append(regions.size()).append(regions.size() == 1 ? " region" : " regions");
             if (regions.size() > 1) {
                 b.append(": ");
                 for (int g = 0; g < regions.size(); g++) {

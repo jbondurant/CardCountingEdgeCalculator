@@ -369,6 +369,19 @@ public class SearchReportTest {
             assertTrue(text.contains(section), section);
         }
 
+        // The queue's clock and the run's own timer side by side: a run that slept through two
+        // hours of the queue's clock but ran 7 s awake shows both, each summed for the family.
+        Path queue = dir.resolve("queue.txt");
+        Files.write(queue, Arrays.asList("10:00:00 start from-zen", "12:00:00 end from-zen exit 0"), StandardCharsets.UTF_8);
+        Files.write(dir.resolve("from-zen.out"), Arrays.asList("# header", "Found from-zen: true count in 7 s."),
+                StandardCharsets.UTF_8);
+        String timed = SearchReport.reportText(e, "c", Path.of("states"), dir, queue, 0);
+        assertTrue(timed.contains("| Evaluations | Wall s | Awake s | Agrees |"), timed);
+        SearchReport.Run zen = f1.get(0).name.equals("from-zen") ? f1.get(0) : f1.get(1);
+        assertTrue(timed.contains("| " + zen.evaluations + " | 7200 | 7 | "), timed);
+        assertTrue(timed.contains("evaluations, 7200 s on the wall by the queue's clock, 7 s awake by the runs' own."),
+                timed);
+
         // The best run made to end below its own start: a failure, named.
         SearchReport.Run best = f1.get(0);
         best.value = e.startValue.get(best) - 1e-6;
