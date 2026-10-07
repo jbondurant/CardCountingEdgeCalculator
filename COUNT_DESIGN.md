@@ -68,7 +68,8 @@ count's scale sets how finely its true count steps (COUNTING_COMPARISON.md secti
 rounds the true count to steps of g Hi-Lo units, with D = g × K. With D = 1, every catalog
 count keeps its keys bit for bit. The default g is 1/20; calibration sets it (section 4) as
 the coarsest step at which Hi-Lo and Zen, scored at that step, stop improving. **Calibration
-kept g = 1/20, D = 500** (runs/custom-count/calibration-1579078.md): no finer grain gains on
+kept g = 1/20, D = 500** (runs/custom-count/calibration-b99ccbf.md; the first calibration,
+from classes 1579078, gave every figure but the timings to the bit): no finer grain gains on
 it by more than the noise floor at 1°, 0.0012% a round, for either count, while at 1/10 Zen
 still gains 0.0025% further down. Both gain most from the first halving: Hi-Lo from +0.300%
 at g = 1, its own keys, to +0.315% at 1/2, and +0.318% at 1/20, at 80%, 1-8 on the twin. The
@@ -119,7 +120,7 @@ times its real value. The variant carries the divisor.
   unit at K (CountKeys.grainUnit), its keys are the catalog's (RealCountTest), so the grain part
   of a running count is grain alone.
   **Measured, it is zero.** At D_r = 2,423 each of the 12 scores at g exactly what it scores at
-  its own grain, every figure to the bit (calibration-1579078). With whole tags, its running
+  its own grain, every figure to the bit (calibration-b99ccbf). With whole tags, its running
   count only takes multiples of its tag unit (9,768 at K for Red Seven, its red seven's tag at
   g), up to the rounding of its tags at K, so a divisor under the unit but well above what that
   rounding adds up to keeps the keys in the order the catalog's have, and the scorer's figures
@@ -264,6 +265,10 @@ valued states weighted 1/q, between the unrounded true count and the chart advan
   effects of removal, as measured on its states.
 - The best published BCs here are 0.984 (Uston SS) and 0.983 (Thorp Ultimate, and Revere 14
   with the ace side count) (report-final).
+- **Measured** on the twin (calibration-b99ccbf): R = 0.98857, R² = 0.97727. So no linear count's
+  BC can pass the best published one by more than about 0.005 (by arithmetic): little room
+  is left in the betting correlation itself. The tags that reach R lie 0.2° from this game's
+  effects of removal off the top (EffectsOfRemoval).
 
 **What must hold.** Every row at or below its perfect bound, on every resample, on either
 file: a row above it is a scoring bug. On the twin, where the search starts from them, the
@@ -342,7 +347,7 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   and grants convergence less easily, at the price of false alarms, which send the result to
   a region rather than a count.
 
-  **Measured** at g = 1/20 (calibration-1579078), as the SE of a difference from Zen at 80%,
+  **Measured** at g = 1/20 (calibration-b99ccbf), as the SE of a difference from Zen at 80%,
   1-8:
 
   | Angle | Bootstrap | Sub-runs, scaled | Noise floor | Mean change from Zen |
@@ -366,7 +371,7 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   its tags Red Seven's at g with the seven's two kinds averaged, at the same divisor. Red Seven
   should not be better beyond noise; if it is, section 1's argument is reported as not borne
   out.
-  **Measured** (calibration-1579078): Red Seven is not better; it is worse, by 0.0204% a round
+  **Measured** (calibration-b99ccbf): Red Seven is not better; it is worse, by 0.0204% a round
   [0.0188%, 0.0222%] at 80%, 1-8 over 100 resamples (+0.2811% against +0.3015%). Not all of
   that need be colour. Red Seven at g scores as Red Seven does (its grain part is zero, as
   above), while its rank average, the seven at half a unit, has running counts in half units
@@ -447,10 +452,13 @@ evaluation is taken as one to a few seconds (estimate) until calibration measure
 with the play vector held, a betting-vector candidate needs only new bet keys, the isotonic
 fit and the bets: hundredths of a second, by the operation count.
 
-**Measured** on one thread at g = 1/20 (calibration-1579078), each the median of five: 1.115 s
-for F1, 1.083 s for F2 with both vectors, 0.920 s for F1r, 0.502 s for F1 on half the twin,
-and 0.0155 s for a betting vector on a held play. A generation of twelve F1 evaluations took
-12.85 s one after another and 4.28 s on six threads at once: six threads are worth 3.0.
+**Measured** on one thread at g = 1/20, each the median of five, in two calibrations
+(calibration-b99ccbf, then 1579078 before it): 0.930 s and 1.115 s for F1, 0.880 s and
+1.083 s for F2 with both vectors, 0.901 s and 0.920 s for F1r, 0.449 s and 0.502 s for F1 on
+half the twin, and 0.0164 s and 0.0155 s for a betting vector on a held play. A generation of
+twelve F1 evaluations took 11.41 s and 12.85 s one after another, and 4.04 s and 4.28 s on six
+threads at once: six threads are worth 2.8 to 3.0. The timings move by about a fifth from one
+run to the next; nothing else does.
 
 **The optimiser is CMA-ES.** It learns correlated directions (the 4, 5 and 6 trade off
 against each other) and does not depend on the choice of axes.
@@ -775,7 +783,7 @@ October. At 00:56 that day its log showed 138 of 186 items scored
 |---|---|---|
 | Twin file | 3.2 h on 7 threads, measured (11,637 s, runs/twin-80.log) | 1.34 GB |
 | Calibration and theory pass | 2 to 3 h | |
-| Searches and slices | 5.5 to 6.1 h on 6 threads, priced from measured evaluations | logs |
+| Searches and slices | 5.0 to 6.1 h on 6 threads, priced from measured evaluations | logs |
 | Full-play choice on the twin | 1 to 3 h, after a dry run on 2,000 shoes | none, trees rebuilt |
 | Main file, first decisions, 1,000 resamples | about 3 h on 7 threads | a report |
 | Main file, full play | 4 to 8 h with the tree store, about 7 h more without; after a dry run | results |
@@ -790,9 +798,9 @@ Where the estimates come from:
   floor, 1,000. That is about 55,000 to 61,000. At about 2 s each, with 6 threads taken as
   worth about 4 (COUNTING_COMPARISON.md section 7 found that CPU time does not add up across
   threads on this machine), the estimate was about 8 hours. Priced instead at the times
-  calibration measured (section 4: 1.115 s an F1 evaluation, 6 threads worth 3.0), they come to
-  5.5 to 6.1 machine hours, the betting blocks 0.04 of them (calibration-1579078's budget
-  table).
+  calibration measured (section 4: 0.93 to 1.12 s an F1 evaluation, 6 threads worth 2.8 to
+  3.0), they come to 5.0 to 6.1 machine hours: 5.0 to 5.6 in calibration-b99ccbf's budget
+  table, 5.5 to 6.1 in 1579078's, the betting blocks under 0.05 of either.
 - **Memory.** The states take about 1.6 GB in memory (FULL_INDEX_PLAYS.md section 6). Each
   evaluation running at once holds the play keys of 60,743 × 550 (state, deal) cells as ints,
   134 MB, plus its fits: about 250 MB (estimate), so six at once take about 1.5 GB.
