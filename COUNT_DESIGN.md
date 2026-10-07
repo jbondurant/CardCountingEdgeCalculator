@@ -65,7 +65,12 @@ count's scale sets how finely its true count steps (COUNTING_COMPARISON.md secti
 "Duplicates"). Real tags are stored as whole numbers at scale K = 10,000. A new key divisor D
 rounds the true count to steps of g Hi-Lo units, with D = g × K. With D = 1, every catalog
 count keeps its keys bit for bit. The default g is 1/20; calibration sets it (section 4) as
-the coarsest step at which Hi-Lo and Zen, scored at that step, stop improving.
+the coarsest step at which Hi-Lo and Zen, scored at that step, stop improving. **Calibration
+kept g = 1/20, D = 500** (runs/custom-count/calibration-1579078.md): no finer grain gains on
+it by more than the noise floor at 1°, 0.0012% a round, for either count, while at 1/10 Zen
+still gains 0.0025% further down. Both gain most from the first halving: Hi-Lo from +0.300%
+at g = 1, its own keys, to +0.315% at 1/2, and +0.318% at 1/20, at 80%, 1-8 on the twin. The
+running divisor that goes with it is D_r = 2,423, at a median depth of 164 cards.
 
 Why it must be fine:
 - **Play.** Groups close at M_play = 5√n valued states, about 870 on an 80% training fold
@@ -111,6 +116,13 @@ times its real value. The variant carries the divisor.
   true-count units at the median depth of the 80% states). With the divisor one catalog tag
   unit at K (CountKeys.grainUnit), its keys are the catalog's (RealCountTest), so the grain part
   of a running count is grain alone.
+  **Measured, it is zero.** At D_r = 2,423 each of the 12 scores at g exactly what it scores at
+  its own grain, every figure to the bit (calibration-1579078). With whole tags, its running
+  count only takes multiples of its tag unit (9,768 at K for Red Seven, its red seven's tag at g), so any divisor under the
+  unit keeps the keys in the order the catalog's have, and the scorer's figures depend on that
+  order alone. A divisor cannot make such a count finer; only a running count of real tags, as
+  F1r's are, is keyed finer at D_r. The true counts' grain parts run from +0.001% to +0.023%
+  at 80%, 1-8.
 - **The unrounded true count,** on which the report's BC and IC are computed, is not divided by
   D: a correlation does not see the scale.
 
@@ -326,6 +338,22 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   printed, and the search uses the smaller, at the angle being compared. That stops it later
   and grants convergence less easily, at the price of false alarms, which send the result to
   a region rather than a count.
+
+  **Measured** at g = 1/20 (calibration-1579078), as the SE of a difference from Zen at 80%,
+  1-8:
+
+  | Angle | Bootstrap | Sub-runs, scaled | Noise floor | Mean change from Zen |
+  |---|---|---|---|---|
+  | 1° | 0.0012% | 0.0021% | 0.0012% | −0.0004% |
+  | 2° | 0.0014% | 0.0023% | 0.0014% | −0.0024% |
+  | 5° | 0.0015% | 0.0026% | 0.0015% | −0.0122% |
+  | 10° | 0.0017% | 0.0028% | 0.0017% | −0.0369% |
+  | 30° | 0.0042% | 0.0047% | 0.0042% | −0.2516% |
+
+  Here the bootstrap is the smaller at every angle (its SE is 0.61 of the sub-runs', the
+  median over the directions), so the floor is the bootstrap's. Directions 1° from Zen already
+  differ from it by up to 0.0030%, and on average they lose less than the floor at 1° and more
+  at 2°: the objective tells apart directions about 2° from each other, not closer.
 - **The grain g,** with Hi-Lo and Zen (section 1).
 - **Every published row at g.** Each catalog count and side-count variant, scored at g, point
   estimates only, the running ones at their running divisor (section 1). The counts behind the
@@ -335,6 +363,11 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   its tags Red Seven's at g with the seven's two kinds averaged, at the same divisor. Red Seven
   should not be better beyond noise; if it is, section 1's argument is reported as not borne
   out.
+  **Measured** (calibration-1579078): Red Seven is not better; it is worse, by 0.0204% a round
+  [0.0188%, 0.0222%] at 80%, 1-8 over 100 resamples (+0.2811% against +0.3015%). Not all of
+  that need be colour. Red Seven at g scores as Red Seven does (its grain part is zero, as
+  above), while its rank average, the seven at half a unit, has running counts in half units
+  that Red Seven's whole tags cannot reach, so the two are not at the same grain.
 - **The split margin.** The flat value of perfect split play, δ, on a sample of twin states,
   sized to take under an hour (section 2).
 - **As built** (Calibration), one command runs all of it and the theory pass below and writes
@@ -410,6 +443,11 @@ Report-final took 2,770.7 s for Hi-Lo over three penetrations, each fitted once 
 evaluation is taken as one to a few seconds (estimate) until calibration measures it. For F2
 with the play vector held, a betting-vector candidate needs only new bet keys, the isotonic
 fit and the bets: hundredths of a second, by the operation count.
+
+**Measured** on one thread at g = 1/20 (calibration-1579078), each the median of five: 1.115 s
+for F1, 1.083 s for F2 with both vectors, 0.920 s for F1r, 0.502 s for F1 on half the twin,
+and 0.0155 s for a betting vector on a held play. A generation of twelve F1 evaluations took
+12.85 s one after another and 4.28 s on six threads at once: six threads are worth 3.0.
 
 **The optimiser is CMA-ES.** It learns correlated directions (the 4, 5 and 6 trade off
 against each other) and does not depend on the choice of axes.
@@ -734,7 +772,7 @@ October. At 00:56 that day its log showed 138 of 186 items scored
 |---|---|---|
 | Twin file | 3 to 5 h on 8 threads | 1.34 GB |
 | Calibration and theory pass | 2 to 3 h | |
-| Searches and slices | about 8 h on 6 threads | logs |
+| Searches and slices | 5.5 to 6.1 h on 6 threads, priced from measured evaluations | logs |
 | Full-play choice on the twin | 1 to 3 h, after a dry run on 2,000 shoes | none, trees rebuilt |
 | Main file, first decisions, 1,000 resamples | about 3 h on 7 threads | a report |
 | Main file, full play | 4 to 8 h with the tree store, about 7 h more without; after a dry run | results |
@@ -746,9 +784,12 @@ Where the estimates come from:
   6,000 more if the runs end in separate regions; F1 flat, five runs, 7,500; F2, 6,000 plus
   about 30,000 cheap betting-only ones; F1r, 4,500; F1 on the twin halves, 16 runs at about
   half the cost, about 12,000 in whole-twin terms; slices, the grain check and the noise
-  floor, 1,000. That is about 55,000 to 61,000 at about 2 s each. COUNTING_COMPARISON.md
-  section 7 found that CPU time does not add up across threads on this machine, so 6 threads
-  are taken as worth about 4: about 8 hours.
+  floor, 1,000. That is about 55,000 to 61,000. At about 2 s each, with 6 threads taken as
+  worth about 4 (COUNTING_COMPARISON.md section 7 found that CPU time does not add up across
+  threads on this machine), the estimate was about 8 hours. Priced instead at the times
+  calibration measured (section 4: 1.115 s an F1 evaluation, 6 threads worth 3.0), they come to
+  5.5 to 6.1 machine hours, the betting blocks 0.04 of them (calibration-1579078's budget
+  table).
 - **Memory.** The states take about 1.6 GB in memory (FULL_INDEX_PLAYS.md section 6). Each
   evaluation running at once holds the play keys of 60,743 × 550 (state, deal) cells as ints,
   134 MB, plus its fits: about 250 MB (estimate), so six at once take about 1.5 GB.
