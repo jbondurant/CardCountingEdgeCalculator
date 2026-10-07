@@ -100,8 +100,17 @@ times its real value. The variant carries the divisor.
 - **A catalog count at g** (CountKeys.atGrain) is normalised the same way over the 26 kinds,
   each a 26th of the shoe, which for a colour-blind count is the sum over ranks. Its kinds are
   rounded in groups, a rank's kinds of one catalog tag together, so a count that tags a rank
-  alike still does; and a balanced count's zero tags stay zero, so an ace-neutral count keeps
-  its side count, m then the rounded ten's tag.
+  alike still does and a kind-aware one keeps its classes; and a balanced count's zero tags stay
+  zero, so an ace-neutral count keeps its side count, m then the rounded ten's tag.
+- **A running catalog count at g** (KO, Red Seven, UBZ2, the KISS counts, Uston SS, BRH-0,
+  BRH-II, the Ten Count, Ace-Five and Revere Five, 12 of the 30 entries) stays a running count:
+  its tags are scaled to Hi-Lo's spread and not centred, since its shift is what carries depth,
+  as F1r's is scaled with its balanced part; its zero tags stay zero, and its deck sum is the
+  nearest it can reach to the catalog's scaled alike, so a balanced one stays balanced. It keys
+  on its running count over a running divisor, set as F1r's D_r is (a key step of g Hi-Lo
+  true-count units at the median depth of the 80% states). With the divisor one catalog tag
+  unit at K (CountKeys.grainUnit), its keys are the catalog's (RealCountTest), so the grain part
+  of a running count is grain alone.
 - **The unrounded true count,** on which the report's BC and IC are computed, is not divided by
   D: a correlation does not see the scale.
 
@@ -314,8 +323,11 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
   a region rather than a count.
 - **The grain g,** with Hi-Lo and Zen (section 1).
 - **Every published row at g.** Each catalog count and side-count variant, scored at g, point
-  estimates only. The counts behind the five best rows at g, and Hi-Lo, are the controls.
-- **The colour check.** Red Seven against its rank average (7 = +½), both at g. Red Seven
+  estimates only, the running ones at their running divisor (section 1). The counts behind the
+  five best rows at g, and Hi-Lo, are the controls.
+- **The colour check.** Red Seven against its rank average (7 = +½), both at g: Red Seven as a
+  catalog entry at g, and its rank average as a running count of our own in the candidates file,
+  its tags Red Seven's at g with the seven's two kinds averaged, at the same divisor. Red Seven
   should not be better beyond noise; if it is, section 1's argument is reported as not borne
   out.
 - **The split margin.** The flat value of perfect split play, δ, on a sample of twin states,

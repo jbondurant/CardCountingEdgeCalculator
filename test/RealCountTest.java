@@ -489,6 +489,80 @@ public class RealCountTest {
      * running count: a rank's tag is at most sqrt(spread (1 - p) / p), and no running count of
      * normalised tags at K exceeds 416 sqrt(spread) K plus the rounding, far under the limit.
      */
+    /**
+     * Every catalog count takes a grain (COUNT_DESIGN.md, section 4: every published row at g), the
+     * twelve running ones among them, Red Seven and the KISS counts kind-aware. Each keeps its form
+     * and its classes: kinds of a rank tagged alike stay alike, and kinds tagged apart stay apart. A
+     * running count is scaled, not centred, since its shift carries depth: each kind within 1.5 of
+     * grainUnit times its catalog tag, a kind tagged 0 still 0, its deck sum the nearest it can
+     * reach to the catalog's scaled, a balanced one still balanced; and at divisor rint(grainUnit)
+     * its bet and play keys, and each deal's chances over them, are the catalog's on random states.
+     * A kind-aware true count (Red Seven's tags counted true) keeps its classes and a deck sum of zero.
+     */
+    @Test
+    public void everyCatalogCountTakesAGrain() {
+        Random rnd = new Random(16);
+        int running = 0;
+        for (CountKeys.Count c : CountKeys.catalog()) {
+            CountKeys.Count g = CountKeys.atGrain(c, 500);
+            sameClasses(c, g);
+            assertEquals(c.trueCounted, g.trueCounted, g.name);
+            assertEquals(500, g.divisor());
+            if (c.trueCounted) {
+                continue;
+            }
+            running++;
+            double unit = CountKeys.grainUnit(c);
+            long sum = 0;
+            for (int k = 0; k < ShoeRun.KINDS; k++) {
+                assertTrue(Math.abs(g.tag[k] - unit * c.tag[k]) <= 1.5, g.name + " kind " + k);
+                if (c.tag[k] == 0) {
+                    assertEquals(0, g.tag[k], g.name);
+                }
+                sum += g.tag[k];
+            }
+            assertTrue(Math.abs(2 * sum - unit * c.deckSum) <= 2, g.name + "'s deck sum " + 2 * sum);
+            assertEquals(c.balanced(), g.balanced(), g.name);
+            CountKeys.Count at = CountKeys.atGrain(c, (int) Math.rint(unit));
+            for (int trial = 0; trial < 3_000; trial++) {
+                int[] dealt = CountKeysTest.dealt(rnd, rnd.nextInt(ShoeRun.CARDS - 80));
+                int depth = 0;
+                for (int x : dealt) {
+                    depth += x;
+                }
+                assertEquals(c.betKey(dealt, depth), at.betKey(dealt, depth), c.name);
+                int deal = rnd.nextInt(Deals.COUNT);
+                double[][] a = c.tagSums(dealt, deal);
+                double[][] b = at.tagSums(dealt, deal);
+                assertEquals(a.length, b.length, c.name);
+                for (int i = 0; i < a.length; i++) {
+                    assertEquals(a[i][1], b[i][1], 0, c.name + ": a deal's chances over its tag sums");
+                    assertEquals(c.playKey(c.runningCount(dealt), depth, (int) a[i][0]),
+                            at.playKey(at.runningCount(dealt), depth, (int) b[i][0]), c.name);
+                }
+            }
+        }
+        assertEquals(12, running);
+        CountKeys.Count red = PlayerTreeOrderTest.named("Red Seven (Red 7)");
+        CountKeys.Count redTrue = new CountKeys.Count("Red Seven counted true", red.systems, red.tag, red.scale, true, 0,
+                null, "");
+        CountKeys.Count g = CountKeys.atGrain(redTrue, 500);
+        assertTrue(g.kindAware && g.balanced() && g.trueCounted);
+        sameClasses(redTrue, g);
+    }
+
+    /** Kinds of a rank tagged alike by c are tagged alike by g, and kinds tagged apart, apart. */
+    private static void sameClasses(CountKeys.Count c, CountKeys.Count g) {
+        assertEquals(c.kindAware, g.kindAware, g.name);
+        for (int k = 0; k < ShoeRun.KINDS; k++) {
+            for (int j = 0; j < ShoeRun.KINDS; j++) {
+                if (ShoeRun.rankOf(k) == ShoeRun.rankOf(j)) {
+                    assertEquals(c.tag[k] == c.tag[j], g.tag[k] == g.tag[j], g.name + " kinds " + k + ", " + j);
+                }
+            }
+        }
+    }
+
     @Test
     public void theLargestNormalisedTagsCannotOverflow() {
         double bound = ShoeRun.CARDS * Math.sqrt(CountKeys.SPREAD) * CountKeys.K + ShoeRun.CARDS * 1.5;

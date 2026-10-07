@@ -665,13 +665,20 @@ final class CountKeys {
 
     /**
      * A catalog count at grain D / K (COUNT_DESIGN.md, section 4: every published row at g): its
-     * tags by kind normalised to Hi-Lo's spread over the 26 kinds, each of share 1/26, rounded at
-     * K with the deck sum kept zero, and key divisor d. The name says the grain; the systems stay
-     * the catalog's, so the side-count variant comes with it, carrying the divisor.
+     * tags by kind scaled to Hi-Lo's spread over the 26 kinds, each of share 1/26, rounded at K,
+     * and key divisor d. The name says the grain; the systems stay the catalog's, so the side-count
+     * variant comes with it, carrying the divisor. A rank's kinds of one catalog tag are rounded
+     * together, so a kind-aware count keeps its classes and a colour-blind one stays colour-blind.
+     * - A true count is centred first, as normalised does, and its deck sum kept exactly zero.
+     * - A running count is scaled and not centred, since its shift is what carries depth (as F1r's
+     *   is scaled with its balanced part): its deck sum is kept the nearest whole number to the
+     *   catalog's scaled alike, and a kind the catalog tags 0 stays 0. It keys on its running count
+     *   over d; with d the whole tags of one catalog tag unit (grainUnit), its keys are the
+     *   catalog's.
      */
     static Count atGrain(Count c, int d) {
-        if (!c.trueCounted || c.base != null || c.betTag != null) {
-            throw new IllegalArgumentException(c.name + ": only a plain true count is scored at another grain");
+        if (c.base != null || c.betTag != null || c.betVector != null || c.aceSideCount != 0) {
+            throw new IllegalArgumentException(c.name + ": only a plain catalog count is scored at another grain");
         }
         long total = 0;
         for (int t : c.tag) {
@@ -709,20 +716,36 @@ final class CountKeys {
         double[] x = new double[n];
         int[] r = new int[n];
         long sum = 0;
+        double exact = 0;
         for (int g = 0; g < n; g++) {
             int[] kinds = groups.get(g);
-            x[g] = (c.tag[kinds[0]] - mean) * f * K;
+            x[g] = (c.tag[kinds[0]] - (c.trueCounted ? mean : 0)) * f * K;
             r[g] = (int) Math.rint(x[g]);
             sum += (long) kinds.length * r[g];
+            exact += kinds.length * x[g];
         }
-        // Then the deck sum is brought back to zero, moving by one the groups whose rounding moved
-        // them furthest the other way. A group the catalog tags 0 in a balanced count is left at
-        // 0, so an ace-neutral count stays ace-neutral and keeps its side count.
+        // Then the deck sum is brought back to its target, moving by one the groups whose rounding
+        // moved them furthest the other way. A group the catalog tags 0 in a balanced count, or in
+        // a running one, is left at 0, so an ace-neutral count stays ace-neutral and keeps its side
+        // count. A true count's target is zero; a running count's the nearest to its scaled deck
+        // sum that the groups that may move can reach (a multiple of their sizes' common factor),
+        // so a balanced one stays balanced.
+        if (!c.trueCounted) {
+            int step = 0;
+            for (int g = 0; g < n; g++) {
+                if (c.tag[groups.get(g)[0]] != 0) {
+                    step = java.math.BigInteger.valueOf(step).gcd(java.math.BigInteger.valueOf(groups.get(g).length))
+                            .intValue();
+                }
+            }
+            sum -= step * (long) Math.rint(exact / step);
+        }
         while (sum != 0) {
             int s = sum > 0 ? 1 : -1;
             int best = -1;
             for (int g = 0; g < n; g++) {
-                if ((c.balanced() && c.tag[groups.get(g)[0]] == 0) || groups.get(g).length > Math.abs(sum)) {
+                boolean zero = c.tag[groups.get(g)[0]] == 0 && (c.balanced() || !c.trueCounted);
+                if (zero || groups.get(g).length > Math.abs(sum)) {
                     continue;
                 }
                 if (best < 0 || s * (r[g] - x[g]) > s * (r[best] - x[best])) {
@@ -739,7 +762,26 @@ final class CountKeys {
         for (int k = 0; k < ShoeRun.KINDS; k++) {
             out[k] = r[group[k]];
         }
-        return new Count(c.name + " at grain " + d + "/" + K, c.systems, out, K, true, 0, null, c.published, d, null,
-                null);
+        return new Count(c.name + " at grain " + d + "/" + K, c.systems, out, K, c.trueCounted, 0, null, c.published, d,
+                null, null);
+    }
+
+    /**
+     * What one catalog tag unit becomes at grain: K times the factor atGrain scales the count's
+     * tags by, unrounded. With divisor rint(grainUnit(c)), a running count at grain keys as the
+     * catalog count does (RealCountTest); the calibration sets a running count's divisor at g from
+     * the states, as F1r's (COUNT_DESIGN.md, section 1).
+     */
+    static double grainUnit(Count c) {
+        long total = 0;
+        for (int t : c.tag) {
+            total += t;
+        }
+        double mean = (double) total / ShoeRun.KINDS;
+        double v = 0;
+        for (int t : c.tag) {
+            v += (t - mean) * (t - mean) / ShoeRun.KINDS;
+        }
+        return Math.sqrt(SPREAD / v) * K;
     }
 }
