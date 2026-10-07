@@ -1546,7 +1546,6 @@ final class SystemScorer {
             }
         }
         Arrays.sort(sorted, (x, y) -> Double.compare(order[x], order[y]));
-        int[] blockOf = new int[present];
         double[] blockWeight = new double[present + 1];
         double[] blockSum = new double[present + 1];
         int blocks = 0;
@@ -1554,7 +1553,6 @@ final class SystemScorer {
             if (o > 0 && order[sorted[o]] != order[sorted[o - 1]]) {
                 blocks++;
             }
-            blockOf[o] = blocks;
             blockWeight[blocks] += w[sorted[o]];
             blockSum[blocks] += w[sorted[o]] * rv[sorted[o]];
         }
