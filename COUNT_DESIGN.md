@@ -25,7 +25,9 @@ the same states and resamples, so each gap has a paired interval:
 
 The searched count is a lower bound on the linear ceiling: the best this search finds, scored
 on shoes it was not chosen on. The bounds above it say how much room is left. The same ladder
-is then given at full play. This is a design; nothing in it has been run.
+is then given at full play. Steps 1 to 3 of section 8 have been run (the code, the twin file
+and the calibration, whose figures are written in where the design takes them); from step 4
+on, this is a design.
 
 ## 1. What is searched
 
@@ -766,11 +768,11 @@ in the ten share, so a gain there is a real gain for a linear count, not a warni
 
 Nothing reads a state file until full-c06c061 has written results.ser, due about 04:00 on 7
 October. At 00:56 that day its log showed 138 of 186 items scored
-(runs/full-index/full-c06c061.log).
+(runs/full-index/full-c06c061.log); it wrote results.ser at 03:51.
 
 | Step | Machine time (estimate) | Disk |
 |---|---|---|
-| Twin file | 3 to 5 h on 8 threads | 1.34 GB |
+| Twin file | 3.2 h on 7 threads, measured (11,637 s, runs/twin-80.log) | 1.34 GB |
 | Calibration and theory pass | 2 to 3 h | |
 | Searches and slices | 5.5 to 6.1 h on 6 threads, priced from measured evaluations | logs |
 | Full-play choice on the twin | 1 to 3 h, after a dry run on 2,000 shoes | none, trees rebuilt |
