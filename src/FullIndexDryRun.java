@@ -152,6 +152,7 @@ public final class FullIndexDryRun {
         m.mPlay = SystemScorer.M_PLAY;
         m.pens = pens.clone();
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), m.mPlay);
+        scorer.ownValueRows = given != null;
         List<CountKeys.Count> counts = new ArrayList<>();
         if (given == null) {
             counts.add(CountKeys.nullCount());

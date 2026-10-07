@@ -139,6 +139,9 @@ public final class FullIndexRun {
             }
         }
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
+        // Counts of our own are also scored betting on each state's own value under their play
+        // (COUNT_DESIGN.md, section 2), which results.ser keeps for no published count.
+        scorer.ownValueRows = listing != null;
         List<CountKeys.Count> counts = new ArrayList<>();
         if (listing == null) {
             counts.add(CountKeys.nullCount());
@@ -255,7 +258,7 @@ public final class FullIndexRun {
         b.append("threads ").append(threads).append('\n');
         b.append("penetrations ").append(java.util.Arrays.toString(pens)).append('\n');
         if (countsFile != null) {
-            b.append("counts from ").append(countsFile).append('\n');
+            b.append("counts from ").append(countsFile).append(", each also bet on its own value\n");
         }
         for (CountKeys.Count c : counts) {
             b.append("count ").append(c.describe()).append('\n');

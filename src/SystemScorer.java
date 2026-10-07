@@ -104,6 +104,12 @@ final class SystemScorer {
     final Bootstrap boot;
     final double mPlay;
     private final Pen[] pens = new Pen[CUTS.length];
+    /**
+     * Whether score adds, after a count's other entries, the count playing its own fit and
+     * betting on each state's own round value under it, at first decisions and with full play
+     * (Entry.ownValue). Off unless asked for, so a published count's Result is as it was.
+     */
+    boolean ownValueRows;
 
     SystemScorer(ScoringStates st, Bootstrap boot, double mPlay) {
         if (boot.shoes != st.shoes) {
@@ -1432,38 +1438,7 @@ final class SystemScorer {
             blocks++;
         }
 
-        // The integral of the reference bets' quantile function at the block boundaries.
-        double[] boundary = new double[blocks + 1];
-        for (int b = 0; b < blocks; b++) {
-            boundary[b + 1] = boundary[b] + blockWeight[b];
-        }
-        double[][] integral = new double[SPREADS + 1][blocks + 1];
-        double cw = 0;
-        double[] cb = new double[SPREADS + 1];
-        int next = 1;
-        for (int j : testByChart) {
-            double wj = w[j];
-            if (wj == 0) {
-                continue;
-            }
-            double units = chart[j] / UNIT;
-            while (next < blocks && boundary[next] <= cw + wj) {
-                double part = boundary[next] - cw;
-                for (int s = 1; s <= SPREADS; s++) {
-                    integral[s][next] = cb[s] + part * clamp(units, s);
-                }
-                next++;
-            }
-            cw += wj;
-            for (int s = 1; s <= SPREADS; s++) {
-                cb[s] += wj * clamp(units, s);
-            }
-        }
-        for (; next <= blocks; next++) {
-            for (int s = 1; s <= SPREADS; s++) {
-                integral[s][next] = cb[s];
-            }
-        }
+        double[][] integral = scheduleIntegral(testByChart, w, chart, blockWeight, blocks);
 
         double weight = 0;
         double flat = 0;
@@ -1507,6 +1482,148 @@ final class SystemScorer {
         return Math.max(1, Math.min(spread, units));
     }
 
+    /**
+     * The integral of the reference bets' quantile function at the boundaries of blocks of the
+     * given weights, in order: [spread][boundary], the bets the proportional rule places on the
+     * states of byChart (in order of chart advantage, each weighted w) at spreads 1 to 8. A block's
+     * same-schedule bet is the integral across it over its weight.
+     */
+    static double[][] scheduleIntegral(int[] byChart, double[] w, double[] chart, double[] blockWeight, int blocks) {
+        double[] boundary = new double[blocks + 1];
+        for (int b = 0; b < blocks; b++) {
+            boundary[b + 1] = boundary[b] + blockWeight[b];
+        }
+        double[][] integral = new double[SPREADS + 1][blocks + 1];
+        double cw = 0;
+        double[] cb = new double[SPREADS + 1];
+        int next = 1;
+        for (int j : byChart) {
+            double wj = w[j];
+            if (wj == 0) {
+                continue;
+            }
+            double units = chart[j] / UNIT;
+            while (next < blocks && boundary[next] <= cw + wj) {
+                double part = boundary[next] - cw;
+                for (int s = 1; s <= SPREADS; s++) {
+                    integral[s][next] = cb[s] + part * clamp(units, s);
+                }
+                next++;
+            }
+            cw += wj;
+            for (int s = 1; s <= SPREADS; s++) {
+                cb[s] += wj * clamp(units, s);
+            }
+        }
+        for (; next <= blocks; next++) {
+            for (int s = 1; s <= SPREADS; s++) {
+                integral[s][next] = cb[s];
+            }
+        }
+        return integral;
+    }
+
+    /**
+     * Bets on each state's own value (COUNT_DESIGN.md, section 2): the fold's states with weight,
+     * in order of order[j], equal values forming one block, are handed the same schedule's bets,
+     * the reference bets of byChart's states, as a count's keys are; each state's round value is
+     * rv[j]. Adds the flat and same-schedule sums into sums, as bets does for a count; the own
+     * ramp has no meaning here, and its sums are left alone.
+     */
+    static void ownValueBets(int[] test, int[] byChart, double[] w, double[] order, double[] rv, double[] chart,
+                             double[] sums) {
+        int present = 0;
+        for (int j : test) {
+            if (w[j] != 0) {
+                present++;
+            }
+        }
+        Integer[] sorted = new Integer[present];
+        present = 0;
+        for (int j : test) {
+            if (w[j] != 0) {
+                sorted[present++] = j;
+            }
+        }
+        Arrays.sort(sorted, (x, y) -> Double.compare(order[x], order[y]));
+        int[] blockOf = new int[present];
+        double[] blockWeight = new double[present + 1];
+        double[] blockSum = new double[present + 1];
+        int blocks = 0;
+        for (int o = 0; o < present; o++) {
+            if (o > 0 && order[sorted[o]] != order[sorted[o - 1]]) {
+                blocks++;
+            }
+            blockOf[o] = blocks;
+            blockWeight[blocks] += w[sorted[o]];
+            blockSum[blocks] += w[sorted[o]] * rv[sorted[o]];
+        }
+        if (present > 0) {
+            blocks++;
+        }
+        double[][] integral = scheduleIntegral(byChart, w, chart, blockWeight, blocks);
+        for (int b = 0; b < blocks; b++) {
+            sums[WEIGHT] += blockWeight[b];
+            sums[FLAT] += blockSum[b];
+            for (int s = 1; s <= SPREADS; s++) {
+                double bet = (integral[s][b + 1] - integral[s][b]) / blockWeight[b];
+                sums[same(s)] += bet * blockSum[b];
+                sums[sameBet(s)] += bet * blockWeight[b];
+            }
+        }
+    }
+
+    /**
+     * The same-schedule bet at spread s of each bet key held by the states given, the bets handed
+     * out over those states' own reference bets in order of the advantage adv fitted at each key
+     * (as bets hands a test fold's), NaN at a key none of them holds: the bets the refit check
+     * weights a training state by.
+     */
+    static double[] keyBets(BetKeys bk, double[] adv, int[] states, int[] byChart, double[] w, double[] chart, int s) {
+        int keys = bk.value.length;
+        double[] vw = new double[keys];
+        for (int j : states) {
+            vw[bk.index[j]] += w[j];
+        }
+        int present = 0;
+        for (int k = 0; k < keys; k++) {
+            if (vw[k] > 0) {
+                present++;
+            }
+        }
+        Integer[] order = new Integer[present];
+        present = 0;
+        for (int k = 0; k < keys; k++) {
+            if (vw[k] > 0) {
+                order[present++] = k;
+            }
+        }
+        Arrays.sort(order, (x, y) -> Double.compare(adv[x], adv[y]));
+        int[] blockOf = new int[keys];
+        double[] blockWeight = new double[present + 1];
+        int blocks = 0;
+        for (int o = 0; o < present; o++) {
+            if (o > 0 && adv[order[o]] != adv[order[o - 1]]) {
+                blocks++;
+            }
+            blockOf[order[o]] = blocks;
+            blockWeight[blocks] += vw[order[o]];
+        }
+        if (present > 0) {
+            blocks++;
+        }
+        double[][] integral = scheduleIntegral(byChart, w, chart, blockWeight, blocks);
+        double[] out = new double[keys];
+        Arrays.fill(out, Double.NaN);
+        for (int k = 0; k < keys; k++) {
+            if (vw[k] > 0) {
+                int b = blockOf[k];
+                out[k] = (integral[s][b + 1] - integral[s][b]) / blockWeight[b];
+            }
+        }
+        return out;
+    }
+
     // ----------------------------------------------------------------- the scoring
 
     /** One row of the report: a count scored one way, at every penetration. */
@@ -1532,15 +1649,40 @@ final class SystemScorer {
         /** Whether it plays a full-index fit, count-based on every decision of the dealt hand. */
         final boolean fullPlay;
 
+        // Added after c06c061 wrote its results; read from those files they are false and null.
+
+        /**
+         * Whether it bets on each state's own round value under its play and insurance rather
+         * than on its bet key (COUNT_DESIGN.md, section 2): its same-schedule figures are the most
+         * any ordering of the schedule makes of that play; it has no own ramp.
+         */
+        final boolean ownValue;
+        /**
+         * [pen]: the 1-8 same-schedule EV with play, insurance and the bets' advantage fitted on the
+         * learning curve's half of each training fold and scored on the whole test fold; NaN for a
+         * row betting only or on its own value. Null in a Result c06c061 wrote.
+         */
+        double[] halfFitSame;
+        /** [pen][resample]: the same, as Result.halfFitBoot is made. */
+        double[][] halfFitSameBoot;
+
         Entry(String name, CountKeys.Count count, boolean bettingOnly) {
             this(name, count, bettingOnly, false);
         }
 
         Entry(String name, CountKeys.Count count, boolean bettingOnly, boolean fullPlay) {
+            this(name, count, bettingOnly, fullPlay, false);
+        }
+
+        Entry(String name, CountKeys.Count count, boolean bettingOnly, boolean fullPlay, boolean ownValue) {
             this.name = name;
             this.count = count;
             this.bettingOnly = bettingOnly;
             this.fullPlay = fullPlay;
+            this.ownValue = ownValue;
+            if (ownValue && bettingOnly) {
+                throw new IllegalArgumentException(name + ": a row on its own value plays its own fit");
+            }
         }
     }
 
@@ -1739,6 +1881,19 @@ final class SystemScorer {
                 result.fullEntries.add(new Entry(c.name + ", full play", c, false, true));
             }
         }
+        if (ownValueRows) {
+            // Last, so every other entry keeps its place; fullEntries[e] still pairs with entries[2e].
+            result.entries.add(new Entry(count.name + ", bet on its own value", count, false, false, true));
+            if (fits != null) {
+                result.fullEntries.add(new Entry(count.name + ", full play, bet on its own value", count, false, true,
+                        true));
+            }
+        }
+        for (Entry e : result.entries) {
+            e.halfFitSame = new double[CUTS.length];
+            Arrays.fill(e.halfFitSame, Double.NaN);
+            e.halfFitSameBoot = new double[CUTS.length][];
+        }
         for (int p = 0; p < CUTS.length; p++) {
             if (only != null && !contains(only, p)) {
                 continue;
@@ -1816,8 +1971,15 @@ final class SystemScorer {
             result.groups[p][f] = plays[f].groups;
         }
         result.resolution[p] = resolution(parts, pen, ip, plays);
-        result.halfFitFlat[p] = halfFit(parts, pen, ip, pen.weight, null, null, null);
+        // The half fits value every state, so the bets' advantage can be fitted on the half; the
+        // flat EV reads the test states alone, whose values are those halfFit gives.
+        FoldPlay[] half = halfPlays(parts, pen, ip, pen.weight, null, null, null, null, null);
+        result.halfFitFlat[p] = halfFlat(pen, ip, half, pen.weight);
         result.halfFitBoot[p] = new double[boot.resamples];
+        for (Entry e : result.entries) {
+            e.halfFitSameBoot[p] = new double[boot.resamples];
+        }
+        halfSchedule(pen, ip, half, bk, result.entries, pen.weight, p, -1);
 
         double[][] sums = scoreOnce(pen, ip, plays, bk, result.entries, pen.weight, p, true);
         for (int e = 0; e < sums.length; e++) {
@@ -1943,7 +2105,9 @@ final class SystemScorer {
                     result.entries.get(e).boot[p][m][r] = rs[e][m];
                 }
             }
-            result.halfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, plays);
+            FoldPlay[] hp = halfPlays(parts, pen, ip, wm, um, byKey, plays, null, pen.test);
+            result.halfFitBoot[p][r] = halfFlat(pen, ip, hp, wm);
+            halfSchedule(pen, ip, hp, bk, result.entries, wm, p, r);
             if (full) {
                 for (int f = 0; f < 2; f++) {
                     refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
@@ -2018,6 +2182,15 @@ final class SystemScorer {
         to.boot[p] = from.boot[p];
         to.shoeSums[p] = from.shoeSums[p];
         to.keys[p] = from.keys[p];
+        if (from.halfFitSame != null) {
+            if (to.halfFitSame == null) {
+                to.halfFitSame = new double[CUTS.length];
+                Arrays.fill(to.halfFitSame, Double.NaN);
+                to.halfFitSameBoot = new double[CUTS.length][];
+            }
+            to.halfFitSame[p] = from.halfFitSame[p];
+            to.halfFitSameBoot[p] = from.halfFitSameBoot[p];
+        }
     }
 
     /**
@@ -2040,6 +2213,207 @@ final class SystemScorer {
         List<Entry> one = new ArrayList<>();
         one.add(new Entry(count.name, count, false, values != null));
         return scoreOnce(pen, ip, plays, new BetKeys[]{betKeys(count, pen)}, one, w, p, false)[0];
+    }
+
+    // ------------------------------------------------------------- the search's evaluation
+
+    /** One count's play held at one penetration: each fold's play and the insurance parts it is valued with. */
+    static final class Held {
+        final int p;
+        final Pen pen;
+        final InsuranceParts ip;
+        final FoldPlay[] plays;
+
+        Held(int p, Pen pen, InsuranceParts ip, FoldPlay[] plays) {
+            this.p = p;
+            this.pen = pen;
+            this.ip = ip;
+            this.plays = plays;
+        }
+    }
+
+    /**
+     * Fits a count's play at penetration p as score does for its estimate: each fold's groups and
+     * moves on the other fold, every state valued under it.
+     */
+    Held hold(CountKeys.Count count, int p) {
+        Pen pen = pens[p];
+        Parts parts = parts(count, pen);
+        InsuranceParts ip = insuranceParts(parts, pen);
+        FoldPlay[] plays = new FoldPlay[2];
+        for (int f = 0; f < 2; f++) {
+            plays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null);
+        }
+        return new Held(p, pen, ip, plays);
+    }
+
+    /**
+     * One evaluation (COUNT_DESIGN.md, section 4): score's point estimate at penetration p alone,
+     * with no resamples, no decision resolution and no half fits. [entry][metric], the entries as
+     * score lists them: the count, then its betting variant when given, each as itself and
+     * betting only. Every figure is score's estimate, to the bit.
+     */
+    double[][] estimate(CountKeys.Count count, CountKeys.Count variant, int p) {
+        if (variant != null && variant.base != count) {
+            throw new IllegalArgumentException(variant + " is not a variant of " + count);
+        }
+        Held h = hold(count, p);
+        List<Entry> entries = new ArrayList<>();
+        List<BetKeys> bk = new ArrayList<>();
+        for (CountKeys.Count c : variant == null ? Arrays.asList(count) : Arrays.asList(count, variant)) {
+            BetKeys k = betKeys(c, h.pen);
+            entries.add(new Entry(c.name, c, false));
+            entries.add(new Entry(c.name + ", betting only", c, true));
+            bk.add(k);
+            bk.add(k);
+        }
+        return scoreOnce(h.pen, h.ip, h.plays, bk.toArray(new BetKeys[0]), entries, h.pen.weight, p, false);
+    }
+
+    /**
+     * A betting vector's figures with the play held (COUNT_DESIGN.md, section 4, F2): only its bet
+     * keys, the isotonic advantage and the bets are worked out afresh. The count given bets on its
+     * bet key and plays the held play, as its entry would in estimate when it is the held count's
+     * betting variant, to the bit.
+     */
+    double[] betOn(Held h, CountKeys.Count betting) {
+        List<Entry> one = new ArrayList<>();
+        one.add(new Entry(betting.name, betting, false));
+        return scoreOnce(h.pen, h.ip, h.plays, new BetKeys[]{betKeys(betting, h.pen)}, one, h.pen.weight, h.p, false)[0];
+    }
+
+    // ------------------------------------------------------------- the refit check
+
+    /**
+     * The refit check (COUNT_DESIGN.md, section 1): plays fitted for the bets. Each fold's play is
+     * first fitted flat, as score fits it; each training state is then weighted by its 1/q times
+     * the same-schedule bet at the spread given that its key gets on the training fold itself
+     * (keyBets, the advantage fitted on the training fold under that play), and the moves of
+     * each (group, deal) and insurance of each (group, ace-up deal) are fitted again under those
+     * weights, the groups held. The test fold is then scored as score scores it, under the
+     * refitted play and insurance, with the advantage fitted again under them. On every resample
+     * all of it is refitted from the resample's weights.
+     *
+     * Entries, one per penetration filled: the count and, given, its betting variant, each
+     * "plays fitted for the 1-S schedule", the variant's training bets from its own bet key.
+     */
+    List<Entry> scheduleRefit(CountKeys.Count count, CountKeys.Count variant, int spread, int threads) {
+        if (variant != null && variant.base != count) {
+            throw new IllegalArgumentException(variant + " is not a variant of " + count);
+        }
+        List<Entry> entries = new ArrayList<>();
+        for (CountKeys.Count c : variant == null ? Arrays.asList(count) : Arrays.asList(count, variant)) {
+            entries.add(new Entry(c.name + ", plays fitted for the 1-" + spread + " schedule", c, false));
+        }
+        for (int p = 0; p < CUTS.length; p++) {
+            Pen pen = pens[p];
+            Parts parts = parts(count, pen);
+            InsuranceParts ip = insuranceParts(parts, pen);
+            BetKeys[] bk = new BetKeys[entries.size()];
+            for (int e = 0; e < bk.length; e++) {
+                bk[e] = betKeys(entries.get(e).count, pen);
+            }
+            FoldPlay[] plays = new FoldPlay[2];
+            for (int f = 0; f < 2; f++) {
+                plays[f] = foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null);
+            }
+            double[][] est = refitScore(parts, pen, ip, plays, bk, pen.weight, null, spread);
+            for (int e = 0; e < entries.size(); e++) {
+                entries.get(e).estimate[p] = est[e];
+                entries.get(e).boot[p] = new double[METRICS][boot.resamples];
+            }
+            ByKey byKey = boot.resamples > 0 ? byKey(parts, pen) : null;
+            int pp = p;
+            onThreads(threads, (first, step) -> {
+                double[] wm = new double[pen.states.length];
+                double[] um = new double[pen.states.length];
+                FoldPlay[] refit = new FoldPlay[2];
+                for (int r = first; r < boot.resamples; r += step) {
+                    for (int j = 0; j < wm.length; j++) {
+                        um[j] = boot.mult(r, st.shoe[pen.states[j]]);
+                        wm[j] = pen.weight[j] * um[j];
+                    }
+                    for (int f = 0; f < 2; f++) {
+                        refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, plays[f]);
+                    }
+                    double[][] rs = refitScore(parts, pen, ip, refit, bk, wm, byKey, spread);
+                    for (int e = 0; e < rs.length; e++) {
+                        for (int m = 0; m < METRICS; m++) {
+                            entries.get(e).boot[pp][m][r] = rs[e][m];
+                        }
+                    }
+                }
+            });
+        }
+        return entries;
+    }
+
+    /**
+     * The refit check's figures under weights w from each fold's flat play: [entry][metric]. A
+     * play refitted on a resample is valued from its flat play's values when byKey is given.
+     */
+    private double[][] refitScore(Parts parts, Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk, double[] w,
+                                  ByKey byKey, int spread) {
+        int n = pen.states.length;
+        double[][] sums = new double[bk.length][METRICS + 1];
+        double[] rv = new double[n];
+        double[] wb = new double[n];
+        for (int f = 0; f < 2; f++) {
+            FoldPlay play = plays[f];
+            int[] train = pen.train[f];
+            int[] use = drawn(train, w);
+            double[] ins = insuranceValues(ip, play.insuranceGroup,
+                    insuranceSums(ip, play.insuranceGroup, play.groups.count(), train, w));
+            for (int j = 0; j < n; j++) {
+                rv[j] = play.base[j] + ins[j];
+            }
+            for (int e = 0; e < bk.length; e++) {
+                // The training states' bets: the advantage fitted on them under the flat play, and
+                // the schedule handed out over their own reference bets.
+                int keys = bk[e].value.length;
+                double[] tw = new double[keys];
+                double[] ts = new double[keys];
+                for (int j : train) {
+                    int k = bk[e].index[j];
+                    tw[k] += w[j];
+                    ts[k] += w[j] * rv[j];
+                }
+                double[] adv = isotonic(bk[e].value, tw, ts);
+                double[] bet = keyBets(bk[e], adv, train, pen.testByChart[1 - f], w, pen.chart, spread);
+                Arrays.fill(wb, 0);
+                for (int j : train) {
+                    if (w[j] != 0) {
+                        wb[j] = w[j] * bet[bk[e].index[j]];
+                    }
+                }
+                Fit fit = fit(parts, pen, use, play.groups, play.table, wb);
+                double[] base = new double[n];
+                if (byKey == null) {
+                    playValues(parts, pen, fit, play.table, null, base);
+                } else {
+                    playValuesFrom(parts, pen, byKey, play, fit, play.table, base);
+                }
+                double[] ins2 = insuranceValues(ip, play.insuranceGroup,
+                        insuranceSums(ip, play.insuranceGroup, play.groups.count(), train, wb));
+                double[] rv2 = new double[n];
+                for (int j = 0; j < n; j++) {
+                    rv2[j] = base[j] + ins2[j];
+                }
+                double[] s = sums[e];
+                for (int j : pen.test[f]) {
+                    s[PLAY] += w[j] * base[j];
+                    s[INSURANCE] += w[j] * ins2[j];
+                }
+                bets(bk[e], train, pen.test[f], pen.testByChart[f], w, rv2, pen.chart, s, null);
+            }
+        }
+        double[][] out = new double[bk.length][METRICS];
+        for (int e = 0; e < bk.length; e++) {
+            for (int m = 0; m < METRICS; m++) {
+                out[e][m] = sums[e][WEIGHT] == 0 ? Double.NaN : sums[e][m] / sums[e][WEIGHT];
+            }
+        }
+        return out;
     }
 
     /** Both folds' decision resolution at one penetration, the bounds averaged over the folds by test weight. */
@@ -2126,6 +2500,10 @@ final class SystemScorer {
                     d = new double[bk[e].value.length][DETAIL];
                     det[e][f] = d;
                 }
+                if (entries.get(e).ownValue) {
+                    ownValueBets(pen.test[f], pen.testByChart[f], w, rv, rv, pen.chart, s);
+                    continue;
+                }
                 bets(bk[e], pen.train[f], pen.test[f], pen.testByChart[f], w, rv, pen.chart, s, d);
                 if (detail) {
                     for (int j : pen.test[f]) {
@@ -2140,12 +2518,22 @@ final class SystemScorer {
             for (int m = 0; m < METRICS; m++) {
                 out[e][m] = weight == 0 ? Double.NaN : sums[e][m] / weight;
             }
+            if (entries.get(e).ownValue) {
+                noOwnRamp(out[e]);
+            }
             if (detail) {
                 entries.get(e).shoeSums[p] = shoe[e];
                 entries.get(e).keys[p] = keyTable(bk[e], det[e], weight);
             }
         }
         return out;
+    }
+
+    /** NaN in the own ramp's figures, which a row betting on its own value does not have. */
+    static void noOwnRamp(double[] m) {
+        for (int sp = 1; sp <= SPREADS; sp++) {
+            m[own(sp)] = m[ownBet(sp)] = m[played(sp)] = m[playedBet(sp)] = Double.NaN;
+        }
     }
 
     private static double[][] keyTable(BetKeys bk, double[][][] det, double totalWeight) {
@@ -2212,6 +2600,43 @@ final class SystemScorer {
     /** Whether a shoe is in the half of its fold the learning curve fits on: its index halved is even. */
     static boolean inHalf(int shoe) {
         return ((shoe >> 1) & 1) == 0;
+    }
+
+    /**
+     * The learning curve's figure at the 1-8 same schedule (COUNT_DESIGN.md, section 1): for each
+     * entry playing its own fit, the half fits' play and insurance, the bets' advantage fitted on
+     * the same half, and the same schedule handed out on each whole test fold; the estimate's at
+     * r = -1, resample r's otherwise. A row betting only or on its own value has none.
+     */
+    void halfSchedule(Pen pen, InsuranceParts ip, FoldPlay[] half, BetKeys[] bk, List<Entry> entries, double[] w,
+                      int p, int r) {
+        double[][] sums = new double[entries.size()][METRICS + 1];
+        double[] rv = new double[pen.states.length];
+        for (int f = 0; f < 2; f++) {
+            FoldPlay play = half[f];
+            int[] use = half(pen, f, w);
+            double[] ins = insuranceValues(ip, play.insuranceGroup,
+                    insuranceSums(ip, play.insuranceGroup, play.groups.count(), use, w));
+            for (int j = 0; j < rv.length; j++) {
+                rv[j] = play.base[j] + ins[j];
+            }
+            for (int e = 0; e < entries.size(); e++) {
+                Entry x = entries.get(e);
+                if (!x.bettingOnly && !x.ownValue) {
+                    bets(bk[e], use, pen.test[f], pen.testByChart[f], w, rv, pen.chart, sums[e], null);
+                }
+            }
+        }
+        for (int e = 0; e < entries.size(); e++) {
+            Entry x = entries.get(e);
+            double v = x.bettingOnly || x.ownValue || sums[e][WEIGHT] == 0 ? Double.NaN
+                    : sums[e][same(SPREADS)] / sums[e][WEIGHT];
+            if (r < 0) {
+                x.halfFitSame[p] = v;
+            } else {
+                x.halfFitSameBoot[p][r] = v;
+            }
+        }
     }
 
     /** The flat EV on each fold's test states of the half fits given, insurance fitted on the same half. */
@@ -2324,6 +2749,94 @@ final class SystemScorer {
             }
         }
         return row;
+    }
+
+    /**
+     * The bound rows (COUNT_DESIGN.md, section 2), fitted on nothing and scored with the bootstrap:
+     * within each test fold, the same schedule's bets (the fold's own reference bets, as every count
+     * gets them) handed out in order of each state's own value (ownValueBets):
+     * - perfect first move and insurance, each state bet on its value under them: no first-decision
+     *   count betting the schedule can beat it, flat or at any spread;
+     * - the chart's play with perfect insurance, bet on its value: the same bound for a count
+     *   betting only;
+     * - given perfectPlay, each state's value under perfect play of the dealt hand before
+     *   insurance (FullIndexFit.perfect), that play and perfect insurance bet on its value: the
+     *   full-play bound, but for what perfect play of split hands adds, which it plays by the chart.
+     * The own ramp has no bound: those figures are NaN. A penetration where perfectPlay lacks a
+     * state is left out of the third row, its estimate and resamples null.
+     */
+    List<Entry> bounds(double[] perfectPlay) {
+        if (perfectPlay != null && perfectPlay.length != st.size) {
+            throw new IllegalArgumentException("a value for each of the " + st.size + " states");
+        }
+        List<Entry> out = new ArrayList<>();
+        out.add(new Entry("Perfect first move and insurance, bet on its own value", null, false, false, true));
+        out.add(new Entry("Chart play and perfect insurance, bet on its own value", null, false, false, true));
+        if (perfectPlay != null) {
+            out.add(new Entry("Perfect play of the dealt hand and insurance, bet on its own value", null, false, true,
+                    true));
+        }
+        for (int p = 0; p < CUTS.length; p++) {
+            Pen pen = pens[p];
+            int n = pen.states.length;
+            double[][] play = new double[out.size()][n];
+            boolean[] every = new boolean[out.size()];
+            for (int e = 0; e < out.size(); e++) {
+                every[e] = true;
+                for (int j = 0; j < n; j++) {
+                    int s = pen.states[j];
+                    play[e][j] = e == 0 ? st.perfect[s] : e == 1 ? st.chart[s] : perfectPlay[s];
+                    every[e] &= !Double.isNaN(play[e][j]);
+                }
+            }
+            double[] ins = new double[n];
+            for (int j = 0; j < n; j++) {
+                ins[j] = st.perfectInsurance[pen.states[j]];
+            }
+            for (int e = 0; e < out.size(); e++) {
+                if (every[e]) {
+                    out.get(e).boot[p] = new double[METRICS][boot.resamples];
+                }
+            }
+            double[] w = pen.weight.clone();
+            double[] v = new double[n];
+            for (int r = -1; r < boot.resamples; r++) {
+                if (r >= 0) {
+                    for (int j = 0; j < n; j++) {
+                        w[j] = pen.weight[j] * boot.mult(r, st.shoe[pen.states[j]]);
+                    }
+                }
+                for (int e = 0; e < out.size(); e++) {
+                    if (!every[e]) {
+                        continue;
+                    }
+                    for (int j = 0; j < n; j++) {
+                        v[j] = play[e][j] + ins[j];
+                    }
+                    double[] sums = new double[METRICS + 1];
+                    for (int f = 0; f < 2; f++) {
+                        for (int j : pen.test[f]) {
+                            sums[PLAY] += w[j] * play[e][j];
+                            sums[INSURANCE] += w[j] * ins[j];
+                        }
+                        ownValueBets(pen.test[f], pen.testByChart[f], w, v, v, pen.chart, sums);
+                    }
+                    double[] m = new double[METRICS];
+                    for (int k = 0; k < METRICS; k++) {
+                        m[k] = sums[k] / sums[WEIGHT];
+                    }
+                    noOwnRamp(m);
+                    if (r < 0) {
+                        out.get(e).estimate[p] = m;
+                    } else {
+                        for (int k = 0; k < METRICS; k++) {
+                            out.get(e).boot[p][k][r] = m[k];
+                        }
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     private double[][] referenceMetrics(Pen pen, double[] w) {
