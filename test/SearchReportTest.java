@@ -202,6 +202,43 @@ public class SearchReportTest {
         assertFalse(SearchReport.separate(SearchReport.regions(Arrays.asList(far, best)), FLOOR), "within the floor at 20");
     }
 
+    /** A run that did not agree is credited when the run that followed it up, from its count at double the population and cap, agrees. */
+    @Test
+    public void aFollowUpIsTheRunFromThisOnesCountAtDoubleThePopulation() {
+        SearchReport.Run best = at("best", 0, new double[]{1}, 0.004);
+        SearchReport.Run stalled = at("stalled", 2, new double[]{1}, 0.004 - 3e-5);
+        stalled.lambda = 12;
+        stalled.maxEvals = 1500;
+        SearchReport.Run up = at("up", 1, new double[]{1}, 0.004 - 1e-6);
+        up.lambda = 24;
+        up.maxEvals = 3000;
+        up.start = new double[11];
+        for (int r = 1; r <= 10; r++) {
+            up.start[r] = stalled.play[r];
+        }
+        best.lambda = 12;
+        best.maxEvals = 1500;
+        best.start = new double[11];
+        assertFalse(SearchReport.agrees(stalled, best, FLOOR));
+        assertSame(up, SearchReport.followUp(stalled, Arrays.asList(best, stalled, up)));
+        assertTrue(SearchReport.agrees(up, best, FLOOR));
+        assertNull(SearchReport.followUp(best, Arrays.asList(best, stalled, up)));
+        up.maxEvals = 1500;
+        assertNull(SearchReport.followUp(stalled, Arrays.asList(best, stalled, up)), "the cap doubled too");
+    }
+
+    @Test
+    public void theGrainCheckIsTwoSidedAtHalfAndDoubleAndOneSidedFiner() {
+        double v = 0.0039;
+        // 2D, D/2, D/5, D/10.
+        assertTrue(SearchReport.grainTwoSided(new double[]{v - 5e-6, v + 5e-6, v, v}, v, FLOOR));
+        assertFalse(SearchReport.grainTwoSided(new double[]{v - 3e-5, v, v, v}, v, FLOOR), "the coarser grain loses");
+        assertTrue(SearchReport.grainFinerGains(new double[]{v - 3e-5, v - 3e-5, v - 3e-5, v}, v, FLOOR),
+                "losing at a finer grain is not gaining");
+        assertFalse(SearchReport.grainFinerGains(new double[]{v, v, v + 2e-5, v}, v, FLOOR));
+        assertTrue(SearchReport.grainFinerGains(new double[]{v + 5e-5, v, v, v}, v, FLOOR), "a coarser grain is not finer");
+    }
+
     /** An objective smooth on the sphere: c times the square of the angle to a hidden direction, in radians. */
     private static CountSearch.Objective bowl(double[] hidden, double c) {
         double[] h = SearchReport.point(hidden);

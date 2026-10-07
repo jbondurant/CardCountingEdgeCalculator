@@ -69,6 +69,11 @@ final class SearchReport {
     static final int TOP = 8;
     /** F2's search runs from this many of its starts. */
     static final int F2_STARTS = 3;
+    /**
+     * The grain check's divisors, as multiples of D: double the grain (2 D, g = 1/10 at D = 500),
+     * half of it (g = 1/40), and the calibration ladder's finer grains, 1/100 and 1/200.
+     */
+    static final double[] GRAIN_LADDER = {2, 0.5, 0.2, 0.1};
     /** The half-twin counts are far apart below this cosine (section 6). */
     static final double HALF_COSINE = 0.95;
 
@@ -952,8 +957,8 @@ final class SearchReport {
         Map<Run, Double> startValue = new LinkedHashMap<>();
         List<Slice> slices8;
         List<Slice> slicesFlat;
-        /** The optimum at half and double the grain: {F1 1-8 at D/2, at 2D, F1 flat at D/2, at 2D}. */
-        double[] grain;
+        /** [F1 at 1-8, F1 flat at flat][each divisor of GRAIN_LADDER times D]: the optimum's tags keyed at another grain. */
+        double[][] grain;
         /** F1r at half and double the running divisor, and its tags as a true count at D: {D_r/2, 2 D_r, true 1-8}. */
         double[] f1r;
         List<Pair> f2Starts;
@@ -1083,14 +1088,18 @@ final class SearchReport {
 
         // The grain check, and F1r's divisor and depth checks.
         log.println("The grain check.");
-        e.grain = new double[]{Double.NaN, Double.NaN, Double.NaN, Double.NaN};
-        if (!f1.isEmpty()) {
-            e.grain[0] = scoreWhole(sc, f1.get(0).play, d / 2, true)[0];
-            e.grain[1] = scoreWhole(sc, f1.get(0).play, 2 * d, true)[0];
+        e.grain = new double[2][GRAIN_LADDER.length];
+        for (double[] row : e.grain) {
+            Arrays.fill(row, Double.NaN);
         }
-        if (!flat.isEmpty()) {
-            e.grain[2] = scoreWhole(sc, flat.get(0).play, d / 2, true)[1];
-            e.grain[3] = scoreWhole(sc, flat.get(0).play, 2 * d, true)[1];
+        for (int k = 0; k < GRAIN_LADDER.length; k++) {
+            int dk = (int) Math.round(d * GRAIN_LADDER[k]);
+            if (!f1.isEmpty()) {
+                e.grain[0][k] = scoreWhole(sc, f1.get(0).play, dk, true)[0];
+            }
+            if (!flat.isEmpty()) {
+                e.grain[1][k] = scoreWhole(sc, flat.get(0).play, dk, true)[1];
+            }
         }
         List<Run> f1r = e.families.get("F1r");
         if (!f1r.isEmpty()) {
@@ -1233,6 +1242,40 @@ final class SearchReport {
         }
     }
 
+    /** Section 4's grain check: the optimum at half and at double the grain within the floor at 1 degree. */
+    static boolean grainTwoSided(double[] g, double v, Floor fl) {
+        return Math.abs(g[0] - v) < fl.at(1) && Math.abs(g[1] - v) < fl.at(1);
+    }
+
+    /** The calibration's rule at the optimum: no finer grain of the ladder gains more than the floor at 1 degree. */
+    static boolean grainFinerGains(double[] g, double v, Floor fl) {
+        for (int k = 1; k < g.length; k++) {
+            if (g[k] - v > fl.at(1)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The run that followed this one up at double the population and cap (section 4), started
+     * from this run's count; null if none.
+     */
+    static Run followUp(Run r, List<Run> runs) {
+        for (Run o : runs) {
+            if (o != r && o.lambda == 2 * r.lambda && o.maxEvals == 2 * r.maxEvals && o.start.length == 11) {
+                boolean same = true;
+                for (int k = 1; k <= 10; k++) {
+                    same &= o.start[k] == r.play[k];
+                }
+                if (same) {
+                    return o;
+                }
+            }
+        }
+        return null;
+    }
+
     /** The counts found, each family's best, for the candidates file. */
     static List<Candidate> foundCandidates(Evidence e) {
         List<Candidate> out = new ArrayList<>();
@@ -1248,6 +1291,24 @@ final class SearchReport {
                     r.divisor, r.play, r.bet, r.value));
         }
         return out;
+    }
+
+    static final Pattern FOUND_IN = Pattern.compile("^Found .* in (\\d+) s\\.$");
+
+    /** Wall seconds a search ran as its own output says ("Found ... in N s."), beside its log as NAME.out; null if none. */
+    static Double outSeconds(Path log) throws IOException {
+        Path out = log.resolveSibling(log.getFileName().toString().replaceAll("\\.log$", ".out"));
+        if (!Files.exists(out)) {
+            return null;
+        }
+        Double s = null;
+        for (String l : Files.readAllLines(out, StandardCharsets.UTF_8)) {
+            Matcher m = FOUND_IN.matcher(l);
+            if (m.matches()) {
+                s = (s == null ? 0 : s) + Double.parseDouble(m.group(1));
+            }
+        }
+        return s;
     }
 
     /** Wall seconds a search ran, from the queue's log: each "HH:MM:SS start NAME" to its "HH:MM:SS end NAME"; a start with no end is not counted. */
@@ -1417,20 +1478,25 @@ final class SearchReport {
             b.append("\n### ").append(fam).append("\n\n| Run | Start | Objective | Below the best | Angle, degrees | ")
                     .append("Evaluations | Wall s | Agrees |\n|---|---|---|---|---|---|---|---|\n");
             int agree = 0;
+            int followed = 0;
             int evals = 0;
             double secs = 0;
             for (Run r : runs) {
                 boolean ok = agrees(r, best, fl);
+                Run up = ok ? null : followUp(r, runs);
+                boolean upOk = up != null && agrees(up, best, fl);
                 agree += ok ? 1 : 0;
+                followed += upOk ? 1 : 0;
                 evals += r.evaluations;
-                Double w = wall.get(r.name);
+                Double w = wall.containsKey(r.name) ? wall.get(r.name) : outSeconds(r.log);
                 secs += w == null ? 0 : w;
                 b.append("| ").append(r.name).append(r.lambda != 12 ? " (population " + r.lambda + ", cap " + r.maxEvals
                         + ")" : "").append(" | ").append(pct(e.startValue.get(r))).append(" | ").append(pct(r.value))
                         .append(" | ").append(pts(best.value - r.value)).append(" | ")
                         .append(deg(degrees(r.play, best.play))).append(" | ").append(r.evaluations).append(" | ")
                         .append(w == null ? "" : String.format(Locale.ROOT, "%.0f", w)).append(" | ")
-                        .append(ok ? "yes" : "no").append(" |\n");
+                        .append(ok ? "yes" : up == null ? "no" : "no; followed up by " + up.name + ", which "
+                                + (upOk ? "agrees" : "does not")).append(" |\n");
             }
             List<List<Run>> regions = regions(runs);
             b.append("\n").append(agree).append(" of ").append(runs.size()).append(" runs agree with the best. ")
@@ -1448,7 +1514,10 @@ final class SearchReport {
                 b.append(". They ").append(separate(regions, fl) ? "differ by more than noise: each region's best gets one "
                         + "more run at double the population and the cap (section 4)." : "do not differ by more than noise.");
             }
-            b.append(" Verdict: restarts ").append(agree == runs.size() ? "agree." : "do not all agree.").append("\n");
+            b.append(" Verdict: restarts ").append(agree == runs.size() ? "agree." : agree + followed == runs.size()
+                    ? "agree once each run that did not is followed up at double the population and the cap, as section 4 "
+                    + "does for a region whose best differs by more than noise: " + (runs.size() - agree) + " did not at "
+                    + "first." : "do not all agree.").append("\n");
         }
 
         // Slices.
@@ -1564,21 +1633,26 @@ final class SearchReport {
         b.append("4. **A planted optimum is recovered:** CountSearchTest, run with the suite at this commit (section 6).\n");
 
         // The grain check.
-        b.append("\n## 5. The grain does not decide it\n\nThe optimum's tags as they stand, keyed at half and at double ")
-                .append("the divisor (g = 1/40 and 1/10), against the floor at 1 degree, ").append(pts(fl.at(1)))
-                .append(".\n\n| Optimum | At D | At D/2 | Change | At 2D | Change | Holds |\n|---|---|---|---|---|---|---|\n");
+        b.append("\n## 5. The grain does not decide it\n\nThe optimum's tags as they stand, keyed at double the grain ")
+                .append("(divisor 2D), at half of it (D/2), and at the calibration ladder's finer grains (D/5 and D/10, g = ")
+                .append("1/100 and 1/200 at D = 500), each less the optimum at D, against the floor at 1 degree, ")
+                .append(pts(fl.at(1))).append(". Section 4's check is two-sided at half and double the grain; the ")
+                .append("calibration chose g by a one-sided rule, that no finer grain gains more than the floor, which is ")
+                .append("given beside it.\n\n| Optimum | At D | 2D | D/2 | D/5 | D/10 | Half and double within the floor | ")
+                .append("No finer grain gains more |\n|---|---|---|---|---|---|---|---|\n");
         for (int k = 0; k < 2; k++) {
             List<Run> runs = e.families.get(k == 0 ? "F1" : "F1 flat");
             if (runs.isEmpty()) {
                 continue;
             }
             double v = runs.get(0).value;
-            double a = e.grain[2 * k];
-            double c = e.grain[2 * k + 1];
-            boolean ok = Math.abs(a - v) < fl.at(1) && Math.abs(c - v) < fl.at(1);
-            b.append("| ").append(k == 0 ? "F1, 1-8" : "F1 flat, flat").append(" | ").append(pct(v)).append(" | ")
-                    .append(pct(a)).append(" | ").append(pct(a - v)).append(" | ").append(pct(c)).append(" | ")
-                    .append(pct(c - v)).append(" | ").append(ok ? "yes" : "no").append(" |\n");
+            double[] g = e.grain[k];
+            b.append("| ").append(k == 0 ? "F1, 1-8" : "F1 flat, flat").append(" | ").append(pct(v));
+            for (double x : g) {
+                b.append(" | ").append(pct(x - v));
+            }
+            b.append(" | ").append(grainTwoSided(g, v, fl) ? "yes" : "NO").append(" | ")
+                    .append(grainFinerGains(g, v, fl) ? "yes" : "NO").append(" |\n");
         }
 
         // F1r.
