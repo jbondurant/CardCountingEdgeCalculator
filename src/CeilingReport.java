@@ -19,9 +19,13 @@ import java.util.List;
  * Before anything is printed it checks that the stored rows pair with the new ones: the run's
  * state file, shoes, valued states, resamples and seed are this report's; and Hi-Lo, Hi-Opt II
  * with its side count and Red Seven, a kind-aware count, scored again by these classes, equal the
- * stored entries to the bit, every estimate and resample at every penetration. On the main state
- * file the counts must be the registration, committed as it stands, and the ledger clean
- * (CustomCounts), and the look is written to the ledger.
+ * stored entries to the bit, every estimate and resample at every penetration. Given the published
+ * report (report-final), it also sets the stored rows once beside its printed figures
+ * (checkPrinted): its headline section, printed again from the stored rows by ComparisonReport's
+ * own code, must read as published, every estimate, SE, bias and interval and each penetration's
+ * max-|t| multipliers, to the printed digit. On the main state file both checks are required; the
+ * counts must be the registration, committed as it stands, and the ledger clean (CustomCounts),
+ * and the look is written to the ledger.
  *
  * The published families' max-|t| multipliers are not touched: the custom rows do not join them.
  * A headline claim is made only for the (count, cell) pairs the file's "cells" name (CustomCounts):
@@ -119,6 +123,77 @@ final class CeilingReport {
         }
         if (!wrong.isEmpty()) {
             throw new IllegalStateException("the stored rows do not pair with this run: " + String.join("; ", wrong));
+        }
+    }
+
+    /** The headline section of a report: its lines from "## Headline" to the next section, by penetration. */
+    static java.util.Map<String, List<String>> headlineLines(List<String> report) {
+        java.util.Map<String, List<String>> out = new java.util.TreeMap<>();
+        boolean in = false;
+        String at = null;
+        for (String l : report) {
+            if (l.startsWith("## ")) {
+                in = l.startsWith("## Headline:");
+                continue;
+            }
+            if (!in) {
+                continue;
+            }
+            if (l.startsWith("### ")) {
+                int cut = l.indexOf(" (");
+                at = cut < 0 ? l : l.substring(0, cut);
+                out.put(at, new ArrayList<>());
+            }
+            if (at != null && (l.startsWith("### ") || l.startsWith("| "))) {
+                out.get(at).add(l);
+            }
+        }
+        for (List<String> lines : out.values()) {
+            java.util.Collections.sort(lines);
+        }
+        return out;
+    }
+
+    /**
+     * The second tie of the stored rows to the published report (COUNT_DESIGN.md, section 5): its
+     * headline section, the 1-8 same schedule at each penetration, printed again from the stored
+     * rows by ComparisonReport.headline, must read as the published report prints it: every row's
+     * EV, SE, bias and 95% interval, its difference from Hi-Lo with its interval and simultaneous
+     * interval, and each penetration's average bet and max-|t| multipliers of both families, to the
+     * printed digit, row by row whatever their order. Refuses, naming the lines that differ.
+     */
+    static void checkPrinted(Published p, Path report) throws IOException {
+        ComparisonReport.Scored sc = new ComparisonReport.Scored();
+        sc.results = p.results;
+        sc.nullCount = p.nullCount();
+        sc.hiLo = p.of("Hi-Lo");
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        ComparisonReport.headline(sc, ComparisonReport.rows(sc), new PrintStream(bytes, true, "UTF-8"));
+        java.util.Map<String, List<String>> again = headlineLines(java.util.Arrays.asList(
+                new String(bytes.toByteArray(), StandardCharsets.UTF_8).split("\n")));
+        java.util.Map<String, List<String>> published = headlineLines(Files.readAllLines(report, StandardCharsets.UTF_8));
+        List<String> differ = new ArrayList<>();
+        if (!again.keySet().equals(published.keySet())) {
+            differ.add("its penetrations " + published.keySet() + " against " + again.keySet());
+        }
+        for (String pen : again.keySet()) {
+            List<String> mine = again.get(pen);
+            List<String> theirs = published.getOrDefault(pen, new ArrayList<>());
+            for (String l : mine) {
+                if (!theirs.contains(l)) {
+                    differ.add("printed again: " + l);
+                }
+            }
+            for (String l : theirs) {
+                if (!mine.contains(l)) {
+                    differ.add("published: " + l);
+                }
+            }
+        }
+        if (!differ.isEmpty()) {
+            throw new IllegalStateException("the stored rows do not give " + report + "'s printed headline figures, and the "
+                    + "run stops until the reason is found (COUNT_DESIGN.md, section 5); " + differ.size()
+                    + " lines differ, among them:\n" + String.join("\n", differ.subList(0, Math.min(8, differ.size()))));
         }
     }
 
@@ -230,8 +305,8 @@ final class CeilingReport {
      * checked, the look written to the ledger, then the counts scored, everything scored saved to
      * save when given, and the report printed. commit names the classes in the ledger and the file.
      */
-    static Ceiling run(Path states, Path results, Path countsFile, Path save, int resamples, int threads, String commit,
-                       PrintStream out) throws Exception {
+    static Ceiling run(Path states, Path results, Path printed, Path countsFile, Path save, int resamples, int threads,
+                       String commit, PrintStream out) throws Exception {
         CustomCounts.Listing counts = CustomCounts.read(countsFile);
         boolean main = CustomCounts.isMain(states);
         String blob = main ? CustomCounts.checkOnMain(counts) : null;
@@ -239,10 +314,17 @@ final class CeilingReport {
             throw new IllegalStateException("a main-file look saves everything it scores, so no figure needs a second "
                     + "look: give --save FILE (COUNT_DESIGN.md, section 5)");
         }
+        if (main && printed == null) {
+            throw new IllegalStateException("on the main file the stored rows are first set beside the published report's "
+                    + "printed figures: give --printed REPORT (COUNT_DESIGN.md, section 5)");
+        }
         if (save != null && Files.exists(save)) {
             throw new IllegalStateException(save + " exists; save the report's figures to a new file");
         }
         Published p = read(results);
+        if (printed != null) {
+            checkPrinted(p, printed);
+        }
         ScoringStates st = FullIndexPilot.load(states, StateStore.shoesDone(states));
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
         Ceiling c = check(states, st, scorer, p, counts, threads);

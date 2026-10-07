@@ -81,11 +81,12 @@ public class MainFileLookTest {
         CustomCounts.git(repo, "config", "user.email", "test@example.com");
         CustomCounts.git(repo, "config", "user.name", "test");
         Path data = Files.createDirectories(repo.resolve("runs"));
-        Path main = ComparisonReportTest.syntheticRun(data, 81, CustomCounts.MAIN_SEED, 6);
+        Path main = ComparisonReportTest.syntheticRun(data, CustomCounts.MAIN_SEED, CustomCounts.MAIN_SEED, 6);
         ScoringStates st = FullIndexPilot.load(main, StateStore.shoesDone(main));
         int resamples = CeilingReportTest.RESAMPLES;
         SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
         Path ser = CeilingReportTest.results(data, main, st, CeilingReportTest.published(sc));
+        Path printed = CeilingReportTest.printedReport(data, main);
         Path candidates = CustomCountsTest.write(repo, "candidates.json", CustomCountsTest.CANDIDATES);
         Path counts = CustomCountsTest.write(repo, CustomCounts.REGISTERED, ONE);
         Path ledger = repo.resolve(CustomCounts.LEDGER);
@@ -98,7 +99,7 @@ public class MainFileLookTest {
         Executable dryRun = () -> FullIndexDryRun.main(new String[]{"--counts", counts.toString(), "--pens", "2",
                 main.toString(), "6", "3", "2", repo.resolve("dry").toString()});
         Path save = repo.resolve("ceiling.ser");
-        Executable report = () -> CeilingReport.run(main, ser, counts, save, resamples, 2, "test", nowhere);
+        Executable report = () -> CeilingReport.run(main, ser, printed, counts, save, resamples, 2, "test", nowhere);
 
         // A candidates file is refused by every main-file tool.
         for (Executable tool : new Executable[]{
@@ -106,7 +107,7 @@ public class MainFileLookTest {
                         candidates.toString(), "--pens", "2", "--resamples", "3"}, "test", nowhere, 0),
                 () -> FullIndexDryRun.main(new String[]{"--counts", candidates.toString(), main.toString(), "6", "3", "2",
                         repo.resolve("dry").toString()}),
-                () -> CeilingReport.run(main, ser, candidates, save, resamples, 2, "test", nowhere)}) {
+                () -> CeilingReport.run(main, ser, printed, candidates, save, resamples, 2, "test", nowhere)}) {
             IllegalStateException e = assertThrows(IllegalStateException.class, tool::run);
             assertTrue(e.getMessage().contains("candidates file"), e.getMessage());
         }
@@ -140,11 +141,15 @@ public class MainFileLookTest {
         assertTrue(e.getMessage().contains(CustomCounts.LEDGER), e.getMessage());
         CustomCounts.git(repo, "commit", "-q", "-am", "first look");
         // A main-file look that would save nothing is refused before it is made.
-        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(main, ser, counts, null, resamples, 2,
-                "test", nowhere));
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(main, ser, printed, counts, null, resamples,
+                2, "test", nowhere));
         assertTrue(e.getMessage().contains("--save"), e.getMessage());
+        // And one that would not first set the stored rows beside the published report's figures.
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(main, ser, null, counts, save, resamples,
+                2, "test", nowhere));
+        assertTrue(e.getMessage().contains("--printed"), e.getMessage());
         assertEquals(2, Files.readAllLines(ledger).size());
-        CeilingReport.Ceiling c = CeilingReport.run(main, ser, counts, save, resamples, 2, "test", nowhere);
+        CeilingReport.Ceiling c = CeilingReport.run(main, ser, printed, counts, save, resamples, 2, "test", nowhere);
         assertTrue(CeilingReport.readSaved(save).identity.contains("blob " + blob));
         assertEquals(blob, c.blob);
         lines = Files.readAllLines(ledger);

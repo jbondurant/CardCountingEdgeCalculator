@@ -61,7 +61,7 @@ public class CeilingReportTest {
 
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         Path save = dir.resolve("ceiling.ser");
-        CeilingReport.Ceiling c = CeilingReport.run(file, ser, counts, save, RESAMPLES, 2, "test",
+        CeilingReport.Ceiling c = CeilingReport.run(file, ser, null, counts, save, RESAMPLES, 2, "test",
                 new PrintStream(bytes, true, "UTF-8"));
         String report = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         assertArrayEquals(before, Files.readAllBytes(file), "the state file is only read");
@@ -112,7 +112,7 @@ public class CeilingReportTest {
         }
         assertArrayEquals(c.bounds.get(0).estimate[p], saved.bounds.get(0).estimate[p], 0);
         assertEquals(c.r, saved.r, 0);
-        assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, ser, counts, save, RESAMPLES, 2, "test",
+        assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, ser, null, counts, save, RESAMPLES, 2, "test",
                 new PrintStream(new ByteArrayOutputStream(), true, "UTF-8")), "a saved file is never written over");
 
         // The tags part against the controls, the floor, the grain part, and R above every BC.
@@ -150,6 +150,55 @@ public class CeilingReportTest {
         assertTrue(e.getMessage().contains(refit.name), e.getMessage());
     }
 
+    /** The published report of the stored rows' counts on a state file, as ComparisonReport prints it, written to dir. */
+    static Path printedReport(Path dir, Path file) throws Exception {
+        ComparisonReport.Options o = new ComparisonReport.Options();
+        o.systems = Arrays.asList("Hi-Opt II", "Red Seven (Red 7)", "Zen Count", "Omega II");
+        o.resamples = RESAMPLES;
+        o.threads = 2;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ComparisonReport.run(file, o, new PrintStream(bytes, true, "UTF-8"));
+        Path out = dir.resolve("report-" + file.getFileName() + ".md");
+        Files.write(out, bytes.toByteArray());
+        return out;
+    }
+
+    /**
+     * The second tie (COUNT_DESIGN.md, section 5): the stored rows, set beside the published
+     * report's printed headline section, give it to the printed digit; a stored row whose resamples
+     * are spread a little wider, Zen's, which the check to the bit does not score again, gives other
+     * printed figures, and the report refuses to go on.
+     */
+    @Test
+    public void theStoredRowsMustGiveThePublishedReportsPrintedFigures(@TempDir Path dir) throws Exception {
+        Path file = ComparisonReportTest.syntheticRun(dir, 75, 75, 16);
+        ScoringStates st = FullIndexPilot.load(file, StateStore.shoesDone(file));
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, RESAMPLES, Bootstrap.SEED), SystemScorer.M_PLAY);
+        List<SystemScorer.Result> stored = published(sc);
+        Path ser = results(dir, file, st, stored);
+        Path printed = printedReport(dir, file);
+        assertEquals(3, CeilingReport.headlineLines(Files.readAllLines(printed)).size(), "three penetrations");
+        CeilingReport.checkPrinted(CeilingReport.read(ser), printed);
+
+        SystemScorer.Entry zen = stored.get(4).entries.get(0);
+        assertEquals("Zen Count", zen.name);
+        int p = SystemScorer.CUTS.length - 1;
+        double[] b = zen.boot[p][SystemScorer.same(8)];
+        double mean = ComparisonReport.mean(b);
+        for (int r = 0; r < b.length; r++) {
+            b[r] = mean + 1.5 * (b[r] - mean);
+        }
+        Path tampered = results(dir, file, st, stored);
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingReport.checkPrinted(
+                CeilingReport.read(tampered), printed));
+        assertTrue(e.getMessage().contains("| Zen Count |"), e.getMessage());
+        Path counts = CustomCountsTest.write(dir, "candidates.json", CustomCountsTest.CANDIDATES);
+        PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, tampered, printed, counts, null,
+                RESAMPLES, 2, "test", nowhere));
+        assertTrue(e.getMessage().contains("printed headline figures"), e.getMessage());
+    }
+
     /** CANDIDATES with F1 start and F2 start as headline counts, and the cells given. */
     static String withCells(String cells) {
         return CustomCountsTest.headline(CustomCountsTest.CANDIDATES).replace("\"counts\": [",
@@ -172,7 +221,7 @@ public class CeilingReportTest {
                 "\"name\": \"F1r start\", \"family\": \"F1r\",", "\"name\": \"F1r start\", \"family\": \"F1r\", "
                         + "\"role\": \"headline\","));
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        CeilingReport.run(file, ser, counts, null, RESAMPLES, 2, "test", new PrintStream(bytes, true, "UTF-8"));
+        CeilingReport.run(file, ser, null, counts, null, RESAMPLES, 2, "test", new PrintStream(bytes, true, "UTF-8"));
         String report = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         for (String pen : new String[]{"70%", "75%", "80%"}) {
             for (String[] claim : new String[][]{{"F1r start", "flat"}, {"F1 start", "1-8"}, {"F1 start", "own ramp 1-8"},
@@ -221,14 +270,14 @@ public class CeilingReportTest {
         Path ser = results(dir, file, st, stored);
         PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> CeilingReport.run(file, ser, counts, null, RESAMPLES + 1, 2, "test", nowhere));
+                () -> CeilingReport.run(file, ser, null, counts, null, RESAMPLES + 1, 2, "test", nowhere));
         assertTrue(e.getMessage().contains("do not pair"), e.getMessage());
 
         // One resample of Red Seven's stored row moved by the last bit: scored again, it differs.
         SystemScorer.Entry red = stored.get(3).entries.get(0);
         red.boot[1][SystemScorer.FLAT][4] = Math.nextUp(red.boot[1][SystemScorer.FLAT][4]);
         Path tampered = results(dir, file, st, stored);
-        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, tampered, counts, null, RESAMPLES, 2,
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, tampered, null, counts, null, RESAMPLES, 2,
                 "test", nowhere));
         assertTrue(e.getMessage().contains("scored again, Red Seven"), e.getMessage());
     }
