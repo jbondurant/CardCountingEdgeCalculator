@@ -81,4 +81,65 @@ public class TreeStoreTest {
         }
         assertThrows(java.io.IOException.class, () -> new TreeStore(st, dir.resolve("other.bin"), "x", Long.MAX_VALUE / 2));
     }
+
+    /**
+     * A store opened read-only, as a run of other classes reads an earlier run's trees
+     * (COUNT_DESIGN.md, section 7): keyed on the states alone, whatever commit wrote it, it gives
+     * the trees it holds to the bit, builds the ones it does not without keeping them, and
+     * writes nothing; a store of other states, or none, is refused and left exactly as it was.
+     */
+    @Test
+    public void aStoreOpenedReadOnlyIsReadAndNeverWritten() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        ScoringStates st = fx.st;
+        Path dir = Files.createTempDirectory("trees-read-only");
+        Path file = dir.resolve("trees.bin");
+        Path index = dir.resolve("trees.bin.index");
+        ExactRound engine = new ExactRound(RULES);
+        String states = "states /some/file, 123 bytes, modified 456\nstates " + st.size;
+        try (TreeStore store = new TreeStore(st, file, "c06c061\n" + states, 0)) {
+            for (int s = 0; s < st.size; s += 2) {
+                store.of(s, engine);
+            }
+        }
+        byte[] trees = Files.readAllBytes(file);
+        byte[] kept = Files.readAllBytes(index);
+        long modified = Files.getLastModifiedTime(file).toMillis();
+        assertEquals("c06c061\n" + states, TreeStore.identityOf(file));
+
+        try (TreeStore store = TreeStore.readOnly(st, file, states)) {
+            assertTrue(store.readOnly);
+            assertEquals((st.size + 1) / 2, store.holds());
+            for (int s = 0; s < st.size; s++) {
+                PlayerTree built = new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[s]));
+                PlayerTree read = store.of(s, engine);
+                for (int u = 1; u <= 10; u++) {
+                    double[] a = built.standRow(u);
+                    double[] b = read.standRow(u);
+                    for (int h = 0; h < a.length; h++) {
+                        assertEquals(Double.doubleToRawLongBits(a[h]), Double.doubleToRawLongBits(b[h]));
+                    }
+                }
+            }
+            assertEquals((st.size + 1) / 2, store.read());
+            assertEquals(st.size / 2, store.built());
+            assertEquals((st.size + 1) / 2, store.holds(), "a tree built read-only is not kept");
+            assertThrows(IllegalStateException.class, store::sync);
+        }
+        assertArrayEquals(trees, Files.readAllBytes(file), "nothing written to the trees");
+        assertArrayEquals(kept, Files.readAllBytes(index), "nothing written to the index");
+        assertEquals(modified, Files.getLastModifiedTime(file).toMillis());
+
+        // Other states, another number of them, or no store: refused, and the store left as it is.
+        assertThrows(java.io.IOException.class, () -> TreeStore.readOnly(st, file, "states /other, 1 bytes, modified 2\nstates "
+                + st.size));
+        assertThrows(java.io.IOException.class, () -> TreeStore.readOnly(st, file, "c06c061\n" + states));
+        ScoringStates fewer = fx.st.subRun(0, 2);
+        assertThrows(java.io.IOException.class, () -> TreeStore.readOnly(fewer, file, states.replace("states " + st.size,
+                "states " + fewer.size)));
+        assertThrows(java.io.IOException.class, () -> TreeStore.readOnly(st, dir.resolve("none.bin"), states));
+        assertFalse(Files.exists(dir.resolve("none.bin")));
+        assertArrayEquals(trees, Files.readAllBytes(file));
+        assertArrayEquals(kept, Files.readAllBytes(index));
+    }
 }

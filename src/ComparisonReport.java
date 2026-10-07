@@ -224,7 +224,10 @@ public final class ComparisonReport {
         return out;
     }
 
-    /** Scores each count, with its side-count variant where it has one, on threads threads, in order. */
+    /**
+     * Scores each count, with its betting variant where it has one (CountKeys.bettingVariant: its
+     * own betting vector's, or the catalog's ace side count), on threads threads, in order.
+     */
     static List<SystemScorer.Result> scoreAll(SystemScorer scorer, List<CountKeys.Count> counts, int threads)
             throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
@@ -235,7 +238,7 @@ public final class ComparisonReport {
         try {
             List<Future<SystemScorer.Result>> jobs = new ArrayList<>();
             for (CountKeys.Count c : counts) {
-                CountKeys.Count side = c.systems.isEmpty() ? null : CountKeys.sideCountVariant(c);
+                CountKeys.Count side = CountKeys.bettingVariant(c);
                 jobs.add(pool.submit(() -> scorer.score(c, side)));
             }
             List<SystemScorer.Result> out = new ArrayList<>();

@@ -32,8 +32,22 @@ import java.util.List;
  * the run will hold, and refuses to start if not, naming the item; after the passes it checks
  * again with what the run holds, letting the split values kept go if that makes the room.
  *
+ * --counts FILE runs the counts a candidates file or custom-counts.json lists (CustomCounts),
+ * each with its betting variant, in place of the null count and the catalog; on the main state
+ * file only the registration is taken, committed as it stands, and the run's start is written to
+ * the ledger (CustomCounts.lookOnMain). --pens 2 (or 0,1,2) runs those penetrations alone. The
+ * identity names every count's tags, divisor, betting vector and form, so a resume with any of
+ * them changed is refused, saying what differs.
+ *
+ * The trees go in a store of the run's own (--trees PATH, by default trees.bin in the output
+ * directory), and a store there of another run is refused, never replaced. --trees-read-only PATH
+ * reads another run's store instead, keyed on its states alone, and writes nothing to it
+ * (TreeStore.readOnly): the one way a run of other classes may open a kept store such as
+ * runs/full-index/full-c06c061/trees.bin.
+ *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --states FILE --out DIR
- * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none] [--resume]
+ * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH]
+ * [--counts FILE] [--pens P,P] [--resume]
  */
 public final class FullIndexRun {
 
@@ -46,6 +60,9 @@ public final class FullIndexRun {
         Path out = null;
         Path treeFile = null;
         boolean noTrees = false;
+        boolean readOnlyTrees = false;
+        Path countsFile = null;
+        int[] pens = PENS;
         int shoes = -1;
         int resamples = 1000;
         int threads = 6;
@@ -72,12 +89,23 @@ public final class FullIndexRun {
                     noTrees = t.equals("none");
                     treeFile = noTrees ? null : Paths.get(t);
                     break;
+                case "--trees-read-only":
+                    treeFile = Paths.get(args[++a]);
+                    readOnlyTrees = true;
+                    break;
+                case "--counts":
+                    countsFile = Paths.get(args[++a]);
+                    break;
+                case "--pens":
+                    pens = pens(args[++a]);
+                    break;
                 case "--resume":
                     resume = true;
                     break;
                 default:
                     throw new IllegalArgumentException("usage: FullIndexRun --states FILE --out DIR [--shoes N] "
-                            + "[--resamples R] [--threads T] [--trees PATH | --trees none] [--resume]; not " + args[a]);
+                            + "[--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH] "
+                            + "[--counts FILE] [--pens P,P] [--resume]; not " + args[a]);
             }
         }
         if (states == null || out == null) {
@@ -93,16 +121,42 @@ public final class FullIndexRun {
         if (shoes < 0) {
             shoes = fileShoes;
         }
+        CustomCounts.Listing listing = countsFile == null ? null : CustomCounts.read(countsFile);
+        boolean main = CustomCounts.isMain(states);
+        if (listing != null && main && !listing.registered) {
+            throw new IllegalStateException(countsFile + " is a candidates file; the main file scores only the counts "
+                    + "registered in " + CustomCounts.REGISTERED);
+        }
+        String treeIdentity = commit + "\n" + stateFile(states) + "\nstates ";
         ScoringStates st = FullIndexPilot.load(states, shoes);
+        treeIdentity += st.size;
+        if (treeFile != null && !readOnlyTrees) {
+            String was = TreeStore.identityOf(treeFile);
+            if (was != null && !was.equals(treeIdentity)) {
+                throw new IllegalStateException("the tree store " + treeFile + " was kept by another run; it is left as it "
+                        + "is. Read it with --trees-read-only, or give this run a store of its own. It differs in:\n"
+                        + FullIndexCheckpoint.differences(was, treeIdentity));
+            }
+        }
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
         List<CountKeys.Count> counts = new ArrayList<>();
-        counts.add(CountKeys.nullCount());
-        counts.addAll(CountKeys.catalog());
-        String identity = identity(commit, states, shoes, st.size, resamples, threads, counts);
+        if (listing == null) {
+            counts.add(CountKeys.nullCount());
+            counts.addAll(CountKeys.catalog());
+        } else {
+            counts.addAll(listing.counts());
+        }
+        String blob = listing != null && main ? CustomCounts.checkOnMain(listing) : null;
+        String identity = identity(commit, states, shoes, st.size, resamples, threads, counts, pens,
+                listing == null ? null : listing.file + (blob == null ? ", a file not registered" : ", blob " + blob));
         log.printf("FullIndexRun %s%s: %d shoes, %d valued states of %s, read and never written; %d counts at %d "
                         + "penetrations; %d resamples; %d threads; max heap %.0f MB; trees %s; checkpoints in %s.%n",
-                commit, resume ? ", resumed" : "", shoes, st.size, states, counts.size(), PENS.length, resamples, threads,
-                Runtime.getRuntime().maxMemory() / 1e6, noTrees ? "built every round" : "kept in " + treeFile, out);
+                commit, resume ? ", resumed" : "", shoes, st.size, states, counts.size(), pens.length, resamples, threads,
+                Runtime.getRuntime().maxMemory() / 1e6, noTrees ? "built every round"
+                        : (readOnlyTrees ? "read, and never written, from " : "kept in ") + treeFile, out);
+        if (listing != null) {
+            log.printf("Counts from %s%s.%n", listing.file, blob == null ? "" : ", git blob " + blob);
+        }
         log.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
         log.flush();
@@ -111,15 +165,24 @@ public final class FullIndexRun {
         FullIndexCheckpoint ck = new FullIndexCheckpoint(out, identity);
         // Checked first, so a refused resume leaves the trees as they are.
         ck.open(resume);
+        if (blob != null) {
+            // Every refusal is behind: the look is written to the ledger, to be committed before the next.
+            CustomCounts.appendLedger(CustomCounts.ledgerOf(listing), commit, blob, "FullIndexRun "
+                    + (resume ? "resumed" : "started") + " into " + out + ", " + resamples + " resamples, penetrations "
+                    + java.util.Arrays.toString(pens));
+        }
         TreeStore store = noTrees ? null
-                : new TreeStore(st, treeFile, commit + "\n" + stateFile(states) + "\nstates " + st.size, DISK_MARGIN);
-        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, PENS, threads);
+                : readOnlyTrees ? TreeStore.readOnly(st, treeFile, stateFile(states) + "\nstates " + st.size)
+                : new TreeStore(st, treeFile, treeIdentity, DISK_MARGIN);
+        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, threads);
         run.trees = store != null ? store : FullIndexFit.built(st);
         run.checkpoint = ck;
         run.resume = resume;
         run.log = log;
         if (store != null) {
-            run.beforeCheckpoint = store::sync;
+            if (!store.readOnly) {
+                run.beforeCheckpoint = store::sync;
+            }
             log.printf("The tree store holds %d of %d states' trees.%n", store.holds(), st.size);
         }
         FullIndexFit.Scored sc;
@@ -140,7 +203,7 @@ public final class FullIndexRun {
         }
         Files.move(tmp, results, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        summary(log, sc, scorer);
+        summary(log, sc, scorer, pens[pens.length - 1]);
         log.printf("%nWrote %s. Finished %s, %.1f h on the wall this start, load average %.2f.%n", results,
                 java.time.LocalDateTime.now(), (System.nanoTime() - t0) / 3.6e12, FullIndexTimingReport.loadAverage());
     }
@@ -161,9 +224,27 @@ public final class FullIndexRun {
                 + Files.getLastModifiedTime(states).toMillis();
     }
 
-    /** Everything that makes one run's results what they are, a line each. */
+    /** Penetrations as given on the command line: 0, 1 and 2 for 70, 75 and 80%, comma-separated, in order. */
+    static int[] pens(String text) {
+        String[] parts = text.split(",");
+        int[] out = new int[parts.length];
+        for (int k = 0; k < parts.length; k++) {
+            out[k] = Integer.parseInt(parts[k].trim());
+            if (out[k] < 0 || out[k] >= SystemScorer.CUTS.length || (k > 0 && out[k] <= out[k - 1])) {
+                throw new IllegalArgumentException("penetrations are 0 to " + (SystemScorer.CUTS.length - 1)
+                        + ", each once, in order: not " + text);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Everything that makes one run's results what they are, a line each: every count's tags,
+     * divisor, betting vector and form among them (CountKeys.Count.describe), with its betting
+     * variant's, and the counts file it came from.
+     */
     static String identity(String commit, Path states, int shoes, int size, int resamples, int threads,
-                           List<CountKeys.Count> counts) throws IOException {
+                           List<CountKeys.Count> counts, int[] pens, String countsFile) throws IOException {
         StringBuilder b = new StringBuilder();
         b.append("FullIndexRun joint run\n");
         b.append("commit ").append(commit).append('\n');
@@ -172,22 +253,28 @@ public final class FullIndexRun {
         b.append("resamples ").append(resamples).append(", seed ").append(Bootstrap.SEED).append(", M_play ")
                 .append(SystemScorer.M_PLAY).append('\n');
         b.append("threads ").append(threads).append('\n');
-        b.append("penetrations ").append(java.util.Arrays.toString(PENS)).append('\n');
+        b.append("penetrations ").append(java.util.Arrays.toString(pens)).append('\n');
+        if (countsFile != null) {
+            b.append("counts from ").append(countsFile).append('\n');
+        }
         for (CountKeys.Count c : counts) {
-            b.append("count ").append(c.name).append('\n');
+            b.append("count ").append(c.describe()).append('\n');
+            CountKeys.Count v = CountKeys.bettingVariant(c);
+            if (v != null) {
+                b.append("  with ").append(v.describe()).append('\n');
+            }
         }
         return b.toString();
     }
 
-    /** Each count's EV at 80% both ways and its gain from full play, flat and on the 1-8 same schedule. */
-    static void summary(PrintStream out, FullIndexFit.Scored sc, SystemScorer scorer) {
-        int p = 2;
+    /** Each count's EV at penetration p both ways and its gain from full play, flat and on the 1-8 same schedule. */
+    static void summary(PrintStream out, FullIndexFit.Scored sc, SystemScorer scorer, int p) {
         int[] metrics = {SystemScorer.same(SystemScorer.SPREADS), SystemScorer.FLAT};
         String[] names = {"1-8 same schedule", "flat"};
         for (int k = 0; k < metrics.length; k++) {
             int m = metrics[k];
-            out.printf("%n%s at 80%%, %% of a unit per round; the gain's SE with the later plays held, not yet "
-                    + "widened (FULL_INDEX_PLAYS.md section 4):%n%n", names[k]);
+            out.printf("%n%s at %s, %% of a unit per round; the gain's SE with the later plays held, not yet "
+                    + "widened (FULL_INDEX_PLAYS.md section 4):%n%n", names[k], SystemScorer.PENETRATIONS[p]);
             out.println("| Count | First decisions | Full play | Gain | its held SE |");
             out.println("|---|---|---|---|---|");
             for (SystemScorer.Result r : sc.results) {

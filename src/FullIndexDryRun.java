@@ -23,8 +23,12 @@ import java.util.List;
  * From these it projects the whole file's run, at 200 and 1,000 resamples (Projection).
  *
  * Its trees and checkpoints go to a directory of their own under the work directory given.
- * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexDryRun [state file] [shoes]
- * [resamples] [threads] [work directory]
+ * --counts FILE runs the counts a candidates file or custom-counts.json lists in place of the
+ * null count and the catalog, and --pens 2 (or 0,1,2) those penetrations alone, as FullIndexRun
+ * takes them; on the main state file only the registration is taken, and the look is written to
+ * the ledger (CustomCounts.lookOnMain).
+ * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexDryRun [--counts FILE]
+ * [--pens P,P] [state file] [shoes] [resamples] [threads] [work directory]
  */
 public final class FullIndexDryRun {
 
@@ -37,6 +41,8 @@ public final class FullIndexDryRun {
         int resamples;
         double mPlay;
         int counts;
+        /** The penetrations run. */
+        int[] pens = PENS;
         int strategies;
         FullIndexFit.Scored scored;
         /** Rounds each strategy was active in the passes (passes and clean-ups), and how many were capped. */
@@ -77,6 +83,19 @@ public final class FullIndexDryRun {
             Growth.print(System.out, StateStore.records(Paths.get(args[1])), runs);
             return;
         }
+        Path countsFile = null;
+        int[] pens = PENS;
+        List<String> rest = new ArrayList<>();
+        for (int a = 0; a < args.length; a++) {
+            if (args[a].equals("--counts")) {
+                countsFile = Paths.get(args[++a]);
+            } else if (args[a].equals("--pens")) {
+                pens = FullIndexRun.pens(args[++a]);
+            } else {
+                rest.add(args[a]);
+            }
+        }
+        args = rest.toArray(new String[0]);
         Path data = Paths.get(args.length > 0 ? args[0] : "runs/montreal-80.states");
         int shoes = args.length > 1 ? Integer.parseInt(args[1]) : 2000;
         int resamples = args.length > 2 ? Integer.parseInt(args[2]) : 200;
@@ -84,6 +103,16 @@ public final class FullIndexDryRun {
         Path work = Paths.get(args.length > 4 ? args[4] : "runs/full-index/dry-run");
         PrintStream out = System.out;
         long t0 = System.nanoTime();
+        List<CountKeys.Count> counts = null;
+        if (countsFile != null) {
+            CustomCounts.Listing listing = CustomCounts.read(countsFile);
+            if (CustomCounts.isMain(data)) {
+                String blob = CustomCounts.lookOnMain(listing, FullIndexRun.commit(), "FullIndexDryRun on the first "
+                        + shoes + " shoes, " + resamples + " resamples, penetrations " + java.util.Arrays.toString(pens));
+                out.printf("Counts from %s, git blob %s.%n", countsFile, blob);
+            }
+            counts = listing.counts();
+        }
         ScoringStates st = FullIndexPilot.load(data, shoes);
         out.printf("# Full-index dry run%n%n");
         out.printf("FullIndexDryRun: the first %d shoes of %s, %d valued states, read and never written; M_play %.2f; "
@@ -94,7 +123,7 @@ public final class FullIndexDryRun {
         out.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
         out.flush();
-        Measured m = run(st, resamples, threads, work, out);
+        Measured m = run(st, resamples, threads, work, out, counts, pens);
         print(out, m);
         Projection.print(out, data, m);
         Path summary = work.resolve("summary-" + st.size + ".txt");
@@ -110,15 +139,26 @@ public final class FullIndexDryRun {
      * hold one to three. Measures it.
      */
     static Measured run(ScoringStates st, int resamples, int threads, Path work, PrintStream log) throws Exception {
+        return run(st, resamples, threads, work, log, null, PENS);
+    }
+
+    /** The same with the counts given (the null count and the catalog when null), at the penetrations given. */
+    static Measured run(ScoringStates st, int resamples, int threads, Path work, PrintStream log,
+                        List<CountKeys.Count> given, int[] pens) throws Exception {
         Measured m = new Measured();
         m.st = st;
         m.threads = threads;
         m.resamples = resamples;
         m.mPlay = SystemScorer.M_PLAY;
+        m.pens = pens.clone();
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), m.mPlay);
         List<CountKeys.Count> counts = new ArrayList<>();
-        counts.add(CountKeys.nullCount());
-        counts.addAll(CountKeys.catalog());
+        if (given == null) {
+            counts.add(CountKeys.nullCount());
+            counts.addAll(CountKeys.catalog());
+        } else {
+            counts.addAll(given);
+        }
         m.counts = counts.size();
         m.statesHeld = FullIndexPilot.usedAfterGc();
         Path dir = work.resolve("run-" + System.currentTimeMillis());
@@ -127,7 +167,7 @@ public final class FullIndexDryRun {
         FullIndexCheckpoint ck = new FullIndexCheckpoint(dir.resolve("checkpoints"), "dry run " + st.size);
         FullIndexTimingReport.resetPeaks();
         FullIndexFit[] fitOf = new FullIndexFit[1];
-        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, PENS, threads);
+        FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, threads);
         run.trees = store;
         run.batchBytes = 1;
         run.checkpoint = ck;
@@ -210,7 +250,7 @@ public final class FullIndexDryRun {
         out.printf("%n## The joint passes%n%n");
         out.printf("%d counts, %d strategies (each count at %d penetrations, each fold and each half fit), fitted together "
                 + "in %.1f s on the wall. Split values kept per state from round to round; trees built in the first round "
-                + "and read back from the tree store after.%n%n", m.counts, m.strategies, PENS.length, sc.fitWall);
+                + "and read back from the tree store after.%n%n", m.counts, m.strategies, m.pens.length, sc.fitWall);
         roundTable(out, sc.rounds.get(0));
         FullIndexFit.RoundStats ft = FullIndexPilot.total(sc.rounds.get(0));
         out.printf("%nIn all: %d state visits, %d walks, %d of them worked out; CPU a state visit: trees %.4f s, walks %.4f s "

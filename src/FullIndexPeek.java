@@ -28,19 +28,25 @@ final class FullIndexPeek {
         String identity = new String(Files.readAllBytes(dir.resolve("run.id")), StandardCharsets.UTF_8);
         FullIndexCheckpoint checkpoint = new FullIndexCheckpoint(dir, identity);
         List<String> counts = new ArrayList<>();
+        int[] pens = FullIndexRun.PENS;
         for (String line : identity.split("\n")) {
             if (line.startsWith("count ")) {
-                counts.add(line.substring("count ".length()));
+                // A run since the ceiling count's step 1 describes each count after its name.
+                String c = line.substring("count ".length());
+                int colon = c.indexOf(": ");
+                counts.add(colon < 0 ? c : c.substring(0, colon));
+            } else if (line.startsWith("penetrations [")) {
+                pens = FullIndexRun.pens(line.substring("penetrations [".length(), line.length() - 1));
             }
         }
         FullIndexFit.Scored sc = new FullIndexFit.Scored();
         List<String> waiting = new ArrayList<>();
-        int items = 2 * FullIndexRun.PENS.length;
+        int items = 2 * pens.length;
         for (int k = 0; k < counts.size(); k++) {
             // The parts in the order the run puts them together: each penetration's fold fits,
             // then its half fits (FullIndexFit.JointRun).
             List<SystemScorer.Result> parts = new ArrayList<>();
-            for (int p : FullIndexRun.PENS) {
+            for (int p : pens) {
                 for (String part : new String[]{"folds", "halves"}) {
                     SystemScorer.Result r = checkpoint.readPart("part-" + k + "-" + p + "-" + part);
                     if (r != null) {
@@ -56,7 +62,7 @@ final class FullIndexPeek {
         }
         System.out.printf("FullIndexPeek: %s, %d of %d counts scored, read on %s.%n", dir, sc.results.size(),
                 counts.size(), java.time.LocalDateTime.now());
-        FullIndexRun.summary(System.out, sc, null);
+        FullIndexRun.summary(System.out, sc, null, pens[pens.length - 1]);
         System.out.printf("%nNot scored yet: %s.%n", waiting.isEmpty() ? "none" : String.join(", ", waiting));
     }
 }

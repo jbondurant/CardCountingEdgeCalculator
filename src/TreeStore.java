@@ -27,6 +27,11 @@ import java.util.BitSet;
  * index and shoe, checked as it is read, and the index file an identity (the run's commit,
  * state file and states): a store opened with another identity starts afresh.
  *
+ * Opened read-only (readOnly), a store is keyed on its state file and states alone, not the
+ * commit, so a run built from other classes can read the trees an earlier run kept. It is then
+ * only read: a store of other states is refused, never deleted, a tree it does not hold is built
+ * and not written, and nothing is written to the file or its index (TreeStoreTest).
+ *
  * Several threads may read and write at once, each its own states: positional reads and writes
  * of a FileChannel do not interfere.
  */
@@ -47,6 +52,8 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
     /** Trees built (and written) and read back since the store was opened. */
     private final java.util.concurrent.atomic.AtomicLong built = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong read = new java.util.concurrent.atomic.AtomicLong();
+    /** Whether the store is only read: nothing is written, and a tree it does not hold is built and not kept. */
+    final boolean readOnly;
 
     /**
      * Opens the store at file (and file + ".index"), keeping what it holds if its identity is
@@ -56,8 +63,9 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
     TreeStore(ScoringStates st, Path file, String identity, long margin) throws IOException {
         this.st = st;
         this.file = file;
-        this.index = file.resolveSibling(file.getFileName() + ".index");
+        this.index = indexOf(file);
         this.identity = identity;
+        this.readOnly = false;
         BitSet kept = readIndex(index, identity, st.size);
         if (kept == null) {
             Files.deleteIfExists(index);
@@ -74,6 +82,59 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
         channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
     }
 
+    /** A store opened read-only (readOnly). */
+    private TreeStore(ScoringStates st, Path file, String identity, BitSet held) throws IOException {
+        this.st = st;
+        this.file = file;
+        this.index = indexOf(file);
+        this.identity = identity;
+        this.readOnly = true;
+        this.held = held;
+        channel = FileChannel.open(file, StandardOpenOption.READ);
+    }
+
+    /**
+     * Opens an existing store only to read it, keyed on its states alone: stateLines must be the
+     * lines of its identity after the first, which names the commit (FullIndexRun gives the state
+     * file and the number of states there), and it must hold a tree for st's states. Refuses any
+     * other store, and a missing one, deleting nothing and writing nothing.
+     */
+    static TreeStore readOnly(ScoringStates st, Path file, String stateLines) throws IOException {
+        Path index = indexOf(file);
+        if (!Files.isRegularFile(file) || !Files.isRegularFile(index)) {
+            throw new IOException("no tree store at " + file + " to read");
+        }
+        String was = identityOf(file);
+        int cut = was.indexOf('\n');
+        String states = cut < 0 ? "" : was.substring(cut + 1);
+        if (!states.equals(stateLines)) {
+            throw new IOException("the tree store " + file + " holds the trees of other states; it is left as it is. "
+                    + "It is of:\n" + states + "\nnot:\n" + stateLines);
+        }
+        BitSet held = readIndex(index, was, st.size);
+        if (held == null) {
+            throw new IOException("the tree store " + file + " holds another number of states than " + st.size
+                    + "; it is left as it is");
+        }
+        return new TreeStore(st, file, was, held);
+    }
+
+    private static Path indexOf(Path file) {
+        return file.resolveSibling(file.getFileName() + ".index");
+    }
+
+    /** The identity a store's index records, or null where there is no index. Only reads. */
+    static String identityOf(Path file) throws IOException {
+        Path index = indexOf(file);
+        if (!Files.exists(index)) {
+            return null;
+        }
+        ByteBuffer b = ByteBuffer.wrap(Files.readAllBytes(index));
+        byte[] id = new byte[b.getInt()];
+        b.get(id);
+        return new String(id, StandardCharsets.UTF_8);
+    }
+
     /** The bytes every state's tree takes on disk. */
     static long bytes(int states) {
         return RECORD * states;
@@ -87,6 +148,10 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
                 return readTree(s);
             }
             PlayerTree tree = new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[s]));
+            if (readOnly) {
+                built.incrementAndGet();
+                return tree;
+            }
             writeTree(s, tree);
             synchronized (held) {
                 held.set(s);
@@ -176,6 +241,9 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
      * the record before in one move, so a crash leaves the old record or the new one.
      */
     void sync() throws IOException {
+        if (readOnly) {
+            throw new IllegalStateException("the tree store " + file + " is open only to read");
+        }
         channel.force(true);
         BitSet copy;
         synchronized (held) {
@@ -211,7 +279,9 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        sync();
+        if (!readOnly) {
+            sync();
+        }
         channel.close();
     }
 }

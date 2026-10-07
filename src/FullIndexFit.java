@@ -2109,7 +2109,7 @@ final class FullIndexFit {
     /**
      * Scores every count given both ways in one run of the scorer each, playing its first
      * decisions only and playing its full-index fit, on the same resamples
-     * (SystemScorer.score), with its ace side-count variant where it has one.
+     * (SystemScorer.score), with its betting variant where it has one (CountKeys.bettingVariant).
      *
      * The counts go in batches of the size given. A batch's strategies, both folds and the
      * learning curve's half fits at each penetration given, are fitted in one run of passes,
@@ -2147,7 +2147,7 @@ final class FullIndexFit {
             out.rounds.add(fit.rounds);
             for (int k = 0; k < fits.size(); k++) {
                 CountKeys.Count c = some.get(k);
-                SystemScorer.Result r = scorer.score(c, CountKeys.sideCountVariant(c), fits.get(k));
+                SystemScorer.Result r = scorer.score(c, CountKeys.bettingVariant(c), fits.get(k));
                 r.widen = SystemScorer.Widening.of(widen, missing, c);
                 out.results.add(r);
                 fits.set(k, null);
@@ -2441,7 +2441,7 @@ final class FullIndexFit {
                         SystemScorer.Result r = pool.submit(() -> {
                             ThreadMXBean bean = ManagementFactory.getThreadMXBean();
                             long c0 = bean.getCurrentThreadCpuTime();
-                            SystemScorer.Result one = scorer.score(f.count, CountKeys.sideCountVariant(f.count), f, only,
+                            SystemScorer.Result one = scorer.score(f.count, CountKeys.bettingVariant(f.count), f, only,
                                     threads, part);
                             synchronized (out) {
                                 out.scoreCpu[it[0]] += (bean.getCurrentThreadCpuTime() - c0) / 1e9;

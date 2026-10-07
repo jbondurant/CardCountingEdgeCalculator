@@ -93,7 +93,17 @@ count spans some hundreds of keys. Tags scaled to a largest of 1,000 would span 
 thousands (by arithmetic from that range). The tags are rounded at K so that the deck sum
 stays exactly zero, re-centred after rounding: normalised and rounded one rank at a time, a
 balanced count's tags need not add up to zero, and CountKeys' side-count variant refuses a
-count that is not balanced. The variant carries the divisor.
+count that is not balanced. Each tag is rounded to the nearest whole number; where the deck
+sum is then not zero, the tags of the ace and 2 to 9 that rounding moved furthest the other
+way are moved by one each until it is (CountKeys.rounded), so no tag is more than 1.5 from K
+times its real value. The variant carries the divisor.
+- **A catalog count at g** (CountKeys.atGrain) is normalised the same way over the 26 kinds,
+  each a 26th of the shoe, which for a colour-blind count is the sum over ranks. Its kinds are
+  rounded in groups, a rank's kinds of one catalog tag together, so a count that tags a rank
+  alike still does; and a balanced count's zero tags stay zero, so an ace-neutral count keeps
+  its side count, m then the rounded ten's tag.
+- **The unrounded true count,** on which the report's BC and IC are computed, is not divided by
+  D: a correlation does not see the scale.
 
 **F1, the headline: one tag vector** for the bet key, the play key and insurance, as every
 plain published count is used.
@@ -112,6 +122,11 @@ bet key.
   one. Its callers today hand it only CountKeys.sideCountVariant, which knows the catalog's
   side-counted names (ComparisonReport.scoreAll, and both scoring sites in FullIndexFit), so
   step 1 adds a hook through which a count's own betting vector reaches all three.
+- **As built,** the count listed and run is the play count, carrying the betting vector
+  (Count.betVector); the hook, CountKeys.bettingVariant, makes from it the variant that bets
+  on that vector (Count.betTag), named "<name> + betting vector", or else the catalog's side
+  count. So an F2 count's Result holds, as a side-counted catalog count's does, its play vector
+  as a plain count, then the F2 row, each also betting only. The F2 row is the variant's.
 
 **Insurance needs no third vector.** P(hole ten | deal) is linear in the ten share left after
 the deal, so the Ten Count's play key carries everything insurance needs. Its insurance
@@ -648,7 +663,9 @@ took 14 GB (du). The twin's 1.34 GB fits. A second whole-file tree store, 14.9 G
 includes the commit (TreeStore's constructor). So a new run must never be pointed at
 runs/full-index/full-c06c061/trees.bin, except through the read-only mode of step 1. That
 mode keys on the state file and its states alone, opens the store read-only and never
-deletes it.
+deletes it. FullIndexRun takes it as `--trees-read-only PATH`, and refuses a `--trees PATH`
+whose store another run kept, rather than starting it afresh; a tree the store does not hold
+is built in each round and not kept.
 
 ## 8. Steps
 
