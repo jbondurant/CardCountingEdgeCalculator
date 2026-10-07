@@ -329,6 +329,27 @@ final class CustomCounts {
     }
 
     /**
+     * The seed-collision check (section 4, "Guards"): how many of the first shoes' generator seeds
+     * of a file of seed b (ShoeRun.mix, the cards' stream and the valuation's) equal one of a file
+     * of seed a over as many shoes. 0 for the twin against the main file.
+     */
+    static int seedCollisions(long a, long b, int shoes) {
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (int s = 0; s < shoes; s++) {
+            for (int stream = 0; stream < 2; stream++) {
+                seen.add(ShoeRun.mix(a, s, stream));
+            }
+        }
+        int n = 0;
+        for (int s = 0; s < shoes; s++) {
+            for (int stream = 0; stream < 2; stream++) {
+                n += seen.contains(ShoeRun.mix(b, s, stream)) ? 1 : 0;
+            }
+        }
+        return n;
+    }
+
+    /**
      * Before a main-file tool scores custom counts: the counts file must be the registration,
      * committed and unmodified, and the ledger committed with no lines added since. Then one
      * line is appended to the ledger, naming the commit of the classes, the registration's git
