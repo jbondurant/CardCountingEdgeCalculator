@@ -597,7 +597,8 @@ twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A,
 - **3. Every start is beaten.** It holds in every family. F2 is 0.0275% above F1, 0.0058% to
   0.1128% above each of its ten starts, and 0.0206% to 0.1129% above each published side-count
   row at g.
-- **4. The planted optimum:** CountSearchTest, at 38f4e60.
+- **4. The planted optimum:** CountSearchTest passes at 38f4e60 (F1 recovers the planted
+  direction, and F2 both of its, F1 landing between), and CmaTest beside it.
 - **5. The grain.** F1 at 1-8 keyed at double the grain (2D, g = 1/10) loses 0.0031%, at half it
   (D/2) 0.0007%, at D/5 0.0017% and at D/10 0.0011%. Doubling the grain costs more than the
   floor at 1°, 0.0012%, so **the check as worded here fails on that side**, while no finer grain
@@ -606,6 +607,15 @@ twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A,
   (0.0025% from 1/20 to 1/10), and a finer one gains nothing, so the grain does not cap the
   optimum; but halving and doubling are not both within noise at g = 1/20, as this check asked.
   Whether that changes g is a question for Justin (section 10).
+- **F1r, the running-count check.** Of its three runs, the one from 1½ times KO's shift ended
+  0.0027% below the best, from KO, at 2.9°, past the floor there, so it was followed up from its
+  count at double the population and the cap, as F1's run from UBZ2 was. The follow-up ended at
+  +0.3559%, above the run from KO (+0.3555%), and became F1r's best (search-38f4e60-2.md); the
+  run from half KO's shift then lay 0.0013% below it at 1.5°, just past the floor there,
+  0.00128%, and is being followed up in turn. At the follow-up's count, halving or doubling D_r
+  moves F1r by 0.0011% and 0.0012%, and its tags as a true count score +0.3902%: the depth
+  effect on the twin is −0.034%, the running form losing a third of a tenth of a percent to the
+  same tags keyed as a true count. Nothing here says depth carries what a true count misses.
 
 **Is the twin big enough?** F1 at 1-8 is searched again on each half of the twin: the shoes
 whose index halved is even, and the rest, the learning curve's split. Each half is searched
