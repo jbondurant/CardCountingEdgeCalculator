@@ -25,9 +25,9 @@ the same states and resamples, so each gap has a paired interval:
 
 The searched count is a lower bound on the linear ceiling: the best this search finds, scored
 on shoes it was not chosen on. The bounds above it say how much room is left. The same ladder
-is then given at full play. Steps 1 to 3 of section 8 have been run (the code, the twin file
-and the calibration, whose figures are written in where the design takes them); from step 4
-on, this is a design.
+is then given at full play. Steps 1 to 6 of section 8 have been run (the code, the twin file,
+the calibration, the searches, the full-play choice and the registration, whose figures are
+written in where the design takes them); from step 7 on, this is a design.
 
 ## 1. What is searched
 
@@ -89,9 +89,9 @@ Why it must be fine:
 
 So part of any gain a fine-grained count shows comes from the grain, not the tags. How much
 a count gains from grain varies with how many of its keys exceed M_play and how coarsely its
-bets step, so every published row is also scored at g on the twin (section 4), and the best
-of them there are registered as controls. Each gain over the published counts is reported in
-two parts:
+bets step, so every published row is also scored at g on the twin (section 4), and the counts
+behind the five best rows at g in each comparator family, and Hi-Lo, are registered as
+controls. Each gain over the published counts is reported in two parts:
 - **grain:** the controls at g, less the same counts at their own grain;
 - **tags:** the ceiling count, less the best control at g (section 5 says how it is bounded).
 
@@ -188,10 +188,12 @@ standard every published row is held to. Two parts of that need saying.
   bet varies: for F1 through the deal's three cards, which move the play key off the bet
   key, and far more for F2, whose one play group can hold states bet anywhere from 1 to 8. So
   the ceiling is the ceiling with plays fitted for flat bets, as every published row's are.
-  F1, F2 and Zen are also scored with moves and insurance refitted on the training fold
-  with each state's schedule bet as a weight, a labelled check row: the check
-  FULL_INDEX_PLAYS.md section 4 plans for one system, which nothing has measured yet.
-  (SystemScorer.scheduleRefit.) The groups are held as the flat fit formed them; a training
+  Every headline count (F1, F1 flat and F2) and Zen are also scored with moves and insurance
+  refitted on the training fold with each state's schedule bet as a weight, a labelled check
+  row: the check FULL_INDEX_PLAYS.md section 4 plans for one system, which nothing has
+  measured yet. (SystemScorer.scheduleRefit.) F1 flat's refit row is an extra check of the
+  same kind: CeilingReport refits every count registered as a headline count, and F1 flat is
+  one, since the flat cells report it. The groups are held as the flat fit formed them; a training
   state's bet is the 1-8 same-schedule bet its key gets when the schedule is handed out over
   the training fold itself, by the advantage fitted there under the flat play; the test fold
   is then bet as usual, the advantage fitted again under the refitted play. The bootstrap
@@ -370,7 +372,20 @@ q0 0.008, u0 0.02, cut 332, the rules and the chart, 60,000 shoes.
 - **The grain g,** with Hi-Lo and Zen (section 1).
 - **Every published row at g.** Each catalog count and side-count variant, scored at g, point
   estimates only, the running ones at their running divisor (section 1). The counts behind the
-  five best rows at g, and Hi-Lo, are the controls.
+  five best rows at g in each comparator family (section 5: every published row for F2, the
+  plain rows for F1), and Hi-Lo, are the controls, each at g with its side-count variant where
+  it has one. A headline row's tags part is bounded against the controls' rows of its own
+  family (CeilingReport.controls), so F1's is bounded against the best plain rows at g as F2's
+  is against the best side-counted ones.
+  **Registered** (step 6), from calibration-b99ccbf's rows at 80%, 1-8 on the twin. Every
+  published row: Hi-Opt II, Victor APC, Uston APC, Omega II and Revere 14, each best with its
+  ace side count (+0.3980%, +0.3967%, +0.3918%, +0.3896%, +0.3871%). The plain rows: Zen Count,
+  BRH-I, Mentor, Wong Halves and Revere Point Count (+0.3687%, +0.3628%, +0.3603%, +0.3589%,
+  +0.3560%). And Hi-Lo (+0.3177%): eleven controls. The calibration named the first five and
+  Hi-Lo, the five best rows of all, which are all side-counted. With those alone, F1's best
+  plain control would have been Hi-Opt II's plain row at g, +0.3370%, 0.032% below Zen at g,
+  more than F1's whole margin over Zen at g on the twin (0.0225%), so the tags part would have
+  been overstated; the five best plain rows were added at registration.
 - **The colour check.** Red Seven against its rank average (7 = +½), both at g: Red Seven as a
   catalog entry at g, and its rank average as a running count of our own in the candidates file,
   its tags Red Seven's at g with the seven's two kinds averaged, at the same divisor. Red Seven
@@ -445,8 +460,9 @@ every sum weighted 1/q (CountRegression, new):
 
 The same regression is run on the main file only after the counts are registered (section 5),
 to print R beside the report's BC column. As built, CeilingReport runs it on the states it
-scores, within the registered look, and prints R beside every row's BC; CountRegression itself
-refuses the main file.
+scores, in the run that makes the registered look, and prints R beside every row's BC;
+CountRegression itself refuses the main file. It involves no count of our own, so the run works
+it out before it writes its ledger line, with the other setup that could fail (section 5).
 
 **One evaluation** is SystemScorer's estimate at 80% with no resamples, no decision resolution
 and no half fits:
@@ -563,9 +579,11 @@ prove a global maximum. These show that nothing within the data's resolution was
 5. **The grain does not decide it.** Halving or doubling g moves the objective at the optimum
    by less than the noise floor.
 
-**Measured** (runs/custom-count/search-38f4e60.md, SearchReport from classes 38f4e60 over the
-logs of the searches, which ran from classes b99ccbf; every figure the search's objective on the
-twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A, 2 to 9, T):
+**Measured** (runs/custom-count/search-0b85be2.md, SearchReport from classes 0b85be2 over the
+logs of all 47 searches, which ran from classes b99ccbf; every figure the search's objective on
+the twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A, 2 to 9, T).
+It supersedes search-38f4e60.md and search-38f4e60-2.md, the same report written before F1r's
+follow-ups had ended, which differ from it only in F1r:
 - **The counts found.**
   - F1 at 1-8, +0.3912% (run f1-8-vidami-ar): −0.7264, +0.6197, +0.7851, +1.0852, +1.2536,
     +0.7933, +0.5948, +0.1170, −0.1915, −1.0827. It lies 8.4° from the effects of removal off
@@ -607,15 +625,24 @@ twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A,
   (0.0025% from 1/20 to 1/10), and a finer one gains nothing, so the grain does not cap the
   optimum; but halving and doubling are not both within noise at g = 1/20, as this check asked.
   Whether that changes g is a question for Justin (section 10).
-- **F1r, the running-count check.** Of its three runs, the one from 1½ times KO's shift ended
-  0.0027% below the best, from KO, at 2.9°, past the floor there, so it was followed up from its
-  count at double the population and the cap, as F1's run from UBZ2 was. The follow-up ended at
-  +0.3559%, above the run from KO (+0.3555%), and became F1r's best (search-38f4e60-2.md); the
-  run from half KO's shift then lay 0.0013% below it at 1.5°, just past the floor there,
-  0.00128%, and is being followed up in turn. At the follow-up's count, halving or doubling D_r
-  moves F1r by 0.0011% and 0.0012%, and its tags as a true count score +0.3902%: the depth
-  effect on the twin is −0.034%, the running form losing a third of a tenth of a percent to the
-  same tags keyed as a true count. Nothing here says depth carries what a true count misses.
+- **F1r, the running-count check.** F1r ran five times: from F1's optimum with ½ and 1½ times
+  KO's shift, from KO's direction and balance, and two follow-ups at double the population and
+  the cap, as F1's run from UBZ2 was followed up. The runs from 1½ and from ½ of KO's shift
+  each ended past the floor at their angle below the best, so each was followed up from its
+  count. The follow-up from the ½ shift's count, f1r-double-shift-half, ended at +0.3560%
+  (+0.35604%), F1r's best and the F1r registered; the one from the 1½ shift's ended 0.0001%
+  below it at 0.9°, the run from KO 0.0005% below at 1.6°, and the two first runs 0.0014% below
+  at 1.3° and 0.0032% at 3.3°, each agreeing through its follow-up. So all five agree.
+  (search-38f4e60-2.md, written before the ½ shift's follow-up ended, had the 1½ shift's
+  follow-up, +0.35595%, as F1r's best.) At the registered F1r, halving or doubling D_r moves it
+  by 0.0004% and 0.0012%, and its tags as a true count score +0.3902%: the depth effect on the
+  twin is −0.0341%, the running form losing a third of a tenth of a percent to the same tags
+  keyed as a true count, and F1r less F1 is −0.0352%. Nothing here says depth carries what a
+  true count misses. The true-count row registered is the one scored here,
+  SearchReport.balanced(F1r): F1r's tags less their p⁰-weighted mean, 575.6 at K, rounded at K
+  so the deck sum is zero, that is less 575 on A, 2, 4, 5 and 6 and less 576 on 3, 7, 8, 9 and
+  T. It equals F1r's tags up to a constant, which changes no true-count key, and that
+  rounding, so the twin's and the main file's depth effects are of one row.
 
 **Is the twin big enough?** F1 at 1-8 is searched again on each half of the twin: the shoes
 whose index halved is even, and the rest, the learning curve's split. Each half is searched
@@ -631,13 +658,14 @@ errs toward reporting more shortfall, not less.
   resting on that rate, since the objective is piecewise constant.
 - The twin counts as big enough when that estimate's upper end is under 0.01% a round at 80%,
   1-8, the margin fixed here.
-- **Measured** on the twin (search-38f4e60.md): each half's eight runs agree (above). The half
+- **Measured** on the twin (search-0b85be2.md): each half's eight runs agree (above). The half
   counts lie 0.9° apart, cosine 0.9999, far above section 6's 0.95, and 2.1° and 1.6° from F1.
   Half 0's count scores +0.3965% on its own half and +0.3744% on the other; half 1's +0.3745% on
   its own and +0.3966% on the other: each half's count does as well on the other half as that
   half's own count, within 0.0001%. On the whole twin they score +0.3901% and +0.3904%, F1
   0.0010% above their mean, in-sample for F1, so not the learning curve, which waits for the
-  main file (step 7).
+  main file (step 7). The registration records the whole-twin figures beside the half counts,
+  since those, not the own-half ones, are what their optimism on the main file is set against.
 
 **Full play: choosing on the twin.** Seven F1 counts are fitted with full play: five on the
 line from the 1-8 optimum to the flat optimum, at 0, ¼, ½, ¾ and all of the way
@@ -656,17 +684,45 @@ direction by about 10° and 20°.
 
 ## 5. Honesty
 
-**Registration before the main file.** Before any main-file run, the chosen counts go into a
-committed custom-counts.json. For each count it holds:
+**Registration before the main file.** Before any main-file run, the chosen counts go into two
+files committed together at the root of the worktree, beside the ledger: custom-counts.json,
+the counts step 7 scores at first decisions, and custom-counts-fullplay.json, the counts step 8
+scores with full play. For each count they hold:
 - the vector or vectors, as whole numbers at K, with the divisor;
-- its family, and its role: headline, secondary, check or control;
+- its family, and its role: headline, check or control;
 - the twin file's header and the commit the search ran from.
+
+custom-counts.json names custom-counts-fullplay.json by its file name and git blob ("fullPlay"),
+and that file names custom-counts.json back ("registeredWith"), so custom-counts.json's blob
+fixes both (CustomCounts.registeredBlobs). Each file goes to its own tool on the main file:
+ComparisonReport refuses the full-play registration, and FullIndexRun and FullIndexDryRun a
+registration that names a full-play one, before anything is written.
+
+Names. A catalog count is named in the files as the loader names it, which the loader requires
+of a registration, so the files read as the report will: CountKeys.atGrain's "Zen Count at
+grain 500/10000", the catalog's "Hi-Lo = Hi-Lo Lite". F2's count is named "F2 at 1-8, play
+vector (f2-pub-victor-apc)": scored, that name is its play vector alone, a row of its own, and
+F2's headline row, the one reported and claimed, is "F2 at 1-8, play vector
+(f2-pub-victor-apc) + betting vector" (CeilingReport.row). The report names each cell's rows so
+(CeilingReport.rowNames), and FullIndexRun's summary prints each betting variant's row by its
+own name, where it printed F2 by its play vector alone in step 5.
+
+Fields no code reads record, before the look, what the counts were chosen on: each searched
+count's objective on the twin; the half counts' whole-twin objectives, +0.3901% and +0.3904%
+(search-0b85be2.md), the twin figures their optimism is set against; how the true-count row's
+tags are F1r's, SearchReport.balanced(F1r) (section 4); each control's whole tags at K as the
+loader computed them at registration ("tagsAtG"), which RegistrationTest checks against the
+loader, so a change to the catalog or to CountKeys.atGrain before the look shows; and the full-
+play choice's figures for the full-play counts.
 
 It also fixes which count is reported as the ceiling in every cell, and the comparators of
 each headline row:
 - **First decisions.** F1 flat in flat cells, and F1 at 1-8 at every other spread and on the
   own ramp, at every penetration; F2 at 1-8 beside it wherever the bets vary.
-- **Full play.** The full-play F1, with F2 beside it.
+- **Full play.** The full-play F1, with F2 beside it. The full-play F1 is F1 at 1-8 itself
+  (step 5), and it is reported in the full-play flat cells too: the flat optimum was not
+  fitted with full play, so there the full-play F1 is a looser lower bound than F1 flat is at
+  first decisions, and the full-play report labels it so.
 - **Comparators.** F1's are the plain published rows: each catalog count playing its own fit.
   F2's are every published row playing its own fit, side-count variants included.
   Betting-only rows answer another question and are not comparators.
@@ -682,14 +738,43 @@ each headline row:
   pairs alone, so a cell's claims are at most two, the Bonferroni pair below. Each cell's claims
   are a statement of their own, not covered jointly with the other cells; the headline is 80%,
   1-8.
+- **As registered** (step 6, 8 October), from search-0b85be2.candidates.json's tags, each copied
+  from its search's found line. custom-counts.json, eighteen counts: the headline counts F1 at
+  1-8 (f1-8-vidami-ar), F1 flat (f1-flat-pub-uston-apc) and F2 (f2-pub-victor-apc); the checks
+  F1r (f1r-double-shift-half, running, D_r 2,423), F1r's tags as a true count and the two
+  half-twin counts; and the eleven controls at g of section 4. Cells: flat, F1 flat; the same
+  schedule and the own ramp, F1 at 1-8 and F2 with its betting vector. Comparators: plain for
+  F1 and F1 flat, all for F2. custom-counts-fullplay.json, five counts: the full-play F1, F2,
+  Hi-Lo at its own grain (role check), and Zen Count and Hi-Opt II at g (controls). Cells:
+  flat, the full-play F1; the same schedule and the own ramp, the full-play F1 and F2.
 
-**One look.** The main-file tools refuse a custom-counts.json that is uncommitted or modified,
-and print its git blob hash. Each run appends a line to a committed ledger,
+**One look.** The main-file tools refuse a registration that is uncommitted or modified, and
+print its git blob hash. Each run appends a line to a committed ledger,
 custom-count-ledger.tsv (commit, blob hash, time, what ran), and the tools refuse to start
 while the ledger has uncommitted lines. The report prints the ledger. Nothing is chosen on the
 main file: whatever it shows, the tags and g stay as registered. A count changed after a
 main-file look is a second look and is reported as one; its held-out claim needs a fresh
-file, a third seed, before it may replace the headline. So that no figure needs a second look,
+file, a third seed, before it may replace the headline.
+- **The one look is every ledger line carrying custom-counts.json's blob or
+  custom-counts-fullplay.json's:** step 7's line, step 8's, and one for each resume. The ledger
+  is committed between runs.
+- **A look at another registration is refused** (CustomCounts.checkOnMain): a tool will not
+  start while the ledger holds a line of any other blob, unless it is given `--second-look`;
+  then its own ledger line says "A SECOND LOOK", and the report says so and marks every line of
+  another registration.
+- **A run refused for a reason of its own costs no look.** Each tool writes its ledger line
+  only once every refusal is behind. FullIndexRun and FullIndexDryRun check the registration
+  and the ledger before reading a state, then open the tree store (a read-only store's
+  identity, or a new store's room on disk), the checkpoint and the strategies, and check the
+  heap (JointRun.preflight; the dry run now checks it too), and write the line as the passes
+  start (JointRun.beforePasses). CeilingReport checks, before its line, that it can write the
+  save file at the end (its directory there, FILE.tmp made and deleted, 3 GB free there), sets
+  the stored rows beside the published report, reads and replays the states, works out R and
+  the reference rows, and checks the stored rows to the bit; only the counts of our own, their
+  correlations, the save and the print come after. MainFileLookTest refuses each case and finds
+  the ledger as committed; each fails on the old order.
+
+So that no figure needs a second look,
 the report saves everything it scores, every estimate and resample of the custom rows, the
 bound rows, the refit check and the reference rows, with R and each custom row's BC and IC, to
 a new file before it prints (ComparisonReport --save; CeilingReport.save and readSaved), and on
@@ -714,7 +799,7 @@ only:
 - the custom rows: F1 at 1-8 and flat, F2, F1r, F1r's tags as a true count, and the two
   half-twin counts;
 - the controls at g;
-- the refit check: F1, F2 and Zen with plays fitted on the schedule's bets;
+- the refit check: F1, F1 flat, F2 and Zen with plays fitted on the schedule's bets;
 - the bound rows of section 2.
 
 Two checks tie the stored rows to the new code. If either fails, the run stops until the
@@ -782,10 +867,11 @@ the 0.01% margin, and it prints R and the perfect rows beside that, as the room 
 the main file, F2 below F1 is read as F2's extra eight numbers fitting the twin's noise, and
 reported as such.
 
-**Full play on the main file.** FullIndexRun is run on the full-play F1, F2, Hi-Lo as a
-control, and two controls at g, the best plain one and the best side-counted one (each count
-brings its side-count variant), with the same seed and resamples. Its Results are paired with
-runs/full-index/full-c06c061/results.ser.
+**Full play on the main file.** FullIndexRun is run on custom-counts-fullplay.json: the
+full-play F1 (F1 at 1-8, its tags unchanged), F2 with its betting vector, the catalog's Hi-Lo
+at its own grain (no divisor), and two controls at g, the best plain one, Zen Count, and the
+best side-counted one, Hi-Opt II, which brings its ace side-count variant; with the same seed
+and resamples. Its Results are paired with runs/full-index/full-c06c061/results.ser.
 - Hi-Lo's full-play Result must match c06c061's within 1e-12, the joint run's own standard
   (FULL_INDEX_PLAYS.md section 3).
 - The custom rows and the controls take the stated conservative widening defaults, 1.07 for
@@ -839,8 +925,11 @@ Each check is a committed test that must pass, and must fail on the planted bug 
 - **Bounds.** On a tiny state set each bound row equals a brute-force sort. No row exceeds its
   bound on any resample, in flat and same-schedule cells.
 - **Leakage guards.** The search tools refuse the main file; the main-file tools refuse an
-  uncommitted custom-counts.json or ledger; the twin's shoe seeds collide with none of the
-  main file's.
+  uncommitted registration or ledger, a ledger holding a look at another registration without
+  `--second-look`, and each other's registration; a run they refuse writes no ledger line,
+  whatever refuses it; the twin's shoe seeds collide with none of the main file's
+  (MainFileLookTest, CustomCountsTest). RegistrationTest reads the committed registration with
+  the committed loader.
 - **Grain.** The fine-grain count's decision bound stays under the 0.005% target, and its
   learning curve holds, as for any count.
 
@@ -883,12 +972,12 @@ October. At 00:56 that day its log showed 138 of 186 items scored
 | Twin file | 3.2 h on 7 threads, measured (11,637 s, runs/twin-80.log) | 1.34 GB |
 | Calibration and theory pass | 1.0 h on 7 threads, measured (61 min, 45 of them the split margin's sample) | about 2 MB, with its classes |
 | Searches and slices | 5.0 to 6.1 h on 6 threads, priced from measured evaluations | logs |
-| Full-play choice on the twin | 1 to 3 h, after a dry run on 2,000 shoes | none, trees rebuilt |
-| Main file, first decisions, 1,000 resamples | about 3 h on 7 threads | a report |
+| Full-play choice on the twin | 1.7 h on the wall on 6 threads, measured (step 5), after a dry run on 2,000 shoes | none, trees rebuilt |
+| Main file, first decisions, 1,000 resamples | about 4 h on 7 threads | a report |
 | Main file, full play | 4 to 8 h with the tree store, about 7 h more without; after a dry run | results |
 
-In all, about 17 to 24 machine hours with the tree store kept, more on the wall: the first three
-rows measured, the rest estimates.
+In all, about 19 to 24 machine hours with the tree store kept, more on the wall: the twin, the
+calibration and the full-play choice measured, the rest estimates.
 
 Where the estimates come from:
 - **The searches.** Budgets in evaluations: F1 at 1-8, 16 runs of 1,500, 24,000, and up to
@@ -904,10 +993,12 @@ Where the estimates come from:
 - **Memory.** The states take about 1.6 GB in memory (FULL_INDEX_PLAYS.md section 6). Each
   evaluation running at once holds the play keys of 60,743 × 550 (state, deal) cells as ints,
   134 MB, plus its fits: about 250 MB (estimate), so six at once take about 1.5 GB.
-- **Main file, first decisions.** About nineteen counts are scored: seven custom rows, six
-  controls, three refit checks and three counts scored again for the bit check. At
-  report-final's mean of 4,076 s a count, with 7 threads, that is about 3 hours. The catalog's
-  18,623.7 s (5.2 h) are not spent again (section 5).
+- **Main file, first decisions.** About twenty-five counts are scored: seven custom rows,
+  eleven controls (the five best rows at g in each comparator family, and Hi-Lo), four refit
+  checks (F1, F1 flat, F2 and Zen) and three counts scored again for the bit check. At
+  report-final's mean of 4,076 s a count, with 7 threads, that is about 4 hours (25 × 4,076 s /
+  7 = 14,557 s); the five plain controls added at registration and F1 flat's refit are about an
+  hour of it. The catalog's 18,623.7 s (5.2 h) are not spent again (section 5).
 - **Main file, full play.** The projection put the whole-file run at 23.7 hours for 31 counts
   at 1,000 resamples (runs/full-index/projection-73df32c.txt), about 0.8 h a count on 6
   threads. A count fitted alone shares no split values with the others, so five counts take
@@ -1014,15 +1105,22 @@ its index before its first tree, so no store of this code stands without one
    time on 6 threads (runs/custom-count/search/cs.sh, queue.sh and the lane*.jobs files; each
    search's start and end in queue.log, its evaluations in NAME.log and its output in NAME.out):
    F1 at 1-8 from its sixteen starts and two follow-ups at double the population and the cap,
-   F1 flat from its five, F1r from its three, F2 from the best three of its ten starts, and F1
-   on each half of the twin from eight. SearchReport report from classes 38f4e60 read every log
-   and wrote the convergence evidence, the candidates file and the full-play candidates
-   (runs/custom-count/search/report.sh):
+   F1 flat from its five, F1r from its three and two follow-ups at double the population and the
+   cap, F2 from the best three of its ten starts, and F1 on each half of the twin from eight.
+   SearchReport report from classes 38f4e60 read every log and wrote the convergence evidence,
+   the candidates file and the full-play candidates (runs/custom-count/search/report.sh), as
+   search-38f4e60, then search-38f4e60-2 after F1r's first follow-up. The last follow-up, from
+   half KO's shift (lane9.jobs), ran on 8 October after the full-play choice, and SearchReport
+   from classes 0b85be2 then read all 47 logs again (runs/custom-count/search/after-choice.sh):
+   search-0b85be2.md, .candidates.json and .fullplay.json, the search evidence the registration
+   rests on. Its candidates file differs from search-38f4e60-2's only in F1r, and its full-play
+   candidates from those the choice ran on only in their header.
 
    ```sh
    S=$R/runs/custom-count/search
-   $S/queue.sh $S/lane7.jobs 6   # F2 and the half-twin searches, the last jobs to run
+   $S/queue.sh $S/lane7.jobs 6   # F2 and the half-twin searches
    $S/report.sh 38f4e60          # writes runs/custom-count/search-38f4e60.md, .candidates.json, .fullplay.json
+   $S/after-choice.sh            # F1r's last follow-up, then $S/report.sh 0b85be2: search-0b85be2.md and the rest
    ```
 5. **The full-play choice,** on the twin. *Produces:* the full-play F1.
 
@@ -1057,9 +1155,10 @@ its index before its first tree, so no store of this code stands without one
    to each, a little more the further a count turns toward the later-play direction, which
    does not make up what it loses at first decisions. F2 with its betting vector stays above
    every F1, as it does at first decisions. (These are point estimates on a fifth of the twin,
-   used only to choose; the main file scores the counts chosen.) The run's own summary prints
-   F2 by its play vector alone; its row with the betting vector is read with FullIndexPeek's
-   ranking (fullplay/peek-choice-20000-38f4e60.txt).
+   used only to choose; the main file scores the counts chosen.) The run's own summary printed
+   F2 by its play vector alone, so its row with the betting vector was read with FullIndexPeek's
+   ranking (fullplay/peek-choice-20000-38f4e60.txt); since step 6 the summary prints each
+   betting variant's row by its own name.
 
    ```sh
    F=$R/runs/custom-count/fullplay
@@ -1068,17 +1167,78 @@ its index before its first tree, so no store of this code stands without one
    java -cp "$R/runs/custom-count/classes-38f4e60:$W/lib/mongo-java-driver-3.12.14.jar" SearchReport fullplay \
      --results $F/choice-20000-38f4e60/results.ser > $F/choice-20000-38f4e60.md
    ```
-6. **Registration.** *Produces:* custom-counts.json, committed, with the counts, each cell's
-   reported count and each headline row's comparators.
+6. **Registration.** *Produces:* custom-counts.json and custom-counts-fullplay.json,
+   committed together at the worktree's root beside the ledger, with the counts, each cell's
+   reported count and each headline row's comparators (section 5); and the classes for steps 7
+   and 8, frozen from that commit.
+
+   *Run* on 8 October, after the one-look fixes of section 5 were committed with their tests:
+   custom-counts.json, git blob 39bd6d4a17f168c8906bce219db2eb95de67d856, and
+   custom-counts-fullplay.json, git blob 250e64a7ebb99f642c5f464c920e13e63e6fc0c5, which the
+   first names, committed with this section, the suite passing. Their tags are
+   search-0b85be2.candidates.json's, copied by a program, not retyped; RegistrationTest reads
+   both with the committed loader. The registration commit is the last commit to touch
+   custom-counts.json, and its classes are frozen from it as step 3's were:
+
+   ```sh
+   R=/Users/justinbondurant/Documents/CardCountingEdgeCalculator
+   W=$R/.worktrees/count-design
+   REG=$(git -C $W log -1 --format=%h -- custom-counts.json)
+   C=$R/runs/custom-count/classes-$REG
+   T=$(mktemp -d) && git -C $W archive $REG src counting-systems.json | tar -x -C $T \
+     && mkdir -p $C && javac -nowarn -d $C -cp $W/lib/mongo-java-driver-3.12.14.jar $T/src/*.java \
+     && git -C $W rev-parse $REG > $C/commit.txt && cp $T/counting-systems.json $C/
+   ```
 7. **The main file, first decisions.** *Produces:* runs/report-ceiling-<sha>.md: every cell,
    the ladder, the grain and tag split, the difference from every published row, the headline
    bounds, the efficiencies against the bounds, the optimism, the learning curve and the
-   ledger; and runs/report-ceiling-<sha>.ser, everything the run scored (`ComparisonReport
-   runs/montreal-80.states --published runs/full-index/full-c06c061/results.ser --printed
-   runs/report-final-26f0724.md --counts custom-counts.json --save runs/report-ceiling-<sha>.ser`).
-   The optimism needs the twin's figures beside it and is worked out from the two files.
+   ledger; and runs/report-ceiling-<sha>.ser, everything the run scored. The optimism needs the
+   twin's figures beside it and is worked out from the two files. <sha> is the registration
+   commit's, REG above. The command, with R, W, REG and C as in step 6, the lid open or the
+   charger in (section 7), and nothing else running on the machine:
+
+   ```sh
+   cd $C && nohup caffeinate -i nice -n 5 java -Xmx12g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+     ComparisonReport $R/runs/montreal-80.states --published $R/runs/full-index/full-c06c061/results.ser \
+     --printed $R/runs/report-final-26f0724.md --counts $W/custom-counts.json \
+     --save $R/runs/report-ceiling-$REG.ser --resamples 1000 --threads 7 \
+     > $R/runs/report-ceiling-$REG.md 2> $R/runs/report-ceiling-$REG.log &
+   ```
+
+   It runs from the classes directory, where the catalog it reads sits, and every path is
+   absolute. It checks everything of section 5 before it writes its ledger line, which it
+   writes once Hi-Lo, Hi-Opt II and Red Seven have been scored again and found equal to
+   c06c061's; the line is then committed (`git -C $W commit -m "step 7: the first-decision look
+   at the main file" custom-count-ledger.tsv`), which step 8 needs. It does not resume; cut
+   off, it is run again whole, into a new --save file, and each start is a ledger line of the
+   same look.
 8. **The main file, full play.** *Produces:* full-play rows paired with c06c061's
-   results.ser, and the full-play ladder.
+   results.ser, and the full-play ladder, from runs/custom-count/fullplay-main-<sha>/ (REG
+   again). FullIndexRun on custom-counts-fullplay.json, reading c06c061's tree store read-only,
+   once step 7's ledger line is committed:
+
+   ```sh
+   O=$R/runs/custom-count/fullplay-main-$REG
+   cd $C && nohup caffeinate -i nice -n 5 java -Xmx12g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+     FullIndexRun --states $R/runs/montreal-80.states --out $O --counts $W/custom-counts-fullplay.json \
+     --trees-read-only $R/runs/full-index/full-c06c061/trees.bin --threads 6 --resamples 1000 --pens 0,1,2 \
+     >> $O.log 2>&1 &
+   ```
+
+   Its ledger line is written as its passes start, and committed then; after an interruption
+   the same command with `--resume` goes on from its checkpoint, and writes a line of the same
+   look. The dry run section 7 asks for runs the same classes on the same counts on the twin,
+   where no look is made (a dry run on the main file would be part of the look):
+
+   ```sh
+   cd $C && caffeinate -i nice -n 5 java -Xmx12g -cp "$C:$W/lib/mongo-java-driver-3.12.14.jar" \
+     FullIndexRun --states $R/runs/twin-80.states --shoes 2000 --out $R/runs/custom-count/fullplay/dry-main-set-$REG \
+     --counts $W/custom-counts-fullplay.json --trees none --threads 6 --resamples 200 --pens 0,1,2 \
+     >> $R/runs/custom-count/fullplay/dry-main-set-$REG.log 2>&1
+   ```
+
+   A full-play report, which pairs step 8's Results with c06c061's, widens them and states the
+   split margin (section 5), is still to be written; it reads only the run's results.ser.
 9. **The results,** written into this file as they are measured, as FULL_INDEX_PLAYS.md does:
    the ladder, the tags beside the measured effects of removal and the published counts'
    normalised tags, the optimism and the search diagnostics.
@@ -1118,8 +1278,8 @@ Three proposals were weighed for this design. What each offered and was not used
 
 All four were taken at their defaults: Justin was told the first three defaults on 7 October and
 left them standing, and the fourth was decided the same way on 8 October, before registration,
-since a finer grain gains nothing the twin can measure. He can still change any of them before
-step 6.
+since a finer grain gains nothing the twin can measure. The registration (step 6) fixes all four
+as they stand.
 
 1. **Is F2 part of the answer?** F1 is one tag vector for everything. F2 lets a second vector
    set the bets, as the side-count rows that lead the table already do. *Default:* both, with
