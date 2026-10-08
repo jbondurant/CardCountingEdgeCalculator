@@ -35,10 +35,11 @@ import java.util.concurrent.Future;
  * counts the file lists scored, beside the bound rows and the refit check. --save OUT keeps
  * everything it scores, estimates and resamples, in a new file; --printed REPORT sets the stored
  * rows beside the published report's printed headline figures first. The main file refuses a look
- * without either.
+ * without either, and one at another registration than the ledger already holds looks at unless
+ * --second-look is given, which the ledger line and the report then say (COUNT_DESIGN.md, section 5).
  * java -Xmx12g -cp ... ComparisonReport FILE --published runs/full-index/full-c06c061/results.ser
  *      --printed runs/report-final-26f0724.md --counts custom-counts.json --save runs/report-ceiling-SHA.ser
- *      [--resamples N] [--threads T]
+ *      [--resamples N] [--threads T] [--second-look]
  */
 public final class ComparisonReport {
 
@@ -66,6 +67,8 @@ public final class ComparisonReport {
         Path save;
         /** The published report the stored rows are set beside (CeilingReport.checkPrinted); needed on the main file. */
         Path printed;
+        /** A look at another registration than the ledger's, made only when asked for, and then flagged (CustomCounts.checkOnMain). */
+        boolean secondLook;
     }
 
     public static void main(String[] args) throws Exception {
@@ -101,6 +104,9 @@ public final class ComparisonReport {
                 case "--printed":
                     o.printed = Paths.get(args[++a]);
                     break;
+                case "--second-look":
+                    o.secondLook = true;
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown option " + args[a]);
             }
@@ -111,7 +117,7 @@ public final class ComparisonReport {
         }
         if (o.published != null) {
             CeilingReport.run(Paths.get(args[0]), o.published, o.printed, o.counts, o.save, o.resamples,
-                    Math.max(1, o.threads), FullIndexRun.commit(), System.out);
+                    Math.max(1, o.threads), FullIndexRun.commit(), System.out, o.secondLook, CeilingReport.SAVE_MARGIN);
             return;
         }
         run(Paths.get(args[0]), o, System.out);

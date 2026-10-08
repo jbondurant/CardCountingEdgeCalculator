@@ -25,10 +25,10 @@ import java.util.List;
  * Its trees and checkpoints go to a directory of their own under the work directory given.
  * --counts FILE runs the counts a candidates file or custom-counts.json lists in place of the
  * null count and the catalog, and --pens 2 (or 0,1,2) those penetrations alone, as FullIndexRun
- * takes them; on the main state file only the registration is taken, and the look is written to
- * the ledger (CustomCounts.lookOnMain).
+ * takes them; on the main state file only a registration is taken, as FullIndexRun takes it, and
+ * the look is written to the ledger once every refusal is behind (dryRun).
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexDryRun [--counts FILE]
- * [--pens P,P] [state file] [shoes] [resamples] [threads] [work directory]
+ * [--pens P,P] [--second-look] [state file] [shoes] [resamples] [threads] [work directory]
  */
 public final class FullIndexDryRun {
 
@@ -83,14 +83,30 @@ public final class FullIndexDryRun {
             Growth.print(System.out, StateStore.records(Paths.get(args[1])), runs);
             return;
         }
+        dryRun(args, System.out, FullIndexRun::commit, 0.8);
+    }
+
+    /**
+     * The dry run from its command line, the classes' commit read only when the ledger needs it and
+     * the share of the heap a run may fill given, so a test can run it without a commit.txt and make
+     * the heap check refuse. On the main state file with counts, every refusal comes before the look
+     * is written to the ledger: the registration and the ledger (CustomCounts.checkOnMain) before a
+     * state is read; then the states, the tree store and its room on disk, the checkpoint, the
+     * strategies and the heap; the ledger line is written as the passes start (JointRun.beforePasses).
+     */
+    static void dryRun(String[] args, PrintStream out, java.util.concurrent.Callable<String> commitOf, double heapFill)
+            throws Exception {
         Path countsFile = null;
         int[] pens = PENS;
+        boolean secondLook = false;
         List<String> rest = new ArrayList<>();
         for (int a = 0; a < args.length; a++) {
             if (args[a].equals("--counts")) {
                 countsFile = Paths.get(args[++a]);
             } else if (args[a].equals("--pens")) {
                 pens = FullIndexRun.pens(args[++a]);
+            } else if (args[a].equals("--second-look")) {
+                secondLook = true;
             } else {
                 rest.add(args[a]);
             }
@@ -101,17 +117,27 @@ public final class FullIndexDryRun {
         int resamples = args.length > 2 ? Integer.parseInt(args[2]) : 200;
         int threads = args.length > 3 ? Integer.parseInt(args[3]) : 6;
         Path work = Paths.get(args.length > 4 ? args[4] : "runs/full-index/dry-run");
-        PrintStream out = System.out;
         long t0 = System.nanoTime();
         List<CountKeys.Count> counts = null;
+        FullIndexFit.AfterRound look = null;
         if (countsFile != null) {
             CustomCounts.Listing listing = CustomCounts.read(countsFile);
             if (CustomCounts.isMain(data)) {
-                // The refusals first, then the commit the ledger names.
-                String blob = CustomCounts.checkOnMain(listing);
-                CustomCounts.appendLedger(CustomCounts.ledgerOf(listing), FullIndexRun.commit(), blob, "FullIndexDryRun on "
-                        + "the first " + shoes + " shoes, " + resamples + " resamples, penetrations "
-                        + java.util.Arrays.toString(pens));
+                if (listing.fullPlayFile != null) {
+                    throw new IllegalStateException(countsFile + " names its full-play registration, " + listing.fullPlayFile
+                            + ": the main file is scored with full play on the counts that file lists (COUNT_DESIGN.md, "
+                            + "section 8, step 8); give --counts " + listing.fullPlayFile);
+                }
+                // The refusals first, then the commit the ledger names; the line itself once the run's own are behind.
+                String blob = CustomCounts.checkOnMain(listing, secondLook);
+                List<String> other = CustomCounts.otherLooks(CustomCounts.ledgerOf(listing),
+                        CustomCounts.registeredBlobs(listing, blob));
+                String commit = commitOf.call();
+                String what = "FullIndexDryRun on the first " + shoes + " shoes, " + resamples + " resamples, penetrations "
+                        + java.util.Arrays.toString(pens) + (other.isEmpty() ? "" : ", A SECOND LOOK (--second-look): the "
+                        + "ledger held " + other.size() + " look" + (other.size() == 1 ? "" : "s") + " at another registration");
+                Path ledger = CustomCounts.ledgerOf(listing);
+                look = () -> CustomCounts.appendLedger(ledger, commit, blob, what);
                 out.printf("Counts from %s, git blob %s.%n", countsFile, blob);
             }
             counts = listing.counts();
@@ -126,7 +152,7 @@ public final class FullIndexDryRun {
         out.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
         out.flush();
-        Measured m = run(st, resamples, threads, work, out, counts, pens);
+        Measured m = run(st, resamples, threads, work, out, counts, pens, look, heapFill);
         print(out, m);
         Projection.print(out, data, m);
         Path summary = work.resolve("summary-" + st.size + ".txt");
@@ -148,6 +174,16 @@ public final class FullIndexDryRun {
     /** The same with the counts given (the null count and the catalog when null), at the penetrations given. */
     static Measured run(ScoringStates st, int resamples, int threads, Path work, PrintStream log,
                         List<CountKeys.Count> given, int[] pens) throws Exception {
+        return run(st, resamples, threads, work, log, given, pens, null, 0.8);
+    }
+
+    /**
+     * The same, the heap checked first (JointRun.preflight) at heapFill of it, and look called as the
+     * passes start, once the tree store is open and the heap checked (a main-file look's ledger line).
+     */
+    static Measured run(ScoringStates st, int resamples, int threads, Path work, PrintStream log,
+                        List<CountKeys.Count> given, int[] pens, FullIndexFit.AfterRound look, double heapFill)
+            throws Exception {
         Measured m = new Measured();
         m.st = st;
         m.threads = threads;
@@ -174,6 +210,9 @@ public final class FullIndexDryRun {
         FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, threads);
         run.trees = store;
         run.batchBytes = 1;
+        run.preflightAlways = true;
+        run.heapFill = heapFill;
+        run.beforePasses = look;
         run.checkpoint = ck;
         run.log = System.err;
         run.beforeCheckpoint = () -> {
@@ -227,7 +266,12 @@ public final class FullIndexDryRun {
         com.sun.management.OperatingSystemMXBean os =
                 (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
         long cpu0 = os.getProcessCpuTime();
-        m.scored = run.run();
+        try {
+            m.scored = run.run();
+        } catch (Throwable t) {
+            store.close();
+            throw t;
+        }
         m.wall = (System.nanoTime() - w0) / 1e9;
         m.processCpu = (os.getProcessCpuTime() - cpu0) / 1e9;
         m.peakScore = FullIndexTimingReport.peakHeap();

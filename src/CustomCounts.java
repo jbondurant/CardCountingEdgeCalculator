@@ -22,7 +22,10 @@ import java.util.concurrent.TimeUnit;
  * - a candidates file, written as the search goes, for scoring on the twin file;
  * - custom-counts.json at the root of the repository, the registration: the counts chosen on the
  *   twin, fixed before any main-file run, with the twin file's header, the commit the search ran
- *   from, which count is reported in each cell and each headline row's comparators.
+ *   from, which count is reported in each cell and each headline row's comparators. It may name
+ *   a second registration beside it, custom-counts-fullplay.json, the counts scored with full play
+ *   (step 8), by its file name and its git blob, so the one blob fixes both files; that file names
+ *   custom-counts.json back ("registeredWith"), and the two share the ledger.
  *
  * The format (JSON):
  * <pre>
@@ -31,17 +34,23 @@ import java.util.concurrent.TimeUnit;
  *   "cells": { "flat": ["F1 flat"], "same": ["F1", "F2"], "own": ["F1", "F2"] },
  *                                                                   (registered; optional for candidates)
  *   "comparators": {...},                                           (optional, kept as text)
+ *   "fullPlay": { "file": "custom-counts-fullplay.json", "blob": "40 hex digits" },
+ *                                                                   (optional, a registration's full-play one)
+ *   "registeredWith": "custom-counts.json",                         (the full-play registration's)
  *   "counts": [
  *     { "name": "...", "family": "F1", "role": "headline", "comparators": "plain" or "all",
  *       "form": "true" or "running", "divisor": 500,
  *       "tags": [A, 2, 3, 4, 5, 6, 7, 8, 9, T],                     whole numbers at K
  *       "betting": [A, ..., T] },                                   optional: F2's betting vector
- *     { "name": "...", "role": "control", "catalog": "Hi-Opt II", "divisor": 500 } ] }
+ *     { "name": "Hi-Opt II at grain 500/10000", "role": "control", "catalog": "Hi-Opt II", "divisor": 500 } ] }
  * </pre>
  * A "catalog" entry is that catalog count at grain divisor / K (CountKeys.atGrain), or as the
  * catalog has it when no divisor is given; it keeps its systems, so its side-count variant comes
- * with it. Tags are read as whole numbers and nothing is normalised or rounded, so the count
- * scored is the count registered, to the bit.
+ * with it. Its name is the one that gives it (CountKeys.atGrain's, or the catalog's), and a
+ * registration that names it otherwise is refused, so the file reads as the report will. Tags are
+ * read as whole numbers and nothing is normalised or rounded, so the count scored is the count
+ * registered, to the bit. Fields the loader does not know are kept in the file and read by no
+ * code: they record, before the look, what the counts were chosen on.
  *
  * "cells" names the count reported in each cell, at every penetration (section 5): "flat", the
  * flat cells; "same", the same schedule at every spread from 1-2 to 1-8; "own", the own ramp.
@@ -52,8 +61,11 @@ import java.util.concurrent.TimeUnit;
  *
  * The rules (section 5, "One look"): the search, calibration and theory-pass tools refuse the
  * main file (requireTwin); a main-file tool given counts refuses a file that is not the
- * registration, or is not committed as it stands, and a ledger with lines not committed
- * (lookOnMain), and appends to the ledger the line that records its look.
+ * registration, or is not committed as it stands, a ledger with lines not committed, and a ledger
+ * holding a look at another registration, unless a second look is asked for (checkOnMain); and
+ * once every refusal of its own is behind, it appends to the ledger the line that records its look.
+ * The one look is every ledger line carrying the registration's blob or its full-play
+ * registration's (registeredBlobs).
  */
 final class CustomCounts {
 
@@ -63,6 +75,8 @@ final class CustomCounts {
     static final long TWIN_SEED = 20261007L;
     /** The registration and the ledger, at the root of the repository. */
     static final String REGISTERED = "custom-counts.json";
+    /** The full-play registration (step 8), beside it, named by it with its blob. */
+    static final String FULL_PLAY = "custom-counts-fullplay.json";
     static final String LEDGER = "custom-count-ledger.tsv";
     static final String LEDGER_HEADER = "commit\tblob\ttime\twhat ran";
 
@@ -110,6 +124,11 @@ final class CustomCounts {
         final Map<String, List<String>> cells;
         /** The comparators as the file holds them, for the report to print. */
         final String comparators;
+        /** For a registration that names its full-play registration: that file's name, beside it, and its git blob. */
+        String fullPlayFile;
+        String fullPlayBlob;
+        /** For a full-play registration: the registration beside it that names it. */
+        String registeredWith;
 
         Listing(Path file, boolean registered, List<Entry> entries, String twin, String searchCommit,
                 Map<String, List<String>> cells, String comparators) {
@@ -162,7 +181,7 @@ final class CustomCounts {
         List<Entry> entries = new ArrayList<>();
         List<String> names = new ArrayList<>();
         for (Document c : d.getList("counts", Document.class)) {
-            Entry e = entry(file, c);
+            Entry e = entry(file, c, registered);
             if (names.contains(e.count.name)) {
                 throw new IllegalArgumentException(file + " lists " + e.count.name + " twice");
             }
@@ -182,8 +201,48 @@ final class CustomCounts {
             throw new IllegalArgumentException(file + ": a registration names the count reported in each cell");
         }
         Object comparators = d.get("comparators");
-        return new Listing(file, registered, entries, twin, commit, cells == null ? null : cells(file, cells, entries),
+        Listing out = new Listing(file, registered, entries, twin, commit, cells == null ? null : cells(file, cells, entries),
                 comparators == null ? null : comparators.toString());
+        Object fullPlay = d.get("fullPlay");
+        Object with = d.get("registeredWith");
+        if ((fullPlay != null || with != null) && !registered) {
+            throw new IllegalArgumentException(file + ": only a registration names a full-play registration or the "
+                    + "registration it belongs to");
+        }
+        if (fullPlay != null && with != null) {
+            throw new IllegalArgumentException(file + " names a full-play registration and a registration it belongs to; "
+                    + "one file is the registration, the other its full-play registration");
+        }
+        if (fullPlay != null) {
+            if (!(fullPlay instanceof Document)) {
+                throw new IllegalArgumentException(file + ": \"fullPlay\" gives the full-play registration's \"file\" and "
+                        + "\"blob\"");
+            }
+            Document f = (Document) fullPlay;
+            out.fullPlayFile = sibling(file, f.get("file"), "fullPlay's file");
+            Object blob = f.get("blob");
+            if (!(blob instanceof String) || !((String) blob).matches("[0-9a-f]{40}")) {
+                throw new IllegalArgumentException(file + ": fullPlay's blob is the full-play registration's git blob hash, "
+                        + "40 hex digits, not " + blob);
+            }
+            out.fullPlayBlob = (String) blob;
+        }
+        if (with != null) {
+            out.registeredWith = sibling(file, with, "registeredWith");
+        }
+        return out;
+    }
+
+    /** A file name beside file, as a registration names another: one name, no directory, not file itself. */
+    private static String sibling(Path file, Object name, String what) {
+        if (!(name instanceof String) || ((String) name).isEmpty() || ((String) name).contains("/")
+                || ((String) name).contains("\\") || name.equals(".") || name.equals("..")) {
+            throw new IllegalArgumentException(file + ": " + what + " is the name of a file beside it, not " + name);
+        }
+        if (name.equals(file.getFileName().toString())) {
+            throw new IllegalArgumentException(file + ": " + what + " names the file itself");
+        }
+        return (String) name;
     }
 
     /** The cells as a file names them, each cell's counts checked against the rules above. */
@@ -247,7 +306,7 @@ final class CustomCounts {
         return Collections.unmodifiableMap(out);
     }
 
-    private static Entry entry(Path file, Document c) {
+    private static Entry entry(Path file, Document c, boolean registered) {
         String name = c.getString("name");
         if (name == null || name.isEmpty()) {
             throw new IllegalArgumentException(file + ": a count without a name");
@@ -270,6 +329,11 @@ final class CustomCounts {
                 throw new IllegalArgumentException(file + ": no catalog system named " + catalog);
             }
             CountKeys.Count count = divisor == null ? found : CountKeys.atGrain(found, divisor.intValue());
+            if (registered && !name.equals(count.name)) {
+                // The report names the row as the loader does; a registration names it the same way.
+                throw new IllegalArgumentException(file + ": the catalog count " + catalog + " is scored as \"" + count.name
+                        + "\", so a registration names it so, not \"" + name + "\"");
+            }
             return new Entry(count, family == null ? "published" : family, role);
         }
         String form = c.getString("form");
@@ -362,19 +426,89 @@ final class CustomCounts {
         return blob;
     }
 
-    /**
-     * lookOnMain's checks alone, writing nothing: the registration committed as it stands and the
-     * ledger with no lines not committed. Gives the registration's blob hash. A tool that has
-     * further refusals of its own checks here first and appends to the ledger once they pass.
-     */
+    /** checkOnMain, a look at another registration refused. */
     static String checkOnMain(Listing counts) throws IOException {
+        return checkOnMain(counts, false);
+    }
+
+    /**
+     * lookOnMain's checks alone, writing nothing: the registration committed as it stands, the
+     * ledger with no lines not committed, and no line of the ledger a look at another registration
+     * (otherLooks) unless secondLook, which the tool's --second-look gives and its ledger line and
+     * report then say. Gives the registration's blob hash. A tool that has further refusals of its
+     * own checks here first and appends to the ledger only once every one of them has passed.
+     */
+    static String checkOnMain(Listing counts, boolean secondLook) throws IOException {
         if (!counts.registered) {
             throw new IllegalStateException(counts.file + " is a candidates file; the main file scores only the counts "
                     + "registered in " + REGISTERED + " (COUNT_DESIGN.md, section 5)");
         }
         String blob = committedBlob(counts.file);
-        committedBlob(ledgerOf(counts));
+        Path ledger = ledgerOf(counts);
+        committedBlob(ledger);
+        List<String> other = otherLooks(ledger, registeredBlobs(counts, blob));
+        if (!other.isEmpty() && !secondLook) {
+            throw new IllegalStateException(ledger + " already holds " + other.size() + " look" + (other.size() == 1 ? "" : "s")
+                    + " at another registration than " + counts.file.getFileName() + " (blob " + blob + "), the first: "
+                    + other.get(0) + ". A look at a changed registration is a second look, and its held-out claim needs a "
+                    + "fresh file (COUNT_DESIGN.md, section 5); give --second-look to make it all the same, and the "
+                    + "ledger and the report say so");
+        }
         return blob;
+    }
+
+    /**
+     * The blobs of one registration, whose ledger lines make up its one look: the file's own,
+     * blob; for a registration, the full-play registration it names, whose committed blob must be
+     * the one it names; for a full-play registration, the registration it belongs to, committed as
+     * it stands, which must name this file and this blob. Refuses where they do not tie up.
+     */
+    static java.util.Set<String> registeredBlobs(Listing counts, String blob) throws IOException {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        out.add(blob);
+        Path dir = counts.file.toAbsolutePath().normalize().getParent();
+        if (counts.fullPlayFile != null) {
+            String was = committedBlob(dir.resolve(counts.fullPlayFile));
+            if (!was.equals(counts.fullPlayBlob)) {
+                throw new IllegalStateException(counts.fullPlayFile + " is committed as blob " + was + ", not the blob "
+                        + counts.fullPlayBlob + " that " + counts.file.getFileName() + " registers; a full-play registration "
+                        + "changed after its registration is a second registration (COUNT_DESIGN.md, section 5)");
+            }
+            out.add(was);
+        }
+        if (counts.registeredWith != null) {
+            Path with = dir.resolve(counts.registeredWith);
+            String withBlob = committedBlob(with);
+            Listing primary = read(with);
+            String name = counts.file.getFileName().toString();
+            if (!primary.registered || !name.equals(primary.fullPlayFile) || !blob.equals(primary.fullPlayBlob)) {
+                throw new IllegalStateException(counts.file.getFileName() + " says it belongs to " + counts.registeredWith
+                        + ", which does not register it as it stands (blob " + blob + "): it names "
+                        + primary.fullPlayFile + ", blob " + primary.fullPlayBlob);
+            }
+            out.add(withBlob);
+        }
+        return out;
+    }
+
+    /** The ledger's lines, the header left out, whose blob is none of those given: looks at another registration. */
+    static List<String> otherLooks(Path ledger, java.util.Set<String> blobs) throws IOException {
+        List<String> out = new ArrayList<>();
+        if (!Files.exists(ledger)) {
+            return out;
+        }
+        List<String> lines = Files.readAllLines(ledger, StandardCharsets.UTF_8);
+        for (int i = 0; i < lines.size(); i++) {
+            String l = lines.get(i);
+            if (l.isEmpty() || (i == 0 && l.equals(LEDGER_HEADER))) {
+                continue;
+            }
+            String[] f = l.split("\t", -1);
+            if (f.length < 2 || !blobs.contains(f[1])) {
+                out.add(l);
+            }
+        }
+        return out;
     }
 
     /** The ledger beside a counts file. */

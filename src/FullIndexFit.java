@@ -2239,6 +2239,14 @@ final class FullIndexFit {
         java.util.function.IntConsumer afterItem;
         /** Called before a round's checkpoint is written, so the trees it read are on disk first (TreeStore.sync). */
         AfterRound beforeCheckpoint;
+        /** Whether the check that the run fits in the heap (preflight) runs even when batchBytes is set, as in a dry run. */
+        boolean preflightAlways;
+        /**
+         * Called once, when every refusal before the passes is behind (the checkpoint opened, the
+         * strategies made and the heap checked) and before the passes start: a main-file run writes
+         * its look to the ledger here (COUNT_DESIGN.md, section 5), so a run refused before costs no look.
+         */
+        AfterRound beforePasses;
 
         JointRun(SystemScorer scorer, List<CountKeys.Count> counts, int[] pens, int threads) {
             this.scorer = scorer;
@@ -2269,8 +2277,11 @@ final class FullIndexFit {
             for (Fits f : fits) {
                 all.addAll(f.all());
             }
-            if (batchBytes <= 0) {
+            if (batchBytes <= 0 || preflightAlways) {
                 preflight(fits, all);
+            }
+            if (beforePasses != null) {
+                beforePasses.ended();
             }
             FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), passTrees == null ? trees : passTrees, threads,
                     keepSplits, perfect);
