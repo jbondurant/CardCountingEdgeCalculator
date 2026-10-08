@@ -1183,7 +1183,13 @@ final class SearchReport {
         }
     }
 
-    /** The checks of section 4 that are failures when they do not hold, each named in e.failures. */
+    /**
+     * The checks of section 4 that are failures when they do not hold, each named in e.failures:
+     * a start not beaten; F2 below F1, its starts or a published side-count row; a slice that does
+     * not peak at its optimum; a run that does not agree with its family's best and has no follow-up
+     * at double the population and the cap that does; and the grain check, two-sided at half and
+     * double the grain as section 4 words it, with the calibration's one-sided rule said beside it.
+     */
     static void verdicts(Evidence e) {
         for (String fam : FAMILIES) {
             List<Run> runs = e.families.get(fam);
@@ -1191,6 +1197,21 @@ final class SearchReport {
                 continue;
             }
             Run best = runs.get(0);
+            for (Run r : runs) {
+                if (agrees(r, best, e.floor)) {
+                    continue;
+                }
+                Run up = followUp(r, runs);
+                if (up != null && agrees(up, best, e.floor)) {
+                    continue;
+                }
+                double a = degrees(r.play, best.play);
+                e.failures.add(fam + ": restarts do not all agree: " + r.name + " ends " + pts(best.value - r.value)
+                        + " below the best, " + best.name + ", at " + deg(a) + " degrees, past the floor there, "
+                        + pts(e.floor.at(a)) + (a > FEW_DEGREES ? ", or beyond " + deg(FEW_DEGREES) + " degrees" : "")
+                        + (up == null ? "; no follow-up at double the population and the cap"
+                        : "; its follow-up, " + up.name + ", does not agree either"));
+            }
             for (Run r : runs) {
                 double s = e.startValue.get(r);
                 if (best.value < s) {
@@ -1225,6 +1246,28 @@ final class SearchReport {
             for (Map.Entry<String, Double> s : e.sideCountAtG.entrySet()) {
                 if (v < s.getValue()) {
                     e.failures.add("F2, " + pct(v) + ", is below the published row " + s.getKey() + ", " + pct(s.getValue()));
+                }
+            }
+        }
+        if (e.grain != null) {
+            for (int k = 0; k < 2; k++) {
+                List<Run> runs = e.families.get(k == 0 ? "F1" : "F1 flat");
+                if (runs == null || runs.isEmpty()) {
+                    continue;
+                }
+                double v = runs.get(0).value;
+                double[] g = e.grain[k];
+                boolean two = grainTwoSided(g, v, e.floor);
+                boolean finer = grainFinerGains(g, v, e.floor);
+                if (!two || !finer) {
+                    String moves = "keyed at double the grain the optimum moves by " + pct(g[0] - v) + ", at half of it by "
+                            + pct(g[1] - v) + ", against the floor at 1 degree, " + pts(e.floor.at(1));
+                    e.failures.add((k == 0 ? "F1, 1-8" : "F1 flat, flat") + ": the grain check " + (two
+                            ? "holds as section 4 words it (" + moves + "), but a finer grain gains more than the floor, "
+                            + "so the calibration's one-sided rule fails"
+                            : "as section 4 words it fails: " + moves + "; " + (finer ? "no finer grain gains more than "
+                            + "the floor, so the calibration's one-sided rule holds" : "a finer grain gains more than the "
+                            + "floor, so the calibration's one-sided rule fails too")));
                 }
             }
         }

@@ -227,6 +227,72 @@ public class SearchReportTest {
         assertNull(SearchReport.followUp(stalled, Arrays.asList(best, stalled, up)), "the cap doubled too");
     }
 
+    /**
+     * The report's failures name a run that does not agree with its family's best unless a
+     * follow-up at double the population and the cap agrees, and the grain check when it fails
+     * either way, saying whether the calibration's one-sided rule holds.
+     */
+    @Test
+    public void restartsThatDoNotAgreeAndTheGrainAreNamedAmongTheFailures() {
+        SearchReport.Evidence e = new SearchReport.Evidence();
+        e.floor = FLOOR;
+        e.published = new ArrayList<>();
+        for (String f : SearchReport.FAMILIES) {
+            e.families.put(f, new ArrayList<>());
+        }
+        SearchReport.Run best = at("best", 0, new double[]{1}, 0.004);
+        SearchReport.Run stalled = at("stalled", 2, new double[]{1}, 0.004 - 3e-5);
+        for (SearchReport.Run r : Arrays.asList(best, stalled)) {
+            r.lambda = 12;
+            r.maxEvals = 1500;
+            r.start = new double[11];
+            e.startValue.put(r, 0.0);
+        }
+        e.families.get("F1").addAll(Arrays.asList(best, stalled));
+        double v = best.value;
+        e.grain = new double[][]{{v, v, v, v}, {v, v, v, v}};
+        SearchReport.verdicts(e);
+        assertEquals(1, e.failures.size(), e.failures.toString());
+        assertTrue(e.failures.get(0).startsWith("F1: restarts do not all agree: stalled ends 0.0030% below the best, best"),
+                e.failures.toString());
+
+        // Followed up from its count at double the population and the cap, by a run that agrees: no failure.
+        SearchReport.Run up = at("up", 1, new double[]{1}, v - 1e-6);
+        up.lambda = 24;
+        up.maxEvals = 3000;
+        up.start = new double[11];
+        for (int r = 1; r <= 10; r++) {
+            up.start[r] = stalled.play[r];
+        }
+        e.startValue.put(up, 0.0);
+        e.families.get("F1").add(up);
+        e.failures.clear();
+        SearchReport.verdicts(e);
+        assertTrue(e.failures.isEmpty(), e.failures.toString());
+
+        // Double the grain loses more than the floor; no finer grain gains: the one-sided rule holds.
+        e.grain[0] = new double[]{v - 3e-5, v, v, v};
+        e.failures.clear();
+        SearchReport.verdicts(e);
+        assertEquals(1, e.failures.size(), e.failures.toString());
+        assertTrue(e.failures.get(0).startsWith("F1, 1-8: the grain check as section 4 words it fails")
+                && e.failures.get(0).endsWith("the calibration's one-sided rule holds"), e.failures.toString());
+
+        // Half and double within the floor, but a finer grain gains more than it: the one-sided rule fails.
+        e.grain[0] = new double[]{v, v, v + 2e-5, v};
+        e.failures.clear();
+        SearchReport.verdicts(e);
+        assertEquals(1, e.failures.size(), e.failures.toString());
+        assertTrue(e.failures.get(0).startsWith("F1, 1-8: the grain check holds as section 4 words it")
+                && e.failures.get(0).endsWith("so the calibration's one-sided rule fails"), e.failures.toString());
+
+        // Both fail.
+        e.grain[0] = new double[]{v - 3e-5, v, v + 2e-5, v};
+        e.failures.clear();
+        SearchReport.verdicts(e);
+        assertTrue(e.failures.get(0).endsWith("the calibration's one-sided rule fails too"), e.failures.toString());
+    }
+
     @Test
     public void theGrainCheckIsTwoSidedAtHalfAndDoubleAndOneSidedFiner() {
         double v = 0.0039;
