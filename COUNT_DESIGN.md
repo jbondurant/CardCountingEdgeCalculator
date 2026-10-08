@@ -621,6 +621,13 @@ errs toward reporting more shortfall, not less.
   resting on that rate, since the objective is piecewise constant.
 - The twin counts as big enough when that estimate's upper end is under 0.01% a round at 80%,
   1-8, the margin fixed here.
+- **Measured** on the twin (search-38f4e60.md): each half's eight runs agree (above). The half
+  counts lie 0.9° apart, cosine 0.9999, far above section 6's 0.95, and 2.1° and 1.6° from F1.
+  Half 0's count scores +0.3965% on its own half and +0.3744% on the other; half 1's +0.3745% on
+  its own and +0.3966% on the other: each half's count does as well on the other half as that
+  half's own count, within 0.0001%. On the whole twin they score +0.3901% and +0.3904%, F1
+  0.0010% above their mean, in-sample for F1, so not the learning curve, which waits for the
+  main file (step 7).
 
 **Full play: choosing on the twin.** Seven F1 counts are fitted with full play: five on the
 line from the 1-8 optimum to the flat optimum, at 0, ¼, ½, ¾ and all of the way
@@ -1068,6 +1075,14 @@ Three proposals were weighed for this design. What each offered and was not used
    saves about 7 hours of step 8 (estimate, section 7). *Default:* write the twin, keep the
    store and delete nothing. If the store is gone by then, step 8 builds trees each round
    instead.
+4. **The grain check failed on one side (raised by step 4).** At g = 1/20, F1's optimum keyed
+   at double the grain loses 0.0031% a round, more than the 0.0012% floor, while halving the
+   grain, or any finer grain down to 1/200, gains nothing (section 4, check 5). Section 4 asked
+   for both sides within noise; the calibration chose g by the one-sided rule, which holds. Keep
+   g = 1/20 and read the check as the calibration's one-sided rule, or register the same tags
+   at g = 1/40, where both neighbours (1/20 and 1/80) would have to be checked again first?
+   *Default:* keep g = 1/20; a finer grain gains nothing measurable, and the tags would not
+   change.
 
 ## 11. What it does not do
 
