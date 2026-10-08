@@ -1035,6 +1035,32 @@ its index before its first tree, so no store of this code stands without one
    round of 116 s and the scoring; SearchReport fullplay read its results.ser (fullplay/dry-2000-38f4e60.md). Its
    figures rest on 2,000 shoes and decide nothing.
 
+   The choice itself (20,320 states of the first 20,000 twin shoes) took 1.7 hours on the wall,
+   finishing on 8 October: six rounds of passes, the first two 1,619 s and 1,372 s, then one
+   last round of 889 s for all eight counts and 17 s of scoring
+   (fullplay/choice-20000-38f4e60.log). By full-play EV at 80% on the 1-8 schedule
+   (fullplay/choice-20000-38f4e60.md):
+
+   | Candidate | 1-8, first decisions | 1-8, full play | Flat, full play |
+   |---|---|---|---|
+   | F1, the 1-8 optimum | +0.3579% | **+0.4445%** | -0.5645% |
+   | F1, ¼ of the way to the flat optimum | +0.3514% | +0.4394% | -0.5599% |
+   | F1, 10° toward later play | +0.3334% | +0.4272% | -0.5610% |
+   | F1, ½ of the way | +0.3337% | +0.4224% | -0.5550% |
+   | F1, ¾ of the way | +0.3010% | +0.3882% | -0.5525% |
+   | F1, 20° toward later play | +0.2629% | +0.3606% | -0.5624% |
+   | F1, the flat optimum | +0.2581% | +0.3443% | -0.5511% |
+   | F2 at 1-8, with its betting vector | +0.3801% | +0.4642% | -0.5522% |
+
+   **The full-play F1 is the 1-8 optimum itself**, its tags unchanged. The order of the seven
+   F1 counts at full play is their order at first decisions; full play adds +0.086% to +0.098%
+   to each, a little more the further a count turns toward the later-play direction, which
+   does not make up what it loses at first decisions. F2 with its betting vector stays above
+   every F1, as it does at first decisions. (These are point estimates on a fifth of the twin,
+   used only to choose; the main file scores the counts chosen.) The run's own summary prints
+   F2 by its play vector alone; its row with the betting vector is read with FullIndexPeek's
+   ranking (fullplay/peek-choice-20000-38f4e60.txt).
+
    ```sh
    F=$R/runs/custom-count/fullplay
    $F/fp.sh 38f4e60 dry-2000-38f4e60 2000 $R/runs/custom-count/search-38f4e60.fullplay.json
@@ -1089,6 +1115,11 @@ Three proposals were weighed for this design. What each offered and was not used
   code instead.
 
 ## 10. Questions for Justin
+
+All four were taken at their defaults: Justin was told the first three defaults on 7 October and
+left them standing, and the fourth was decided the same way on 8 October, before registration,
+since a finer grain gains nothing the twin can measure. He can still change any of them before
+step 6.
 
 1. **Is F2 part of the answer?** F1 is one tag vector for everything. F2 lets a second vector
    set the bets, as the side-count rows that lead the table already do. *Default:* both, with
