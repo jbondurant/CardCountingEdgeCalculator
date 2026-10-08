@@ -508,6 +508,12 @@ against each other) and does not depend on the choice of axes.
   runs from the best three. It alternates two blocks: the betting vector with the play held,
   which is cheap, then the play vector. It stops when neither moves the objective by more
   than the noise floor, after at most three cycles, and ends with a joint polish.
+  **Measured** (SearchReport starts from classes ac7ab4d, runs/custom-count/search/
+  starts-f2-ac7ab4d.txt), F2's objective at its ten starts: the flat optimum with the betting
+  direction +0.4129%, Hi-Opt II with its ace side count +0.3980%, Victor APC with it +0.3967%,
+  Uston APC with it +0.3918%, F1's optimum for both +0.3912%, Omega II with it +0.3895%, Revere
+  14 with it +0.3870%, and Hi-Opt I, Revere Advanced Plus-Minus and Canfield Expert with it
+  +0.3292% to +0.3059%. F2 ran from the first three.
 - **F1r** runs three times: twice from F1's optimum with different shifts, once from KO's
   direction and balance.
 - **Every evaluation is logged** (tags, objective, run, generation), so a search can be
