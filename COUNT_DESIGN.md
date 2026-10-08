@@ -1015,6 +1015,23 @@ its index before its first tree, so no store of this code stands without one
    $S/report.sh 38f4e60          # writes runs/custom-count/search-38f4e60.md, .candidates.json, .fullplay.json
    ```
 5. **The full-play choice,** on the twin. *Produces:* the full-play F1.
+
+   *Run* by FullIndexRun from classes 38f4e60 on the full-play candidates the search report
+   wrote, at 80%, both folds, no resamples, trees built every round
+   (runs/custom-count/fullplay/fp.sh), first on 2,000 shoes as the dry run, then on 20,000;
+   SearchReport fullplay reads the run's results.ser and names the full-play F1. The dry run
+   (1,967 states) took 11.5 minutes on the wall on 6 threads: six rounds of passes, the first two
+   181 s and 155 s and the last three 56 s each, building the trees every time, then a last
+   round of 116 s and the scoring; SearchReport fullplay read its results.ser (fullplay/dry-2000-38f4e60.md). Its
+   figures rest on 2,000 shoes and decide nothing.
+
+   ```sh
+   F=$R/runs/custom-count/fullplay
+   $F/fp.sh 38f4e60 dry-2000-38f4e60 2000 $R/runs/custom-count/search-38f4e60.fullplay.json
+   $F/fp.sh 38f4e60 choice-20000-38f4e60 20000 $R/runs/custom-count/search-38f4e60.fullplay.json
+   java -cp "$R/runs/custom-count/classes-38f4e60:$W/lib/mongo-java-driver-3.12.14.jar" SearchReport fullplay \
+     --results $F/choice-20000-38f4e60/results.ser > $F/choice-20000-38f4e60.md
+   ```
 6. **Registration.** *Produces:* custom-counts.json, committed, with the counts, each cell's
    reported count and each headline row's comparators.
 7. **The main file, first decisions.** *Produces:* runs/report-ceiling-<sha>.md: every cell,
