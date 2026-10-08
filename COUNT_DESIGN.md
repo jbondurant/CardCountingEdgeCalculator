@@ -563,6 +563,50 @@ prove a global maximum. These show that nothing within the data's resolution was
 5. **The grain does not decide it.** Halving or doubling g moves the objective at the optimum
    by less than the noise floor.
 
+**Measured** (runs/custom-count/search-38f4e60.md, SearchReport from classes 38f4e60 over the
+logs of the searches, which ran from classes b99ccbf; every figure the search's objective on the
+twin at 80%, a point estimate, in-sample; tags centred and at Hi-Lo's spread, A, 2 to 9, T):
+- **The counts found.**
+  - F1 at 1-8, +0.3912% (run f1-8-vidami-ar): −0.7264, +0.6197, +0.7851, +1.0852, +1.2536,
+    +0.7933, +0.5948, +0.1170, −0.1915, −1.0827. It lies 8.4° from the effects of removal off
+    the top, 9.3° from Zen and 16.4° from Hi-Lo.
+  - F1 flat, −0.5697% flat (f1-flat-pub-uston-apc): +0.1989, +0.4329, +0.6021, +0.8740, +1.0667,
+    +0.7119, +0.7518, +0.4264, −0.0643, −1.2501, 20.4° from F1: the ace near zero and the ten
+    heavier, toward play and insurance, as section 3 expects.
+  - F2, +0.4187% (f2-pub-victor-apc): play +0.1225, +0.4568, +0.6432, +0.9282, +1.0866, +0.7678,
+    +0.7503, +0.3368, −0.1850, −1.2268, 18.0° from F1; bets −0.9338, +0.6272, +0.7909, +1.0811, +1.3291, +0.7708, +0.5784, +0.0852, −0.2393,
+    −1.0224, 4.7° from F1. So F2 splits the job as the side-counted rows do: an ace-neutral
+    vector for play and insurance, an ace-heavy one for bets.
+  - On the halves: +0.3965% on half 0 and +0.3745% on half 1 (below).
+- **Beside the published rows at g.** The best published direction by 1-8 is Zen's, +0.3687%, so
+  F1 is 0.0225% above it on the twin; the best published row is Hi-Opt II with its ace side count
+  at g, +0.3980%, 0.0068% above F1 and 0.0206% below F2. By flat, Uston APC's direction scores
+  −0.5726%, 0.0029% below F1 flat. These are the search's own objective on the shoes it searched;
+  the held-out comparison is step 7's.
+- **1. Restarts.** F1: 17 of 18 runs end within the noise floor of the best and within 2.2° of it,
+  one region; the run from UBZ2 ended 0.0021% below at 1.7°, and its follow-up at double the
+  population and the cap ended 0.0008% below at 1.6°, which agrees. F1 flat: 5 of 5, within
+  0.0003% and 2.3°. F2: 3 of 3, within 0.0011% and 3.0°. Each half: 8 of 8, within 0.0008% and
+  0.0004%.
+- **2. Slices.** All 26 slices at each optimum (the nine basis directions, the nine principal
+  axes, the eight best published counts) peak there within noise; the largest headroom a
+  quadratic gives is 0.0004% at F1 and 0.0001% at F1 flat. Directions within 2.3° to 2.5° of F1
+  (median 2.3°) cost less than the floor, and within 6.8° to 7.8° of F1 flat (median 7.3°): the
+  flat objective curves about eight times less (−0.00023% to −0.00027% a square degree at F1,
+  −0.000026% to −0.000034% flat).
+- **3. Every start is beaten.** It holds in every family. F2 is 0.0275% above F1, 0.0058% to
+  0.1128% above each of its ten starts, and 0.0206% to 0.1129% above each published side-count
+  row at g.
+- **4. The planted optimum:** CountSearchTest, at 38f4e60.
+- **5. The grain.** F1 at 1-8 keyed at double the grain (2D, g = 1/10) loses 0.0031%, at half it
+  (D/2) 0.0007%, at D/5 0.0017% and at D/10 0.0011%. Doubling the grain costs more than the
+  floor at 1°, 0.0012%, so **the check as worded here fails on that side**, while no finer grain
+  gains, so the calibration's one-sided rule holds. F1 flat moves by 0.0011%, 0.0007%, 0.0004%
+  and 0.0010%: both hold. A coarser grain costs F1 about what it cost Zen in the calibration
+  (0.0025% from 1/20 to 1/10), and a finer one gains nothing, so the grain does not cap the
+  optimum; but halving and doubling are not both within noise at g = 1/20, as this check asked.
+  Whether that changes g is a question for Justin (section 10).
+
 **Is the twin big enough?** F1 at 1-8 is searched again on each half of the twin: the shoes
 whose index halved is even, and the rest, the learning curve's split. Each half is searched
 from the eight best starts of the full search at the same budget a run, with the M_play
@@ -948,6 +992,21 @@ its index before its first tree, so no store of this code stands without one
    corrects.
 4. **The searches and slices.** *Produces:* the evaluation logs and the candidate counts,
    with the convergence evidence of section 4.
+
+   *Run* on 7 October, every search by CountSearch from classes b99ccbf on the twin, one at a
+   time on 6 threads (runs/custom-count/search/cs.sh, queue.sh and the lane*.jobs files; each
+   search's start and end in queue.log, its evaluations in NAME.log and its output in NAME.out):
+   F1 at 1-8 from its sixteen starts and two follow-ups at double the population and the cap,
+   F1 flat from its five, F1r from its three, F2 from the best three of its ten starts, and F1
+   on each half of the twin from eight. SearchReport report from classes 38f4e60 read every log
+   and wrote the convergence evidence, the candidates file and the full-play candidates
+   (runs/custom-count/search/report.sh):
+
+   ```sh
+   S=$R/runs/custom-count/search
+   $S/queue.sh $S/lane7.jobs 6   # F2 and the half-twin searches, the last jobs to run
+   $S/report.sh 38f4e60          # writes runs/custom-count/search-38f4e60.md, .candidates.json, .fullplay.json
+   ```
 5. **The full-play choice,** on the twin. *Produces:* the full-play F1.
 6. **Registration.** *Produces:* custom-counts.json, committed, with the counts, each cell's
    reported count and each headline row's comparators.
