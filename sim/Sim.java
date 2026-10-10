@@ -15,9 +15,10 @@ import java.util.Arrays;
  * file's header names and holds each state it values to the file's next record, card for card
  * and in q to the bit; for the main file, also the round starts to A8.
  * <li>{@code p3 --bundle DIR --out DIR --sim-commit SHA [--chunks N] [--chunk-size S] [--threads T]
- * [--plant a,b]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and the
- * chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
- * {@code OUT/summary-p3.json}.
+ * [--plant a,b] [--moving]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and
+ * the chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
+ * {@code OUT/summary-p3.json} and {@code OUT/p3-depth.tsv}. With {@code --moving}, the variant
+ * whose count moves through split hands, under {@code p3-moving}.
  * <li>{@code p2 --bundle DIR --out DIR --sim-commit SHA [--k K] [--threads T] [--plant a,b]}: checks
  * D1 and D4 on the bundle's states.bin, then check P2 at K re-deals a state (seed 20261009), in
  * chunks of 1,000 states under {@code OUT/p2/}, then {@code OUT/summary-p2.json}. It stops before
@@ -96,10 +97,22 @@ public final class Sim {
         int threads = Integer.parseInt(option(args, "--threads", "1"));
         java.util.List<Row> rows = bundle.rows(true);
         long t0 = System.nanoTime();
-        double[] sums = P3.chunked(bundle, rows, out.resolve("p3"), commit, P3.SEED, chunks, size, threads, plants, -1);
+        boolean moving = Arrays.asList(args).contains("--moving");
+        String name = moving ? "p3-moving" : "p3";
+        double[] sums = P3.chunked(bundle, rows, out.resolve(name), commit, P3.SEED, chunks, size, threads, plants, -1, moving);
+        P3 shape = new P3(P3.SEED, rows, bundle.chart, plants);
+        java.util.List<String> depth = new java.util.ArrayList<>(java.util.List.of(
+                "# depth.tsv: the chart's flat result by band of 26 cards dealt, simulated (P3, every round start of the walk)",
+                "band\tfrom\tto\trounds\tmean"));
+        for (int b = 0; b < P3.BANDS; b++) {
+            double y = sums[shape.bandsAt() + 2 * b];
+            double n = sums[shape.bandsAt() + 2 * b + 1];
+            depth.add(b + "\t" + 26 * b + "\t" + Math.min(26 * b + 25, Shoe.CUTS[2] - 1) + "\t" + (long) n + "\t" + y / n);
+        }
+        java.nio.file.Files.write(out.resolve(name + "-depth.tsv"), depth);
         double seconds = (System.nanoTime() - t0) / 1e9;
         java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
-        facts.put("check", "P3");
+        facts.put("check", moving ? "P3, the count moving through split hands (reported, not tested)" : "P3");
         facts.put("simulatorCommit", commit);
         facts.put("bundleSha256", bundle.sha256);
         facts.put("seed", Long.toString(P3.SEED));
@@ -112,8 +125,8 @@ public final class Sim {
                 .getSystemLoadAverage()));
         facts.put("java", System.getProperty("java.version"));
         facts.put("plants", plants.describe());
-        Summary.write(out.resolve("summary-p3.json"), facts, Summary.p3(rows, sums, bundle.exact, plants));
-        System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-p3.json"));
+        Summary.write(out.resolve("summary-" + name + ".json"), facts, Summary.p3(rows, sums, bundle.exact, plants));
+        System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-" + name + ".json"));
     }
 
     /** Checks D1 and D4, then P2; false if an exact check failed (P2 is then not run). */
@@ -126,22 +139,40 @@ public final class Sim {
         int threads = Integer.parseInt(option(args, "--threads", "1"));
         States states = bundle.states();
         States.D1 d1 = states.d1(new Round(Rules.montreal(plants)), bundle.chart);
-        P2 p2 = new P2(P2.SEED, k, states, bundle.rows(true), bundle.chart, plants);
+        // SIM_CHECK.md section 2: P2 tests the figures at 80% only, where every valued state is in play.
+        java.util.List<Row> at80 = new java.util.ArrayList<>();
+        for (Row r : bundle.rows(true)) {
+            if (r.pen == 80) {
+                at80.add(r);
+            }
+        }
+        P2 p2 = new P2(P2.SEED, k, states, at80, bundle.chart, plants);
         java.util.List<String> d4first = new java.util.ArrayList<>();
         long[] d4 = p2.d4(d4first);
         java.util.List<String> checks = new java.util.ArrayList<>();
         checks.add("D1\t" + d1.matched + " of " + states.n + " records card for card and in q to the bit; "
                 + d1.valued + " valued by the walk; " + d1.mismatches + " mismatches");
         checks.addAll(d1.first);
+        boolean roundsOk = true;
+        if (states.isMainFile()) {
+            for (int p = 0; p < 3; p++) {
+                roundsOk &= d1.rounds[p] == A8_ROUNDS[p];
+                checks.add("D1\t" + Shoe.PENS[p] + "%: " + d1.rounds[p] + " round starts, A8 says " + A8_ROUNDS[p]);
+            }
+        }
         checks.add("D4\t" + (d4[0] - d4[1]) + " of " + d4[0] + " bet keys and bets equal to states.bin's; " + d4[1] + " mismatches");
         checks.addAll(d4first);
+        checks.add("plants\t" + plants.describe());
         java.nio.file.Files.createDirectories(out);
         java.nio.file.Files.write(out.resolve("checks.txt"), checks);
         checks.forEach(System.out::println);
-        if (!d1.cardForCard() || d4[1] != 0) {
+        boolean exact = d1.cardForCard() && roundsOk && d4[1] == 0;
+        if (!exact && !plants.any()) {
             System.out.println("an exact check failed: P2 is not run");
             return false;
         }
+        // A planted run goes on to P2 whatever the exact checks found: SIM_CHECK.md section 10
+        // reports whether the z tests alone would have caught the bug.
         long t0 = System.nanoTime();
         double[] sums = p2.chunked(out.resolve("p2"), commit, bundle.sha256, 1000, threads, -1);
         java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
@@ -157,7 +188,7 @@ public final class Sim {
         facts.put("plants", plants.describe());
         Summary.write(out.resolve("summary-p2.json"), facts, p2.comparisons(sums));
         System.out.println("P2: " + p2.rows().size() + " rows; summary in " + out.resolve("summary-p2.json"));
-        return true;
+        return exact;
     }
 
     /** Check D1 against a states.bin: true when every state matches and, for the main file, the rounds are A8's. */

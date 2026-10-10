@@ -38,3 +38,45 @@ so the engine's side can answer it and either confirm the choice or say what to 
 5. **The deal's play key for insurance on a player's natural.** B2.4 says the player's natural is
    an ace-up deal like any other for insurance. *Chosen:* as written: the natural's deal (1, 10,
    ace) is looked up in `insure` lines like any other deal.
+
+6. **How the chart's row reaches the bundle.** SIM_CHECK.md's count list names the chart row
+   "Chart, no count, flat" and calls it one instance at every penetration, fitted on nothing,
+   whose flat figure has no insurance; B2 and B5 describe strategy files and exact.tsv lines by
+   fold. *Chosen:* the simulator plays the chart's own walk as that row at 70, 75 and 80%
+   (`Row.chart`), and takes the engine's figure from exact.tsv lines with that row name and
+   folds 0 and 1, pooled as B5 pools any row; P2 takes it from a states.bin section of that name
+   at 80%. A strategy file with that row name is not played beside the walk. If the exporter
+   writes the chart another way, the summary's exact side for the chart is empty until this is
+   settled.
+
+7. **D5's lookups.tsv.** SIM_CHECK.md section 5 adds `lookups.tsv` to the bundle, but neither it
+   nor SHOE_SPEC.md gives its format. *Chosen:* not written. Strategy.Play exposes what D5
+   compares (`keyOfDeal`, `insuredAt`, `firstMoveAt`, and `choose` for later decisions), so the
+   reader is short once the format is fixed.
+
+8. **The coin.** SIM_CHECK.md section 4 asks for a coin a round in P3 and a coin a re-deal in P2,
+   from a stream of its own. *Chosen:* one `nextDouble` a round start (P3) or a re-deal (P2) from
+   `Xoshiro.of(seed, index, 1, 0)`, drawn whether or not any plan needs it, and shared by every
+   plan and instance on that round; a round is played when the coin is under PLAY.
+
+9. **The figures the simulator reports.** The registry of the 52 figures is SimCheckPlan's,
+   engine side, which this session did not read. *Chosen:* the simulator reports every row and
+   figure it can, `flat` and `ev:LABEL` for each plan of each row's files, under exact.tsv's
+   figure names, and the engine-side reader picks the registered ones (SIM_CHECK.md section 12).
+   P2 runs the rows at 80% only, as section 2 says.
+
+10. **The pooling weights when a fold file is missing.** P3 pools the two folds with weights from
+    exact.tsv's `flat` lines. *Chosen:* a row is played only when both its fold files are in the
+    bundle; a figure without exact.tsv lines is reported with an empty exact side.
+
+11. **Which groups are allowed.** B2.1 says `group g lo hi` lines come by g and B2.3 looks up the
+    first group whose `hi` is at least the key. *Chosen:* the reader requires each group's `hi` to
+    be above the last one's and `lo` to be at most its own `hi`, and nothing more; `lo` is for
+    reading only. It refuses `first` lines in a betting-scope file, since B2.1 lists them for
+    scopes first and full only.
+
+12. **What sizes a planted run uses.** SIM_CHECK.md section 10: P3 on the first chunk and P2 at
+    K = 6,000, and a planted run is reported even when an exact check fails first. *Chosen:*
+    `sim.Sim p2 --plant NAME` goes on to P2 after failed D checks whenever a plant is on (and
+    stops there otherwise); the sizes are the command's `--chunks` and `--k`, given by whoever runs
+    it.

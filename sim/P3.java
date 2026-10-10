@@ -26,6 +26,10 @@ public final class P3 {
     private final Rules rules;
     private final Plants plants;
     private final int size;
+    private boolean moving;
+
+    /** Bands of 26 cards dealt for depth.tsv (PLAN_COMPUTE.md 1.8): 0 to 25, 26 to 51, ..., 312 to 331. */
+    public static final int BANDS = 13;
 
     public P3(long seed, List<Row> rows, Chart chart, Plants plants) {
         this.seed = seed;
@@ -40,7 +44,21 @@ public final class P3 {
             }
             n += r.size();
         }
-        this.size = n;
+        this.size = n + 2 * BANDS;
+    }
+
+    /**
+     * The variant whose count keeps moving through split hands (PLAN_COMPUTE.md 1.5, SIM_CHECK.md
+     * section 9): reported beside the frozen count, never tested.
+     */
+    public P3 moving(boolean on) {
+        this.moving = on;
+        return this;
+    }
+
+    /** Where depth.tsv's sums start: per band, the chart's ΣY and its rounds, over every round start of the walk. */
+    public int bandsAt() {
+        return size - 2 * BANDS;
     }
 
     public int size() {
@@ -56,8 +74,14 @@ public final class P3 {
      */
     public static double[] chunked(Bundle bundle, List<Row> rows, Path dir, String simCommit, long seed, int chunks,
                                    int chunkSize, int threads, Plants plants, int stopAfter) throws Exception {
-        P3 p3 = new P3(seed, rows, bundle.chart, plants);
-        List<String> header = new java.util.ArrayList<>(List.of("check\tP3", "sim\t" + simCommit,
+        return chunked(bundle, rows, dir, simCommit, seed, chunks, chunkSize, threads, plants, stopAfter, false);
+    }
+
+    /** The same, with the moving count in split hands when moving is true. */
+    public static double[] chunked(Bundle bundle, List<Row> rows, Path dir, String simCommit, long seed, int chunks,
+                                   int chunkSize, int threads, Plants plants, int stopAfter, boolean moving) throws Exception {
+        P3 p3 = new P3(seed, rows, bundle.chart, plants).moving(moving);
+        List<String> header = new java.util.ArrayList<>(List.of("check\tP3", "moving\t" + moving, "sim\t" + simCommit,
                 "bundle\t" + bundle.sha256, "seed\t" + seed, "size\t" + chunkSize, "k\t-", "plants\t" + plants.describe(),
                 "generator\txoshiro256** seeded by SplitMix64, Xoshiro.of(seed, shoe, stream, 0)"));
         for (Row r : rows) {
@@ -80,7 +104,7 @@ public final class P3 {
             Row row = rows.get(r);
             plays[r] = new Strategy.Play[row.instances()];
             for (int f = 0; row.folds != null && f < 2; f++) {
-                plays[r][f] = row.folds[f].new Play(chart, false);
+                plays[r][f] = row.folds[f].new Play(chart, moving);
             }
             y[r] = new double[row.instances()][row.figures.size()];
             unseen[r] = new long[row.instances()][row.figures.size()];
@@ -104,6 +128,8 @@ public final class P3 {
             while (depth < Shoe.CUTS[2]) {
                 table.begin(deck, depth);
                 double coin = coins.nextDouble();
+                sums[bandsAt() + 2 * (depth / 26)] += table.chartRound();
+                sums[bandsAt() + 2 * (depth / 26) + 1] += 1;
                 for (int r = 0; r < rows.size(); r++) {
                     Row row = rows.get(r);
                     if (depth >= row.cut) {

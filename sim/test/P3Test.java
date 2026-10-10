@@ -172,6 +172,35 @@ class P3Test {
     }
 
     @Test
+    void depthBandsAddUpToTheChartsWalk() throws Exception {
+        Bundle b = new Bundle(BundleFixture.write(tmp.resolve("b")), Plants.NONE);
+        List<Row> rows = b.rows(true);
+        P3 p3 = new P3(9, rows, b.chart, Plants.NONE);
+        double[] sums = p3.run(0, 300);
+        double y = 0;
+        double n = 0;
+        for (int band = 0; band < P3.BANDS; band++) {
+            y += sums[p3.bandsAt() + 2 * band];
+            n += sums[p3.bandsAt() + 2 * band + 1];
+        }
+        Row chart80 = rows.get(2);
+        assertEquals(sums[chart80.offset + 1], n);
+        assertEquals(sums[chart80.at(0, 0)], y, 1e-9);
+    }
+
+    @Test
+    void theMovingCountChangesFullPlayOnly() throws Exception {
+        Bundle b = new Bundle(BundleFixture.write(tmp.resolve("b")), Plants.NONE);
+        Row full = Row.of(BundleFixture.hiLo("full", 0).read(), BundleFixture.hiLo("full", 1).read(), 0);
+        double[] frozen = new P3(9, List.of(full), b.chart, Plants.NONE).run(0, 400);
+        double[] moving = new P3(9, List.of(full), b.chart, Plants.NONE).moving(true).run(0, 400);
+        assertNotEquals(java.util.Arrays.toString(frozen), java.util.Arrays.toString(moving));
+        List<Row> first = b.rows(false);
+        assertArrayEquals(new P3(9, first, b.chart, Plants.NONE).run(0, 100),
+                new P3(9, first, b.chart, Plants.NONE).moving(true).run(0, 100));
+    }
+
+    @Test
     void theStandInChartsHouseEdgeIsNearThePublishedOne() throws Exception {
         // PLAN_COMPUTE.md 1.1: the report's chart flat EV at 80% is -0.660%. 20,000 fresh shoes
         // (about 1.2 million rounds) put the stand-in chart's within a few SEs of it.
