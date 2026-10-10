@@ -8,18 +8,27 @@ builds the page. Nothing in it is a page figure yet: the page takes its numbers
 only from committed code (`src/LiteratureCheck.java`, planned in section 1),
 never from this file.
 
-Written 9 October 2026, from the literature design of 8 October 2026 and a
-second round of checks. Not committed by its writer; a later stage commits it.
+Written by an AI agent (Claude Code) on 9 October 2026, from the literature
+design of 8 October 2026 and a second round of checks. Not committed by its
+writer; a later stage commits it.
 
 ## How to read this file
 
+**Who read the sources.** Every reading and check in this file was done by an AI
+agent (Claude Code, in the 8 and 9 October literature passes), not by Justin.
+Nothing records Justin reading any of these sources, so each counts as unread by
+him until he says otherwise (a question for him). The page is in
+Justin's first person, so nothing here may be carried onto it as "I read" or "I
+checked"; section 1 says how the page words it.
+
 **Status of each published source.**
 
-- **CHECKED 9 Oct** — I fetched the source again on 9 October 2026 (live, or
-  through an Internet Archive snapshot) and the figure quoted here matched.
-- **READ 8 Oct** — the 8 October pass fetched and read the source text. I
-  re-read the saved copy of that text on 9 October where the line says
-  "copy re-read"; otherwise it was not re-checked.
+- **CHECKED 9 Oct** — an AI agent fetched the source again on 9 October 2026
+  (live, or through an existing Internet Archive snapshot) and the figure quoted
+  here matched.
+- **READ 8 Oct** — an AI agent fetched and read the source text on 8 October.
+  Where the line says "copy re-read", an AI agent re-read the saved copy on
+  9 October; otherwise it was not re-checked.
 - **SECONDARY** — known only from a named report of it.
 - **NOT READ** — citation details only. Nothing it says is used as a figure.
 
@@ -90,15 +99,29 @@ Three pieces, all in this repository except the page itself.
 **`literature/claims.json`** (new). One record per published figure:
 
 - the citation: author, title, year, venue, ISBN or DOI, URL, and an Internet
-  Archive snapshot;
+  Archive snapshot if one already exists (see "Snapshots" below);
 - the locator: page, table, row;
 - the status: CHECKED, READ, SECONDARY or NOT READ, with the date;
+- `checked_by`: who did that reading, for example "AI agent (Claude Code),
+  2026-10-09";
+- `read_by_justin`: false unless Justin says he has read the source, with the
+  date he says;
 - the conditions: decks, S17 or H17, DAS, surrender, penetration, spread, count,
   index set, betting rule, and the **unit**;
 - the value, exactly as printed.
 
 These are cited inputs typed in by hand, and the page labels them "published",
 never "ours". Each record also says which of our rows it is compared with.
+
+**Snapshots.** A record cites an Internet Archive snapshot only if one already
+exists; looking one up is a read, like fetching the page. Asking the Archive to
+make a new one (Save Page Now) sends a request to a third party, so it is on the
+push list (PLAN_PAGE.md section 5) and waits for Justin's yes like everything
+else there. Until then a source with no snapshot carries "no snapshot yet" and
+the SHA-256 and date of the cached copy. Several Wizard of Odds pages were
+updated on 3 August 2026 and may have no snapshot of the version read here;
+`LiteratureCheck` lists every URL that needs a new snapshot, and that list goes
+into `SiteManifest --push-list`.
 
 **`src/LiteratureCheck.java`** (new). A committed tool that writes
 `runs/literature-<sha>.md` and the page's `literature.json`. It does six things:
@@ -114,9 +137,19 @@ never "ours". Each record also says which of our rows it is compared with.
 - **(c)** Reads the Wizard of Odds calculator figure from the page's own
   JavaScript (`edgeTable` plus the 8-deck adjustments), from a cached copy.
 - **(d)** Sets our BC, IC and PE beside the published values in `claims.json`,
-  and prints BC divided by R, the linear ceiling that CountRegression computes.
-  R must be computed on the main file for the page; the committed R (0.98857)
-  is on the twin file.
+  and prints BC divided by R, the linear ceiling (the highest betting correlation
+  any linear count can reach on the same states). R for the main file comes from
+  step 7: CeilingReport runs CountRegression's betting regression on the states
+  it scores, inside the registered look, prints R in
+  `runs/report-ceiling-97bf834.md` ("The betting correlation and its ceiling")
+  and saves it in `runs/report-ceiling-97bf834.ser`. LiteratureCheck reads R
+  from that save with `CeilingReport.readSaved` and never runs the regression on
+  the main file itself: `CountRegression.main` refuses the main file
+  (`CustomCounts.requireTwin`), MainFileLookTest keeps it that way, and no guard
+  is loosened for the page. LiteratureCheck checks that the state count printed
+  beside R is the 60,743 states behind report-final's BC. The twin's R (0.98857,
+  `calibration-b99ccbf.md`) is never used for BC/R; if step 7's save has no R,
+  the page shows BC without BC/R.
 - **(e)** Compares our effects of removal with the Wizard of Odds 6-deck ones
   after scaling by the deck-size factor, and prints the angle between the two
   ten-number vectors.
@@ -130,7 +163,11 @@ must flag.
 
 **The page section "What others found".** One table (claim, conditions, theirs,
 ours, verdict), short prose by topic, and the source list with each status shown.
-Three figures:
+The status is worded from `checked_by` and `read_by_justin`, never as Justin's
+own reading: "checked against the source by an AI agent on 9 Oct 2026", "read
+by an AI agent on 8 Oct 2026", "known only through [named source]", "not read".
+The section's opening says once that the literature was read and checked by AI
+agents, and names any source Justin says he has read himself. Three figures:
 
 - house-edge points with intervals: Wizard of Odds with a continuous shuffler,
   Wizard of Odds with a cut card, Wattenberger, our exact top-of-shoe value, and
@@ -342,8 +379,8 @@ ignores overall size and asks only whether the ranks line up the same way.
 **Not used.** Vidámi et al. (2J) quote a list attributed to Thorp's *Beat the
 Dealer*: −2.42, 1.75, +2.14, +2.64, +3.58, +2.40, +2.05, +0.43, −0.41, +1.62 (ace
 to ten). Its ten entry is positive, where removing tens hurts the player in
-every other source, so it is a different quantity or a misprint. I could not
-check it against the book, so the page should not use it.
+every other source, so it is a different quantity or a misprint. Nobody on this
+project has checked it against the book, so the page should not use it.
 
 ### 2D. BC, PE and IC — IC agrees closely; BC and PE come out lower, for known reasons
 
@@ -407,8 +444,8 @@ advantage perfectly: the best possible correlation, R, is 0.98857 on the twin
 file. Dividing by R puts ours on the published scale. As a rough illustration
 (arithmetic here, R from the twin file): Hi-Lo .957/.989 = .968 against .97,
 Zen .970 against .96, Wong Halves .993 against .99, Hi-Opt II .930 against .91,
-KO .970 against .98. The page shows BC/R beside the published BC, with R
-computed on the main file.
+KO .970 against .98. The page shows BC/R beside the published BC, with the
+main file's R as step 7 saved it (section 1, (d)).
 
 **PE: ours is lower, and ranks about the same** (Hi-Lo .460 against .51,
 Hi-Opt II .616 against .67). Reasons:
@@ -513,9 +550,11 @@ must state:
 
 - H17 changes the index for doubling 11 against an ace;
 - there is no surrender here, so the Fab 4 (surrender indexes) do not apply;
-- we round the true count to the nearest whole number where those tables floor
-  it (*Blackjack in Color* 2.4, <http://www.blackjackincolor.com/truecount4.htm>,
-  READ 8 Oct, explains the methods);
+- we round the true count to the nearest whole number (ties toward zero) where
+  those tables floor or truncate it, so a published index of +1 and our key of
+  +1 do not cover the same true counts (*Blackjack in Color* 2.4,
+  <http://www.blackjackincolor.com/truecount4.htm>, READ 8 Oct, copy re-read
+  9 Oct, explains the methods; 2H shows what this does to a comparison);
 - the generator also shows the full-play gain at 70, 75 and 80%, once those runs
   exist.
 
@@ -543,7 +582,7 @@ must state:
 **Verdict: agree.** The ace matters for betting, not for play, and a side count
 is how a level-two count gets it back.
 
-### 2H. Penetration, rules and the value of each true count — agree
+### 2H. Penetration, rules and the value of each true count — agree, except where the round turns positive, which these figures cannot compare
 
 **Theory.**
 
@@ -585,13 +624,32 @@ is generally not worth playing at 1-12 unless the penetration is excellent.
 Ours agrees: at 70%, Hi-Lo loses money even at 1-8.
 
 **Value of each true count.** *Blackjack in Color* 2.2 "How valuable is each true
-count?", <http://www.blackjackincolor.com/truecount2.htm>, READ 8 Oct: the rule
-of thumb of about 0.5% per true count is rough, and the curve bends upward.
+count?", <http://www.blackjackincolor.com/truecount2.htm>, READ 8 Oct (saved copy
+re-read 9 Oct): the rule of thumb of about 0.5% per true count is rough, and the
+curve bends upward. Their six-deck game is S17, DAS, late surrender, 4.81 of 6
+decks dealt, Hi-Lo with over 100 indexes; its true counts are **truncated** (for
+positive counts the same as flooring, *Blackjack in Color* 2.4) with decks left
+estimated to the half deck. So their "+1" holds true counts from 1 up to 2, and
+the advantage there is positive.
 **Ours**, Hi-Lo at 80% with its fitted play and insurance
 (`report-final-26f0724.md`, "Per key"): steps of +0.52 to +0.64 per true count
-from 0 to +5; the round turns positive at +2 (+0.433), where their 6-deck S17
-game with surrender turns positive at +1. Agrees, and the later turn is what the
-worse rules predict.
+from 0 to +5, bending upward. Our key is the true count **rounded to the
+nearest** whole number, ties toward zero, with decks left exact
+(COUNTING_COMPARISON.md section 5). So our "+1" holds true counts above 0.5 up to
+1.5 (−0.100) and our "+2" those above 1.5 up to 2.5 (+0.433).
+
+**Verdict: agrees on the shape; the turning point cannot be compared from these
+numbers.** Our +2 and their +1 overlap (1.5 to 2), so the one-step difference in
+where the round turns positive could come from the binning alone, not from the
+worse rules. Interpolating between our key means puts our crossing near a true
+count of 1.2 (arithmetic here, not a page figure; it treats each key's mean as
+sitting at the whole number). Theirs lies somewhere between about 0 and 1.5 (a
+negative bin from −1 to 1, a positive one from 1 to 2); their page pins it no
+closer. So the page sets the two bins side by side with each side's convention
+(rounding, deck estimation) printed next to the numbers, and says that a
+later turn from the worse rules is expected but not shown by this comparison.
+LiteratureCheck prints our crossing from report-final's per-key means, labelled
+as an interpolation; there is no published crossing to set beside it.
 
 ### 2I. Spreads, wonging and risk — waiting for the other components
 
@@ -682,8 +740,9 @@ generation, which guards against fitting one fixed set of hands, but their final
 judgment used the calculator's correlations, not the win rate the search
 optimised. Ours is searched on one file and scored once on another.
 
-**Not found.** I found no published figure for perfect play on every hand at 8
-decks, the quantity of our planned "ceiling" rows.
+**Not found.** The 8 and 9 October passes (AI agents) found no published figure
+for perfect play on every hand at 8 decks, the quantity of our planned "ceiling"
+rows.
 
 ## 3. Could not verify (the page says so)
 
@@ -742,26 +801,33 @@ page numbers. Until then the page says "not checked" wherever they would apply.
   reader does not count five agreeing sources as five independent checks.
 - **Twin file against main file.** R (0.98857), F1, F2 and the twin-file rows of
   2D and 2J come from `runs/twin-80.states`. The page's figures come from the
-  main file once steps 7 and 8 have run; the generator must not mix the two.
+  main file once steps 7 and 8 have run (R from step 7's save, read rather than
+  recomputed); the generator must not mix the two.
 - **Over-claiming.** The split explanation in 2B and every scratch number are
   leads until committed code reproduces them. Arithmetic done in this file
   (scaled effects of removal, BC/R, shares of a gain) is for orientation; the
   page recomputes all of it.
 - **Drift.** Pages change; the Wizard of Odds pages show update dates in 2026.
   `claims.json` keeps the SHA-256 of each fetched page, the fetch date and an
-  archive link, and LiteratureCheck reports any figure whose cached page no
-  longer matches its hash.
+  archive link where a snapshot already exists, and LiteratureCheck reports any
+  figure whose cached page no longer matches its hash. New snapshots wait for
+  Justin's yes on the push list (section 1, "Snapshots").
 - **Copyright.** Short paraphrase and single figures only: no copied tables, and
   no cached third-party pages in the public repository.
-- **Trust.** `literature.json` carries each claim's status in machine-readable
-  form, so a reader or a language model can tell a checked figure from a cited
-  one, and ours from theirs.
+- **Trust.** `literature.json` carries each claim's status, `checked_by` and
+  `read_by_justin` in machine-readable form, so a reader or a language model can
+  tell a checked figure from a cited one, ours from theirs, and an AI agent's
+  check from Justin's own reading. Without `checked_by`, a status on a page
+  written as "I" reads as Justin's check and overstates how independent the
+  literature check is.
 
 ## 5. Source register
 
-One line per source, for `claims.json` to start from. "Copy" means a saved copy
-from 8 October exists in the session scratchpad (`scratchpad/site-plan/literature/`),
-which is wiped when the session ends; LiteratureCheck's cache replaces it.
+One line per source, for `claims.json` to start from. Every status below was set
+by an AI agent; `checked_by` records that and `read_by_justin` starts false for
+every row. "Copy" means a saved copy from 8 October exists in the session
+scratchpad (`scratchpad/site-plan/literature/`), which is wiped when the session
+ends; LiteratureCheck's cache replaces it.
 
 | Source | Link | Status | Used in |
 |---|---|---|---|
@@ -778,7 +844,7 @@ which is wiped when the session ends; LiteratureCheck's cache replaces it.
 | QFIT, card counting systems table | <https://web.archive.org/web/20201208222104/https://www.qfit.com/card-counting.htm> | CHECKED 9 Oct (archive) | 2D |
 | QFIT, KO versus HiLo | qfit.com, saved as `KO-HiLo-BlackjackComparison.htm`; URL to record | READ 8 Oct, copy re-read 9 Oct | 2E |
 | QFIT, side counts | <https://www.qfit.com/blackjack-side-counts.htm> | READ 8 Oct | 2G |
-| Wattenberger, *Blackjack in Color* (2007), sections 2.2, 2.4, 4.1, 4.2, 4.4, 4.5, 4.6 | <http://www.blackjackincolor.com/> (pages named in each section) | READ 8 Oct | 2E–2H |
+| Wattenberger, *Blackjack in Color* (2007), sections 2.2, 2.4, 4.1, 4.2, 4.4, 4.5, 4.6 | <http://www.blackjackincolor.com/> (pages named in each section) | READ 8 Oct; 2.2 and 2.4 copies re-read 9 Oct | 2E–2H |
 | BlackjackInfo, counting efficiency calculator | <https://www.blackjackinfo.com/card-counting-efficiency-calculator/> | used by the earlier stage; not re-checked | 2D, 2J |
 | Encyclopedia of Blackjack, system comparisons | <https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/> | used by the earlier stage; not re-checked | 2D |
 | Encyclopedia of Blackjack, "I is for the Illustrious 18" | <https://www.blackjackreview.com/wp/encyclopedia/i/> | READ 8 Oct | 2F |
@@ -791,6 +857,8 @@ which is wiped when the session ends; LiteratureCheck's cache replaces it.
 | BlackjackPilot benchmark (18 June 2026) | URL to record | READ 8 Oct, little weight | 2E |
 
 ## 6. Checks done on 9 October, and how
+
+All of these were done by an AI agent (Claude Code), not by Justin.
 
 - **Wizard of Odds appendix 9** (live, WebFetch): title, rules, the split-value
   note, 10,10 against an ace (stand +0.600677, split −0.449008), 8,8 against a
@@ -817,7 +885,8 @@ which is wiped when the session ends; LiteratureCheck's cache replaces it.
   table and its rules, the variance tables, the High-Low page; Snackjack's
   sections on effects of removal and the fundamental theorem; the Vidámi preprint
   (method, Table 2); *Modern Blackjack* pp.102, 110, 111, 113; QFIT "KO versus
-  HiLo"; Snyder's excerpt.
+  HiLo"; Snyder's excerpt; *Blackjack in Color* 2.2 (its simulation details:
+  truncated true counts, half-deck estimation) and 2.4 (rounding methods).
 - **Ours re-read**: every figure marked ours was read again from the committed
   output named beside it.
 
