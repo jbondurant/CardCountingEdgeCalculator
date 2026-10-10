@@ -36,10 +36,17 @@ import java.util.List;
  * split valued, which only the pilot can afford. The heap's peak is shown for both, and the
  * full run is projected from these figures.
  *
+ * --wide (PLAN_COMPUTE.md 3.4) measures the same ratios for the wider plans, whose EV leans harder
+ * on the high counts where the later plays are fitted on the fewest states: P16, S16 and B0,8 on
+ * the same schedule and X-1.0,8 by the own rule, beside the 1-8 same schedule and flat, from the
+ * same resamples and the same refits. The shoes are dealt again from the file's seed for the
+ * exit plan's lowest key so far (AllStates.minKey). Its P8 is checked against the 1-8 figure on
+ * every resample and every way of scoring, to the bit, before anything is printed.
+ *
  * The state file is only read. Run it after ./run-tests.sh has compiled the sources, with the
  * mongo jar on the class path for the catalog:
  * java -Xmx8g -cp build/classes:lib/mongo-java-driver-3.12.14.jar FullIndexPilot [state file]
- * [shoes] [resamples] [threads]
+ * [shoes] [resamples] [threads] [--wide]
  */
 public final class FullIndexPilot {
 
@@ -51,6 +58,26 @@ public final class FullIndexPilot {
     static final int SAME_8 = SystemScorer.same(SystemScorer.SPREADS);
     static final int[] METRICS = {SAME_8, SystemScorer.FLAT};
     static final String[] METRIC_NAMES = {"1-8 same schedule", "flat"};
+    /**
+     * With --wide, the plans the scorer is given, P8 first as the check, and those measured, each
+     * by the rule it is measured on (PLAN_COMPUTE.md 3.4): X-1.0,8 has only its own rule.
+     */
+    static final String[] WIDE_PLANS = {"P8", "P16", "S16", "B0,8", "X-1.0,8"};
+    static final String[][] WIDE_MEASURED = {{"P16", "same"}, {"S16", "same"}, {"B0,8", "same"}, {"X-1.0,8", "own"}};
+
+    /** The wide plans the pilot gives its scorer: WIDE_PLANS, taken from SystemScorer.WIDE_PLANS. */
+    static SystemScorer.Plan[] widePlans() {
+        SystemScorer.Plan[] out = new SystemScorer.Plan[WIDE_PLANS.length];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = SystemScorer.WIDE_PLANS[SystemScorer.planIndex(SystemScorer.WIDE_PLANS, WIDE_PLANS[i])];
+        }
+        return out;
+    }
+
+    /** A metric's name as the tables print it and readRatios reads it: "P16 same schedule", "X-1.0,8 own rule". */
+    static String wideName(String plan, String rule) {
+        return plan + (rule.equals("same") ? " same schedule" : " own rule");
+    }
 
     /** The three ways each count is scored on every resample. */
     static final int FIRST = 0;
@@ -72,6 +99,14 @@ public final class FullIndexPilot {
     final SystemScorer.Pen pen;
     final List<CountKeys.Count> counts;
     final int threads;
+    /**
+     * The figures measured, as places in what SystemScorer.scoreWith gives, and their names:
+     * METRICS, then with the scorer's wide plans on, the plans of WIDE_MEASURED.
+     */
+    final int[] metrics;
+    final String[] metricNames;
+    /** With wide on, where P8's same schedule and the 1-8 same schedule sit in scoreWith's figures, checked equal. */
+    private final int p8;
     private final SystemScorer.Parts[] parts;
     private final SystemScorer.InsuranceParts[] ins;
     /** Each count's fits on its whole training folds: the later plays the full run holds on every resample. */
@@ -114,6 +149,21 @@ public final class FullIndexPilot {
         this.pen = scorer.pen(PEN);
         this.counts = counts;
         this.threads = threads;
+        if (scorer.wide == null) {
+            metrics = METRICS;
+            metricNames = METRIC_NAMES;
+            p8 = -1;
+        } else {
+            metrics = Arrays.copyOf(METRICS, METRICS.length + WIDE_MEASURED.length);
+            metricNames = Arrays.copyOf(METRIC_NAMES, metrics.length);
+            for (int k = 0; k < WIDE_MEASURED.length; k++) {
+                int plan = SystemScorer.planIndex(scorer.wide, WIDE_MEASURED[k][0]);
+                int m = WIDE_MEASURED[k][1].equals("same") ? SystemScorer.W_SAME : SystemScorer.W_OWN;
+                metrics[METRICS.length + k] = SystemScorer.METRICS + SystemScorer.wideAt(plan, m);
+                metricNames[METRICS.length + k] = wideName(WIDE_MEASURED[k][0], WIDE_MEASURED[k][1]);
+            }
+            p8 = SystemScorer.METRICS + SystemScorer.wideAt(SystemScorer.planIndex(scorer.wide, "P8"), SystemScorer.W_SAME);
+        }
         int nc = counts.size();
         parts = new SystemScorer.Parts[nc];
         ins = new SystemScorer.InsuranceParts[nc];
@@ -145,17 +195,24 @@ public final class FullIndexPilot {
             point[FIRST][c] = pick(scorer.scoreWith(counts.get(c), PEN, null, pen.weight, null));
             point[HELD][c] = pick(scorer.scoreWith(counts.get(c), PEN, held[c], pen.weight, null));
         }
-        boot = new double[3][nc][METRICS.length][resamples];
+        boot = new double[3][nc][metrics.length][resamples];
         refitWall = new double[resamples];
         scoreWall = new double[resamples];
         refitRounds = new int[resamples];
         capped = new int[resamples];
     }
 
-    private static double[] pick(double[] all) {
-        double[] out = new double[METRICS.length];
+    /**
+     * The figures measured, from all scoreWith gives; with wide on, P8's same schedule is first
+     * required to be the 1-8 same schedule's, to the bit.
+     */
+    private double[] pick(double[] all) {
+        if (p8 >= 0 && Double.doubleToLongBits(all[p8]) != Double.doubleToLongBits(all[SAME_8])) {
+            throw new IllegalStateException("P8 gives " + all[p8] + ", the 1-8 same schedule " + all[SAME_8]);
+        }
+        double[] out = new double[metrics.length];
         for (int k = 0; k < out.length; k++) {
-            out[k] = all[METRICS[k]];
+            out[k] = all[metrics[k]];
         }
         return out;
     }
@@ -224,7 +281,7 @@ public final class FullIndexPilot {
                     witness.saw(v, r, counts.get(c), w, u);
                 }
                 double[] m = pick(scorer.scoreWith(counts.get(c), PEN, values[v], w, u));
-                for (int k = 0; k < METRICS.length; k++) {
+                for (int k = 0; k < metrics.length; k++) {
                     boot[v][c][k][r] = m[k];
                 }
             }
@@ -297,9 +354,9 @@ public final class FullIndexPilot {
 
     /** The SE table: differences from Hi-Lo, then the gain from full play, in each metric. */
     void printSes(PrintStream out) {
-        for (int k = 0; k < METRICS.length; k++) {
+        for (int k = 0; k < metrics.length; k++) {
             out.printf("%nDifference from Hi-Lo at 80%%, %s, over %d resamples (SEs in %% of a unit per round):%n%n",
-                    METRIC_NAMES[k], done);
+                    metricNames[k], done);
             out.println("| Count | Estimate, full play | SE, first decisions only | SE, later plays held | "
                     + "SE, later plays refitted | Refitted / held | its jackknife SE |");
             out.println("|---|---|---|---|---|---|---|");
@@ -307,7 +364,7 @@ public final class FullIndexPilot {
                 row(out, c, k, false);
             }
             out.printf("%nGain from full play at 80%%, %s: full play less first decisions only, paired:%n%n",
-                    METRIC_NAMES[k]);
+                    metricNames[k]);
             out.println("| Count | Estimate | SE, later plays held | SE, later plays refitted | Refitted / held | "
                     + "its jackknife SE |");
             out.println("|---|---|---|---|---|---|");
@@ -333,6 +390,62 @@ public final class FullIndexPilot {
             out.printf("| %s | %+.4f%% | %.4f%% | %.4f%% | %.4f%% | %.2f | %.2f |%n", name, 100 * h.estimate,
                     100 * first.se, 100 * h.se, 100 * f.se, q[0], q[1]);
         }
+    }
+
+    /**
+     * The ratios a pilot's output printed in its "## Results" section, as printSes prints them:
+     * [metric name][count name] = {difference ratio, its jackknife SE, gain ratio, its jackknife
+     * SE}, NaN where a table has no row (Hi-Lo has no difference from itself). This is how
+     * WideReport takes the widening from the pilot's own printed figures rather than from numbers
+     * typed in. The tables the pilot prints every 25 resamples, before its Results, are left out.
+     */
+    static java.util.Map<String, java.util.Map<String, double[]>> readRatios(List<String> lines) {
+        java.util.Map<String, java.util.Map<String, double[]>> out = new java.util.LinkedHashMap<>();
+        boolean results = false;
+        String metric = null;
+        boolean gain = false;
+        java.util.regex.Pattern diff = java.util.regex.Pattern.compile(
+                "^Difference from Hi-Lo at 80%, (.+), over \\d+ resamples .*:$");
+        java.util.regex.Pattern gains = java.util.regex.Pattern.compile(
+                "^Gain from full play at 80%, (.+): full play less first decisions only, paired:$");
+        for (String line : lines) {
+            if (line.startsWith("## ")) {
+                results = line.equals("## Results");
+                metric = null;
+                continue;
+            }
+            if (!results) {
+                continue;
+            }
+            java.util.regex.Matcher m = diff.matcher(line);
+            if (m.matches()) {
+                metric = m.group(1);
+                gain = false;
+                continue;
+            }
+            m = gains.matcher(line);
+            if (m.matches()) {
+                metric = m.group(1);
+                gain = true;
+                continue;
+            }
+            if (metric == null || !line.startsWith("| ") || line.startsWith("| Count") || line.startsWith("|---")) {
+                continue;
+            }
+            String[] cells = line.substring(1, line.lastIndexOf('|')).split("\\|");
+            for (int k = 0; k < cells.length; k++) {
+                cells[k] = cells[k].trim();
+            }
+            int at = gain ? 4 : 5;
+            if (cells.length != at + 2) {
+                throw new IllegalArgumentException("a ratio row of " + cells.length + " cells: " + line);
+            }
+            double[] r = out.computeIfAbsent(metric, x -> new java.util.LinkedHashMap<>()).computeIfAbsent(cells[0],
+                    x -> new double[]{Double.NaN, Double.NaN, Double.NaN, Double.NaN});
+            r[gain ? 2 : 0] = Double.parseDouble(cells[at]);
+            r[gain ? 3 : 1] = Double.parseDouble(cells[at + 1]);
+        }
+        return out;
     }
 
     /** A round's figures, as the full run will meet them. */
@@ -365,7 +478,10 @@ public final class FullIndexPilot {
 
     // ------------------------------------------------------------------ the run
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] all) throws Exception {
+        List<String> given = new ArrayList<>(Arrays.asList(all));
+        boolean wide = given.remove("--wide");
+        String[] args = given.toArray(new String[0]);
         Path data = Paths.get(args.length > 0 ? args[0] : "runs/montreal-80.states");
         int shoes = args.length > 1 ? Integer.parseInt(args[1]) : 1417;
         int resamples = args.length > 2 ? Integer.parseInt(args[2]) : 200;
@@ -375,6 +491,14 @@ public final class FullIndexPilot {
         ScoringStates st = load(data, shoes);
         RoundRules rules = st.rules;
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
+        double replayWall = 0;
+        if (wide) {
+            long d0 = System.nanoTime();
+            AllStates dealt = AllStates.replay(StateStore.header(data), shoes, rules, BasicStrategy.chart(), st);
+            scorer.wide = widePlans();
+            scorer.roundStarts = dealt.roundStarts(st);
+            replayWall = (System.nanoTime() - d0) / 1e9;
+        }
         List<CountKeys.Count> counts = new ArrayList<>();
         for (String s : SYSTEMS) {
             counts.add(named(s));
@@ -387,6 +511,12 @@ public final class FullIndexPilot {
                 System.getProperty("java.vm.version"));
         out.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
+        if (wide) {
+            out.printf("With the wide plans (--wide): %s, measured as %s; P8 required to equal the 1-8 same schedule "
+                            + "to the bit on every scoring. The %d shoes dealt again from the file's seed in %.1f s, every "
+                            + "valued state found, for X-1.0,8's lowest key so far.%n", String.join(", ", WIDE_PLANS),
+                    String.join(", ", wideNames()), shoes, replayWall);
+        }
         out.flush();
 
         FullIndexTimingReport.resetPeaks();
@@ -477,6 +607,14 @@ public final class FullIndexPilot {
         Projection.print(out, data, pilot, estimateHeld);
         out.printf("%nFinished %s, load average %.2f.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage());
+    }
+
+    static List<String> wideNames() {
+        List<String> out = new ArrayList<>();
+        for (String[] m : WIDE_MEASURED) {
+            out.add(wideName(m[0], m[1]));
+        }
+        return out;
     }
 
     static double mean(double[] x) {
