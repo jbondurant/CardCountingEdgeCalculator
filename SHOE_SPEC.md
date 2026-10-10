@@ -857,11 +857,35 @@ StrategyExport follows them unless this file is changed first:
 9. The bundle has `index.tsv`, with every file's size and each strategy file's row, penetration,
    fold and scope, so the simulator need not open a file to know what it holds.
 
+### B7. Where each line comes from, for the exporter's author
+
+The simulator's author can skip this; it names engine code. For fold `f` at penetration `p`,
+with `pen = scorer.pen(p)` and the play fitted on `pen.train[f]` under `pen.weight`, as the
+estimate fits it (SystemScorer.foldPlay; for full play the play in force when
+`FullIndexFit.Strategy` finishes, `now`, which at the pass cap is the best pass's play after its
+clean-ups):
+
+- `group`: the play's `Groups.lo` and `hi`; `lgroup`: `Strategy.later`'s.
+- `first`: `FullIndexFit.rankings(st, rules, fit)[g][deal]`, which is `fit.move[g][deal]`
+  followed by the other legal moves by `fit.sum`, or `chartRanking` where `fit.reach` is 0.
+- `insure`: the (g, ace-up deal) cells whose `insuranceSums(ip, play.insuranceGroup, groups,
+  pen.train[f], pen.weight)` entry is positive, as `insuranceValues` insures them.
+- `later`: `Policy.stands[l × CELLS + cell]`, `S` when true, the spot from
+  `FullIndexFit.spotOf(cell)`.
+- `bet`: from `bets(..., detail)` for the fold: the keys `k` with test weight (`detail[k][0] > 0`)
+  are `BetKeys.value[k]`; `same-s` is `detail[k][2 + s]`, `own-s` is
+  `detail[k][2 + SPREADS + s]`, and `played-s` is `Math.floor(own + 0.5)`, as `bets` sums them.
+- states.bin's `rvPlay` is `play.base[j]` (`pen.chart[j]` for a betting row) and `rvInsurance`
+  the `insuranceValues` entry, j the state's place in the penetration.
+
+The round trip of PLAN_COMPUTE.md 1.2 is what shows these choices right: the bundle read back
+and scored must give `Entry.estimate` and `Entry.shoeSums` within 1e-12 relative.
+
 ## How this file is held to the engine
 
 `test/ShoeSpecTest.java` (run it alone: `java -Xmx1g -jar lib/junit-platform-console-standalone-1.10.2.jar
 --class-path build/classes:build/test-classes:lib/mongo-java-driver-3.12.14.jar --select-class
-ShoeSpecTest`, from the repository's root, about 25 seconds):
+ShoeSpecTest`, from the repository's root, 17 tests in about 30 seconds):
 
 - A2's block against `ShoeRun`, `SystemScorer.CUTS`, `StateRun.CUT_80` and `StateRun.montreal()`;
   A1's block against `ShoeRun.rankOf`, `red`, `simulatorRank` and `suit`.
@@ -881,12 +905,19 @@ ShoeSpecTest`, from the repository's root, about 25 seconds):
 - Nine planted changes to A3's code (a mix constant, a shift, the shuffle's direction, the
   layout, the valuation's stream, u's last division, a round at the cut card, a round's cards
   counted at its own start, the hole card left out of the count), each compiled and each seen.
+- Part B's claims about the engine, each transcribed from this file's words: B2.2's keys against
+  `CountKeys.betKey`, `playKey` and `keyAfter` for every count the comparison scores, every
+  betting variant and counts of our own at four divisors; B2.3's group lookup against
+  `Groups.of`; B5's figure numbers against `SystemScorer`'s metric indices; B2.1's 540 deals and
+  110 contested cells in their order; B2.4's order for an unreached cell against
+  `FullIndexFit.chartRanking`; and B2.4's play of split hands against `SplitPlay` on random
+  tables.
 
 Planted by hand on 9 October 2026, one at a time, in a copy of the source or of this file (each
 copy compiled and the test run against it, the worktree untouched), to show the test fails when
 the spec and the engine diverge in either direction:
 
-| Planted | Where | Tests that failed | First failure |
+| Planted | Where | Tests that failed (of the 11 then) | First failure |
 |---|---|---|---|
 | a mix multiplier changed | `ShoeRun.mix` | 5 of 11 | shoe 0 round 1: the spec's depth 5 tallies differ from ShoeRun's |
 | shuffle from the bottom up | `ShoeRun.shuffled` | 3 | shoe 0 is shuffled differently |
@@ -898,5 +929,5 @@ the spec and the engine diverge in either direction:
 | `mix.shift2 = 28` | A2 | 3 | the mix from A2's constants differs from ShoeRun.mix |
 | `rule.max.hands.other = 3` | A2 | 1 | the engine splits to 4 hands |
 
-Part B is not tested here: it describes files no code writes yet. StrategyExport's tests will
-read them back with a reader written from Part B.
+Part B's files themselves are not tested here, since no code writes them yet. StrategyExport's
+tests will read them back with a reader written from Part B, and its round trip will score them.

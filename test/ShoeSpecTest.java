@@ -44,8 +44,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * a transcription of that prose (proseRoundEnd) that must take the same cards as ConcreteRound
  * in every one of those rounds.
  *
- * Last, plantedDivergencesAreCaught compiles the spec's code with one deliberate change at a
- * time and requires the comparison to see each, so a comparison that had gone blind would fail.
+ * plantedDivergencesAreCaught compiles the spec's code with one deliberate change at a time and
+ * requires the comparison to see each, so a comparison that had gone blind would fail.
+ *
+ * Part B of the spec describes files no code writes yet, so the files are not tested here; but
+ * what Part B says about the engine is (the key formulas, the group lookup, the figure numbers,
+ * the deal and cell orders, how split hands read a full-play file), each against a transcription
+ * of the spec's words, since the simulator will be written from those words.
  */
 public class ShoeSpecTest {
 
@@ -763,5 +768,292 @@ public class ShoeSpecTest {
             n++;
         }
         return n;
+    }
+
+    // ------------------------------------------------------------------ Part B's claims about the engine
+
+    /** B2.2's rounding, transcribed: the double nearest the ratio, to nearest, ties toward zero. */
+    static int b22Round(long n, long d) {
+        double x = (double) n / (double) d;
+        return (int) (Math.signum(x) * Math.ceil(Math.abs(x) - 0.5));
+    }
+
+    /** B2.2's bet key, transcribed from its words and the file's parameters, as the simulator will. */
+    static int b22BetKey(CountKeys.Count c, int[] dealt, int depth) {
+        long rcb = 0;
+        int aces = 2 * 2 * ShoeRun.DECKS - dealt[0] - dealt[1];
+        for (int k = 0; k < ShoeRun.KINDS; k++) {
+            rcb += (long) dealt[k] * c.betTags()[k];
+        }
+        long d = c.divisor();
+        long left = ShoeRun.CARDS - depth;
+        if (!c.trueCounted) {
+            return d == 1 ? (int) rcb : b22Round(rcb, d);
+        }
+        return b22Round(52 * rcb - (long) c.betDeckSum() * depth + (long) c.aceSideCount * (52L * aces - 4 * left),
+                left * d);
+    }
+
+    /** B2.2's key at a decision, s cards of the round seen, their tags adding to t. */
+    static int b22Key(CountKeys.Count c, int[] dealt, int depth, int t, int s) {
+        long rc = 0;
+        for (int k = 0; k < ShoeRun.KINDS; k++) {
+            rc += (long) dealt[k] * c.tag[k];
+        }
+        long d = c.divisor();
+        if (!c.trueCounted) {
+            return d == 1 ? (int) (rc + t) : b22Round(rc + t, d);
+        }
+        return b22Round(52 * (rc + t) - (long) c.deckSum * (depth + s), (ShoeRun.CARDS - depth - s) * d);
+    }
+
+    /** Every count the comparison scores, every betting variant, and counts of our own at several divisors. */
+    static List<CountKeys.Count> everyKindOfCount() {
+        List<CountKeys.Count> out = new ArrayList<>(CountKeys.catalog());
+        out.add(CountKeys.nullCount());
+        for (CountKeys.Count c : new ArrayList<>(out)) {
+            CountKeys.Count v = CountKeys.sideCountVariant(c);
+            if (v != null) {
+                out.add(v);
+            }
+        }
+        SplittableRandom rnd = new SplittableRandom(17);
+        for (int d : new int[]{1, 7, 250, 10_000}) {
+            for (boolean trueCounted : new boolean[]{true, false}) {
+                int[] tag = new int[11];
+                int[] bet = new int[11];
+                for (int r = 1; r <= 10; r++) {
+                    tag[r] = rnd.nextInt(-20_000, 20_001);
+                    bet[r] = rnd.nextInt(-20_000, 20_001);
+                }
+                CountKeys.Count own = CountKeys.whole("own " + d + " " + trueCounted, tag, bet, d, trueCounted);
+                out.add(own);
+                out.add(CountKeys.bettingVariant(own));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * B2.1's tag sums and B2.2's keys, transcribed, are CountKeys' for every count the comparison
+     * scores, every betting variant and counts of our own at four divisors, on tallies of real
+     * shoes at every depth and on 3 to 9 cards of the round seen.
+     */
+    @Test
+    public void theKeysOfB2AreCountKeys() {
+        List<CountKeys.Count> counts = everyKindOfCount();
+        assertTrue(counts.size() >= 31 + 8, counts.size() + " counts");
+        SplittableRandom rnd = new SplittableRandom(19);
+        for (int t = 0; t < 400; t++) {
+            int[] shoe = code.shuffled(rnd.nextLong(), t);
+            int depth = t == 0 ? 0 : rnd.nextInt(ShoeRun.CARDS - 12);
+            int[] dealt = new int[ShoeRun.KINDS];
+            for (int i = 0; i < depth; i++) {
+                dealt[shoe[i]]++;
+            }
+            int seen = 3 + rnd.nextInt(7);
+            for (CountKeys.Count c : counts) {
+                int deckSum = 0;
+                int betDeckSum = 0;
+                for (int k = 0; k < ShoeRun.KINDS; k++) {
+                    deckSum += 2 * c.tag[k];
+                    betDeckSum += 2 * c.betTags()[k];
+                }
+                assertEquals(c.deckSum, deckSum, c.name);
+                assertEquals(c.betDeckSum(), betDeckSum, c.name);
+                assertEquals(c.betKey(dealt, depth), b22BetKey(c, dealt, depth), c.name + " at depth " + depth);
+                int tagSum = 0;
+                for (int i = 0; i < seen; i++) {
+                    tagSum += c.tag[shoe[depth + i]];
+                    if (i >= 2) {
+                        int rc = c.runningCount(dealt);
+                        assertEquals(c.keyAfter(rc, depth, tagSum, i + 1), b22Key(c, dealt, depth, tagSum, i + 1),
+                                c.name + " at depth " + depth + ", " + (i + 1) + " seen");
+                        if (i == 2) {
+                            assertEquals(c.playKey(rc, depth, tagSum), b22Key(c, dealt, depth, tagSum, 3), c.name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** B2.3's lookup, transcribed: the first group whose hi is at least the key, the last group above. */
+    static int b23Group(int[] hi, int key) {
+        for (int g = 0; g < hi.length; g++) {
+            if (key <= hi[g]) {
+                return g;
+            }
+        }
+        return hi.length - 1;
+    }
+
+    /** B2.3's group lookup is SystemScorer.Groups.of, below, inside and above the training keys. */
+    @Test
+    public void theGroupsOfB2AreTheEngines() {
+        SplittableRandom rnd = new SplittableRandom(23);
+        for (int t = 0; t < 2_000; t++) {
+            int groups = 1 + rnd.nextInt(12);
+            int[] lo = new int[groups];
+            int[] hi = new int[groups];
+            int at = rnd.nextInt(-40, 0);
+            for (int g = 0; g < groups; g++) {
+                lo[g] = at;
+                hi[g] = at + rnd.nextInt(4);
+                at = hi[g] + 1 + rnd.nextInt(3);
+            }
+            SystemScorer.Groups engine = new SystemScorer.Groups(lo, hi);
+            for (int key = lo[0] - 30; key <= hi[groups - 1] + 30; key++) {
+                assertEquals(engine.of(key), b23Group(hi, key), "key " + key + " in " + Arrays.toString(hi));
+            }
+        }
+    }
+
+    /** B5's figure numbers are SystemScorer's metric indices. */
+    @Test
+    public void theFigureNumbersOfB5AreTheEngines() {
+        assertEquals(0, SystemScorer.FLAT);
+        assertEquals(1, SystemScorer.PLAY);
+        assertEquals(2, SystemScorer.INSURANCE);
+        assertEquals(51, SystemScorer.METRICS);
+        for (int s = 1; s <= SystemScorer.SPREADS; s++) {
+            assertEquals(2 + s, SystemScorer.same(s));
+            assertEquals(10 + s, SystemScorer.sameBet(s));
+            assertEquals(18 + s, SystemScorer.own(s));
+            assertEquals(26 + s, SystemScorer.ownBet(s));
+            assertEquals(34 + s, SystemScorer.played(s));
+            assertEquals(42 + s, SystemScorer.playedBet(s));
+        }
+        assertEquals(8, SystemScorer.SPREADS);
+    }
+
+    /**
+     * B2.1's counts and orders: 540 deals with a first decision, numbered up-card, then p1, then
+     * p2; 110 contested spots, hard 12 to 16 and soft 13 to 18, ordered up-card, hard before
+     * soft, then total, as FullIndexFit numbers its later cells.
+     */
+    @Test
+    public void theDealsAndCellsOfB2AreTheEngines() {
+        int n = 0;
+        int withDecision = 0;
+        for (int up = 1; up <= 10; up++) {
+            for (int p1 = 1; p1 <= 10; p1++) {
+                for (int p2 = p1; p2 <= 10; p2++) {
+                    assertEquals(n, Deals.index(p1, p2, up));
+                    boolean natural = p1 == 1 && p2 == 10;
+                    assertEquals(natural, Deals.playerNatural(n));
+                    withDecision += natural ? 0 : 1;
+                    n++;
+                }
+            }
+        }
+        assertEquals(Deals.COUNT, n);
+        assertEquals(540, withDecision);
+        int cell = 0;
+        for (int up = 1; up <= 10; up++) {
+            for (boolean soft : new boolean[]{false, true}) {
+                for (int total = 4; total <= 21; total++) {
+                    boolean contested = soft ? total >= 13 && total <= 18 : total >= 12 && total <= 16;
+                    assertEquals(contested, PlayerTree.contested(total, soft), total + " " + soft);
+                    int spot = PlayerTree.spot(total, soft, up);
+                    assertEquals(contested ? cell : -1, FullIndexFit.cellOf(spot));
+                    if (contested) {
+                        assertEquals(spot, FullIndexFit.spotOf(cell));
+                        cell++;
+                    }
+                }
+            }
+        }
+        assertEquals(110, cell);
+        assertEquals(FullIndexFit.CELLS, cell);
+    }
+
+    /**
+     * B2.4's order for a (group, deal) no training state reached, transcribed: the chart's move
+     * with every move of the dealt hand offered, its move with Split taken away, then Stand.
+     */
+    @Test
+    public void theChartsOrderOfB24IsFullIndexFits() {
+        for (int i = 0; i < Deals.COUNT; i++) {
+            if (Deals.playerNatural(i)) {
+                continue;
+            }
+            List<Integer> hand = Arrays.asList(Deals.P1[i], Deals.P2[i]);
+            int total = ConcreteRound.total(hand);
+            boolean soft = ConcreteRound.soft(hand);
+            int pair = Deals.P1[i] == Deals.P2[i] ? Deals.P1[i] : 0;
+            PlayerMove all = CHART.choose(new RoundPolicy.Decision(total, soft, 2, pair, Deals.UP[i], false, true,
+                    total < 21, true, pair != 0, RULES.surrender));
+            PlayerMove noSplit = CHART.choose(new RoundPolicy.Decision(total, soft, 2, pair, Deals.UP[i], false, true,
+                    total < 21, true, false, RULES.surrender));
+            assertArrayEquals(new PlayerMove[]{all, noSplit, PlayerMove.Stand}, FullIndexFit.chartRanking(RULES, i),
+                    "deal " + i);
+        }
+    }
+
+    /**
+     * B2.4's play of a full-play file's split hands, transcribed, is SplitPlay's on every decision
+     * a split hand can face, with random later tables and random ranked lists, so that the rule
+     * "the first move of the list that is legal, an ace and a ten standing" is tested as a rule.
+     */
+    @Test
+    public void theSplitHandsOfB24AreSplitPlays() {
+        SplittableRandom rnd = new SplittableRandom(29);
+        PlayerMove[] moves = {PlayerMove.Stand, PlayerMove.Hit, PlayerMove.Double, PlayerMove.Split};
+        for (int t = 0; t < 300; t++) {
+            int r = 1 + rnd.nextInt(10);
+            int up = 1 + rnd.nextInt(10);
+            boolean[] stands = new boolean[FullIndexFit.CELLS];
+            for (int c = 0; c < stands.length; c++) {
+                stands[c] = rnd.nextBoolean();
+            }
+            PlayerMove[][] ranked = new PlayerMove[Deals.COUNT][];
+            for (int i = 0; i < Deals.COUNT; i++) {
+                PlayerMove[] list = new PlayerMove[1 + rnd.nextInt(4)];
+                for (int k = 0; k < list.length; k++) {
+                    list[k] = moves[rnd.nextInt(moves.length)];
+                }
+                ranked[i] = list;
+            }
+            SplitPlay engine = new SplitPlay(r, up, (total, soft) -> {
+                int c = FullIndexFit.cellOf(PlayerTree.spot(total, soft, up));
+                return c < 0 ? PlayerTree.CHART.stands(total, soft, up, 0) : stands[c];
+            }, deal -> ranked[deal]);
+            for (int x = 1; x <= 10; x++) {
+                List<Integer> hand = Arrays.asList(r, x);
+                int total = ConcreteRound.total(hand);
+                boolean soft = ConcreteRound.soft(hand);
+                for (int hands = 2; hands <= 4; hands++) {
+                    boolean canHit = total < 21 && r != 1;
+                    boolean canDouble = r != 1;
+                    boolean canSplit = x == r && hands + 1 <= (r == 1 ? 2 : 4);
+                    RoundPolicy.Decision d = new RoundPolicy.Decision(total, soft, 2, x == r ? r : 0, up, true, true,
+                            canHit, canDouble, canSplit, false);
+                    PlayerMove spec = PlayerMove.Stand;
+                    if (!((r == 1 && x == 10) || (r == 10 && x == 1))) {
+                        for (PlayerMove m : ranked[Deals.index(Math.min(r, x), Math.max(r, x), up)]) {
+                            if (d.isLegal(m)) {
+                                spec = m;
+                                break;
+                            }
+                        }
+                    }
+                    assertEquals(engine.choose(d), spec, d.toString());
+                }
+            }
+            for (int total = 4; total <= 21; total++) {
+                for (boolean soft : new boolean[]{false, true}) {
+                    if (r == 1 || (soft && total < 12)) {
+                        continue;
+                    }
+                    RoundPolicy.Decision d = new RoundPolicy.Decision(total, soft, 3, 0, up, true, false, total < 21,
+                            false, false, false);
+                    int c = FullIndexFit.cellOf(PlayerTree.spot(total, soft, up));
+                    PlayerMove spec = c >= 0 ? (d.canHit && !stands[c] ? PlayerMove.Hit : PlayerMove.Stand)
+                            : CHART.choose(d);
+                    assertEquals(engine.choose(d), spec, d.toString());
+                }
+            }
+        }
     }
 }
