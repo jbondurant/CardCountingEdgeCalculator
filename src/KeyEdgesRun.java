@@ -14,7 +14,7 @@ import java.util.Locale;
  *
  *   KeyEdgesRun a STATES --published RESULTS --out DIR
  *   KeyEdgesRun a-prime STATES --published RESULTS --out DIR [--threads T]
- *   KeyEdgesRun report --a FILE --a-prime FILE --published RESULTS --out DIR [--full FILE ...]
+ *   KeyEdgesRun report --a FILE --a-prime FILE --published RESULTS --out DIR [--rows FILE ...] [--full FILE ...]
  *
  * Run A scores the null count and every catalog count, with its betting variant, at first
  * decisions with no resamples and the state sink on, and keeps what the sink is handed. Before it
@@ -31,8 +31,9 @@ import java.util.Locale;
  * The report reads what the runs kept and writes the JSON and CSV the site generator reads.
  * Nothing here reads a state file twice: the runs keep each state's facts with what they collect.
  * The registered counts (runs C and D) are scored in the page look (PLAN_COMPUTE.md 6.3), which
- * attaches a KeyEdges.Collector to its scorer as these runs do; and the catalog's full play (run
- * B) in the replay (6.1). Their files go to the report with --full.
+ * attaches a KeyEdges.Collector to its scorer as these runs do and saves it; and the catalog's
+ * full play (run B) in the replay (6.1). Their files go to the report: further rows at first
+ * decisions with --rows, full play with --full.
  */
 final class KeyEdgesRun {
 
@@ -57,6 +58,7 @@ final class KeyEdgesRun {
         Path a = null;
         Path aPrime = null;
         List<Path> full = new ArrayList<>();
+        List<Path> more = new ArrayList<>();
         int threads = 1;
         int from = 1;
         if (mode.equals("a") || mode.equals("a-prime")) {
@@ -86,6 +88,9 @@ final class KeyEdgesRun {
                 case "--full":
                     full.add(Paths.get(args[++k]));
                     break;
+                case "--rows":
+                    more.add(Paths.get(args[++k]));
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown option " + args[k]);
             }
@@ -103,7 +108,7 @@ final class KeyEdgesRun {
                 runAPrime(states, published, out, commit, Math.max(1, threads), System.out);
                 break;
             case "report":
-                KeyEdgesReport.write(a, aPrime, full, published, out, commit, System.out);
+                KeyEdgesReport.write(a, more, aPrime, full, published, out, commit, System.out);
                 break;
             default:
                 usage();
@@ -113,7 +118,8 @@ final class KeyEdgesRun {
     private static void usage() {
         System.err.println("usage: KeyEdgesRun a STATES --published RESULTS --out DIR\n"
                 + "       KeyEdgesRun a-prime STATES --published RESULTS --out DIR [--threads T]\n"
-                + "       KeyEdgesRun report --a FILE --a-prime FILE --published RESULTS --out DIR [--full FILE ...]");
+                + "       KeyEdgesRun report --a FILE --a-prime FILE --published RESULTS --out DIR [--rows FILE ...]"
+                + " [--full FILE ...]");
         System.exit(2);
     }
 

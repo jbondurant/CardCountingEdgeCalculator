@@ -1198,6 +1198,10 @@ final class KeyEdges {
         Figure pivot = axis.pivot == NO_PIVOT ? null : figure(t.sums, held, refit, s -> edgeAt(s, axis.pivot));
         Edges e = new Edges(row, layer, keyed.p, axis, t, bins, edge, share, ins, binNEff, byShare, flat, line, pivot);
         if (axis.rebinned) {
+            if (axis.count.trueCounted && axis.count.aceSideCount == 0 && !spreadIsHiLos(axis.count)) {
+                e.failures.add("its bet tags' spread is " + CountKeys.betSpread(axis.count) / ((double) CountKeys.K
+                        * CountKeys.K) + ", not 10/13 to rounding, so a whole step of it is not a step of Hi-Lo's");
+            }
             e.quarter = table(v.rekeyed(axis::quarter));
             // Check 7 of 5.4: pooling conserves weight, to rounding, in whole and in quarter steps.
             for (Table x : new Table[]{t, e.quarter}) {
@@ -1455,5 +1459,18 @@ final class KeyEdges {
         public int hashCode() {
             return Arrays.hashCode(a);
         }
+    }
+
+    /**
+     * Check 7 of 5.4: whether a true count at scale K bets on tags of Hi-Lo's spread, 10/13, to
+     * rounding, so that pooling its keys into whole steps of a tag unit puts them on Hi-Lo's
+     * steps. Each tag is within 1.5 / K of its real value (rounded to the nearest 1/K, then moved
+     * by at most one 1/K to keep the deck sum zero), which moves the spread by at most
+     * 2 sqrt(10/13) d + d^2 for d = 1.5 / K.
+     */
+    static boolean spreadIsHiLos(CountKeys.Count c) {
+        double spread = CountKeys.betSpread(c) / ((double) CountKeys.K * CountKeys.K);
+        double d = 1.5 / CountKeys.K;
+        return Math.abs(spread - CountKeys.SPREAD) <= 2 * Math.sqrt(CountKeys.SPREAD) * d + d * d;
     }
 }

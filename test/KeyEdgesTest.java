@@ -409,4 +409,26 @@ public class KeyEdgesTest {
         assertSame(plain[2], variant[2]);
         assertNotSame(plain[4], variant[4]);
     }
+
+    /**
+     * Check 7 of 5.4: a count of our own normalised to Hi-Lo's spread and rounded at K passes;
+     * one whose whole tags were never normalised (Hi-Opt II's times K, spread 28/13 x K^2) fails, and its rows
+     * say so instead of placing its keys on Hi-Lo's steps.
+     */
+    @Test
+    public void aFineCountMustBetOnTagsOfHiLosSpread() {
+        int k = CountKeys.K;
+        CountKeys.Count normalised = CountKeys.real("F", new double[]{0, -1, 1, 1, 1.5, 1.5, 1, 0.5, 0, -0.5, -1}, null, k / 20);
+        CountKeys.Count raw = CountKeys.whole("Raw", new int[]{0, 0, k, k, 2 * k, 2 * k, k, k, 0, 0, -2 * k}, null, k / 20,
+                true);
+        assertTrue(KeyEdges.spreadIsHiLos(normalised));
+        assertFalse(KeyEdges.spreadIsHiLos(raw));
+        Scored s = new Scored(131, 0, Arrays.asList(raw, normalised));
+        for (CountKeys.Count c : Arrays.asList(raw, normalised)) {
+            KeyEdges.Edges e = KeyEdges.edges(c.name, KeyEdges.Layer.FIRST, new KeyEdges.Axis(c), s.col.values(c.name, 2),
+                    s.col.facts, null, null, Double.NaN);
+            assertEquals(c == raw, !e.failures.isEmpty(), c.name + " " + e.failures);
+            assertNotNull(e.quarter);
+        }
+    }
 }

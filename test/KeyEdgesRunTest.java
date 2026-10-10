@@ -126,7 +126,7 @@ public class KeyEdgesRunTest {
         rows.addAll(KeyEdgesRun.refittedCounts());
         rows.add(PlayerTreeOrderTest.named("Red Seven (Red 7)"));
         rows.add(PlayerTreeOrderTest.named("Wong Halves"));
-        rows.add(CountKeys.whole("Fine", new int[]{0, -k, k, k, k, k, k, 0, 0, 0, -k}, null, k / 20, true));
+        rows.add(CountKeys.real("Fine", new double[]{0, -1, 1, 1, 1.5, 1.5, 1, 0.5, 0, -0.5, -1}, null, k / 20));
         Bootstrap boot = new Bootstrap(SHOES, 6, Bootstrap.SEED);
         List<SystemScorer.Result> stored = stored(st, boot, rows);
         KeyEdgesRun.Collected a = KeyEdgesRun.scoreA(st, rows, stored);
@@ -170,6 +170,7 @@ public class KeyEdgesRunTest {
                 ((Document) layer(red, "80%", "chart").get("flat")).getString("how"));
         assertNotNull(layer(red, "70%", "perfect full play"));
         assertTrue(fine.getBoolean("rebinned"));
+        assertNull(layer(fine, "80%", "first decisions").get("failures"));
         for (Document key : list(layer(fine, "80%", "first decisions"), "keys")) {
             assertEquals(key.getInteger("key").doubleValue(), key.getDouble("bookKey"), 0);
         }
@@ -187,6 +188,14 @@ public class KeyEdgesRunTest {
         long quarters = lines.stream().filter(l -> l.contains(",quarter,")).count();
         assertEquals(1 + keys + quarters, lines.size());
         assertEquals(9, list(d, "oracle").size());
+        // One simultaneous multiplier per penetration and figure at first decisions, each over the
+        // rows other than Hi-Lo, at least the 1.96 of one interval alone.
+        List<Document> sim = list(d, "simultaneous");
+        assertEquals(3 * (KeyEdges.TOP.length + KeyEdges.BANDS.length + 1), sim.size());
+        for (Document m : sim) {
+            assertEquals(10, m.getInteger("rows"));
+            assertTrue(m.get("multiplier") == null || m.getDouble("multiplier") > 1.5, m.toJson());
+        }
         assertFalse(list(d, "depth").isEmpty());
 
         // A NaN in the perfect array at a state of every penetration: no perfect full-play layer anywhere.

@@ -221,6 +221,8 @@ final class KeyEdgesReport {
     /** Everything the report reads: run A's states, run A''s refitted rows, and full-play runs, with c06c061's perfect array. */
     static final class Inputs {
         KeyEdges.Collector a;
+        /** Collectors of further rows at first decisions: the registered counts, run C in the page look. */
+        List<KeyEdges.Collector> more = new ArrayList<>();
         KeyEdges.Collector aPrime;
         List<KeyEdges.Collector> full = new ArrayList<>();
         /** c06c061's perfect full-play values by state; NaN where its fit did not value a state. */
@@ -261,18 +263,22 @@ final class KeyEdgesReport {
         String name = first.name;
         KeyEdges.Axis axis = new KeyEdges.Axis(first.count);
         KeyEdges.Facts facts = in.a.facts;
-        if (!in.a.has(name, p)) {
+        List<KeyEdges.Collector> sources = new ArrayList<>();
+        sources.add(in.a);
+        sources.addAll(in.more);
+        KeyEdges.Collector src = holding(sources, name, p);
+        if (src == null) {
             return out;
         }
-        KeyEdges.Values v = in.a.values(name, p);
+        KeyEdges.Values v = src.values(name, p);
         KeyEdges.Refitted rf = in.aPrime != null && in.aPrime.has(name, p) ? in.aPrime.refitted(name, p) : null;
         out.add(KeyEdges.edges(name, KeyEdges.Layer.FIRST, axis, v, facts, in.boot, rf,
                 first.estimate[p][SystemScorer.FLAT]));
-        SystemScorer.Entry betting = in.a.entries.get(name + ", betting only");
-        if (betting != null && in.a.has(betting.name, p)) {
+        SystemScorer.Entry betting = src.entries.get(name + ", betting only");
+        if (betting != null && src.has(betting.name, p)) {
             out.add(KeyEdges.edges(name, KeyEdges.Layer.CHART, axis, v.withValues(facts.chart, null), facts, in.boot,
                     null, betting.estimate[p][SystemScorer.PLAY]));
-            out.add(KeyEdges.edges(name, KeyEdges.Layer.CHART_INSURANCE, axis, in.a.values(betting.name, p), facts,
+            out.add(KeyEdges.edges(name, KeyEdges.Layer.CHART_INSURANCE, axis, src.values(betting.name, p), facts,
                     in.boot, null, betting.estimate[p][SystemScorer.FLAT]));
         }
         KeyEdges.Collector fc = holding(in.full, name + ", full play", p);
@@ -296,6 +302,26 @@ final class KeyEdgesReport {
         for (SystemScorer.Entry e : a.entries.values()) {
             if (!e.bettingOnly && !e.fullPlay && !e.ownValue) {
                 out.add(e);
+            }
+        }
+        return out;
+    }
+
+    /** Run A's rows, then the further collectors' rows not among them, each collector's in the order scored. */
+    static List<SystemScorer.Entry> rows(Inputs in) {
+        List<SystemScorer.Entry> out = rows(in.a);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (SystemScorer.Entry e : out) {
+            seen.add(e.name);
+        }
+        for (KeyEdges.Collector c : in.more) {
+            if (!Arrays.equals(c.facts.shoe, in.a.facts.shoe) || !Arrays.equals(c.facts.chart, in.a.facts.chart)) {
+                throw new IllegalStateException("a collector of further rows is of other states than run A's");
+            }
+            for (SystemScorer.Entry e : rows(c)) {
+                if (seen.add(e.name)) {
+                    out.add(e);
+                }
             }
         }
         return out;
@@ -345,8 +371,8 @@ final class KeyEdgesReport {
 
     // ------------------------------------------------------------------------ write
 
-    static void write(Path a, Path aPrime, List<Path> full, Path published, Path out, String commit, PrintStream log)
-            throws Exception {
+    static void write(Path a, List<Path> more, Path aPrime, List<Path> full, Path published, Path out, String commit,
+                      PrintStream log) throws Exception {
         long t0 = System.nanoTime();
         if (a == null) {
             throw new IllegalArgumentException("the report needs run A's file (--a)");
@@ -357,12 +383,18 @@ final class KeyEdgesReport {
         for (Path f : full) {
             in.full.add(KeyEdges.Collector.read(f));
         }
+        for (Path f : more) {
+            in.more.add(KeyEdges.Collector.read(f));
+        }
         in.perfect = CeilingReport.read(published).perfect;
         in.boot = new Bootstrap(in.a.facts.shoes, Bootstrap.RESAMPLES, Bootstrap.SEED);
         List<Map<String, Object>> inputs = new ArrayList<>();
         inputs.add(map("file", a.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(a)));
         if (aPrime != null) {
             inputs.add(map("file", aPrime.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(aPrime)));
+        }
+        for (Path f : more) {
+            inputs.add(map("file", f.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(f)));
         }
         for (Path f : full) {
             inputs.add(map("file", f.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(f)));
@@ -379,7 +411,7 @@ final class KeyEdgesReport {
     /** Computes every figure from the inputs and writes the JSON and the CSV, each whole (temporary file, then renamed). */
     static void report(Inputs in, List<Map<String, Object>> inputs, String commit, Path json, Path csv, PrintStream log)
             throws IOException {
-        List<SystemScorer.Entry> rows = rows(in.a);
+        List<SystemScorer.Entry> rows = rows(in);
         KeyEdges.Widening w = widening(in, rows);
         SystemScorer.Entry hl = hiLo(rows);
         List<List<KeyEdges.Edges>> hiLoAt = new ArrayList<>();
@@ -395,6 +427,7 @@ final class KeyEdgesReport {
         Path jtmp = json.resolveSibling(json.getFileName() + ".tmp");
         Path ctmp = csv.resolveSibling(csv.getFileName() + ".tmp");
         int failed = 0;
+        Map<String, List<KeyEdges.Figure>> simultaneous = new LinkedHashMap<>();
         try (Writer jw = Files.newBufferedWriter(jtmp, StandardCharsets.UTF_8);
              Writer cw = Files.newBufferedWriter(ctmp, StandardCharsets.UTF_8)) {
             StringBuilder head = new StringBuilder();
@@ -421,7 +454,14 @@ final class KeyEdgesReport {
                         }
                         KeyEdges.Edges ref = same(hiLoAt.get(p), x.layer);
                         boolean differs = ref != null && (x.layer == KeyEdges.Layer.FIRST || x.layer == KeyEdges.Layer.FULL);
-                        layers.add(edges(x, differs ? fromHiLo(x, ref, w) : null));
+                        List<KeyEdges.Figure> d = differs ? fromHiLo(x, ref, w) : null;
+                        layers.add(edges(x, d));
+                        if (d != null && e != hl && x.failures.isEmpty()) {
+                            for (int k = 0; k < d.size(); k++) {
+                                simultaneous.computeIfAbsent(p + "|" + x.layer.label + "|" + k, z -> new ArrayList<>())
+                                        .add(d.get(k));
+                            }
+                        }
                         failed += x.failures.isEmpty() ? 0 : 1;
                         KeyEdgesCsv.write(x, cw);
                     }
@@ -438,7 +478,7 @@ final class KeyEdgesReport {
             }
             jw.write("],");
             StringBuilder tail = new StringBuilder();
-            json(map("oracle", oracles(in), "depth", depth(in, hl, w)), tail);
+            json(map("simultaneous", simultaneous(simultaneous), "oracle", oracles(in), "depth", depth(in, hl, w)), tail);
             jw.write(tail.substring(1));
         }
         java.nio.file.Files.move(jtmp, json, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
@@ -512,6 +552,45 @@ final class KeyEdgesReport {
                 m.put("cardsDealt", new double[]{lo, hi});
                 out.add(m);
             }
+        }
+        return out;
+    }
+
+    /**
+     * The maximum-|t| multipliers of the differences from Hi-Lo (PLAN_COMPUTE.md 5.3, the T2
+     * table): for each penetration, layer and figure by share of rounds, over every row that
+     * passed its checks, the multiplier c that makes estimate +- c x SE simultaneous 95% intervals
+     * (Bootstrap.maxT), on the resamples each interval is made from (refitted, or held and
+     * widened). A per-key interval is not simultaneous across keys, and the page says so.
+     */
+    static List<Object> simultaneous(Map<String, List<KeyEdges.Figure>> byFigure) {
+        String[] names = new String[KeyEdges.TOP.length + KeyEdges.BANDS.length + 1];
+        for (int k = 0; k < KeyEdges.TOP.length; k++) {
+            names[k] = "top " + KeyEdges.TOP[k];
+        }
+        for (int b = 0; b < KeyEdges.BANDS.length; b++) {
+            names[KeyEdges.TOP.length + b] = "band " + KeyEdges.BANDS[b][0] + "-" + KeyEdges.BANDS[b][1];
+        }
+        names[names.length - 1] = "positive keys";
+        List<Object> out = new ArrayList<>();
+        for (Map.Entry<String, List<KeyEdges.Figure>> e : byFigure.entrySet()) {
+            String[] at = e.getKey().split("\\|");
+            List<KeyEdges.Figure> fs = e.getValue();
+            double[] est = new double[fs.size()];
+            double[][] boots = new double[fs.size()][];
+            boolean all = true;
+            for (int k = 0; k < est.length; k++) {
+                KeyEdges.Figure f = fs.get(k);
+                est[k] = f.estimate;
+                boots[k] = f.refit != null ? f.refit : f.held == null ? null
+                        : f.widen == 1 ? f.held : Bootstrap.widen(f.held, f.widen);
+                all &= boots[k] != null;
+            }
+            if (!all) {
+                continue;
+            }
+            out.add(map("penetration", SystemScorer.PENETRATIONS[Integer.parseInt(at[0])], "layer", at[1],
+                    "figure", names[Integer.parseInt(at[2])], "rows", est.length, "multiplier", Bootstrap.maxT(est, boots)));
         }
         return out;
     }
