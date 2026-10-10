@@ -1095,6 +1095,8 @@ final class KeyEdges {
         final Figure pivot;
         /** The checks of PLAN_COMPUTE.md 5.4 this row failed; none, or its intervals are not shown. */
         final List<String> failures = new ArrayList<>();
+        /** For a row pooled into whole steps, its table in quarter steps (keys in quarters), for the CSV alone; else null. */
+        Table quarter;
 
         Edges(String row, Layer layer, int p, Axis axis, Table table, Bins bins, Figure[] edge, Figure[] share,
               Figure[] insurance, double[] binNEff, Figure[] byShare, Figure flat, Figure[] line, Figure pivot) {
@@ -1195,6 +1197,15 @@ final class KeyEdges {
         }
         Figure pivot = axis.pivot == NO_PIVOT ? null : figure(t.sums, held, refit, s -> edgeAt(s, axis.pivot));
         Edges e = new Edges(row, layer, keyed.p, axis, t, bins, edge, share, ins, binNEff, byShare, flat, line, pivot);
+        if (axis.rebinned) {
+            e.quarter = table(v.rekeyed(axis::quarter));
+            // Check 7 of 5.4: pooling conserves weight, to rounding, in whole and in quarter steps.
+            for (Table x : new Table[]{t, e.quarter}) {
+                if (!(Math.abs(x.sums.total - table(v).sums.total) <= 1e-12 * x.sums.total)) {
+                    e.failures.add("pooling the keys changed the weight: " + x.sums.total);
+                }
+            }
+        }
         check(e, held, refit, scorersFlat);
         return e;
     }
