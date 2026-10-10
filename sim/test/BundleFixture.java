@@ -34,22 +34,7 @@ final class BundleFixture {
         write(dir.resolve("chart.tsv"), c);
         TreeMap<String, String[]> index = new TreeMap<>();
         for (int fold = 0; fold < 2; fold++) {
-            StrategyFixture f = TableTest.varied("first");
-            f.fold = fold;
-            if (fold == 1) {
-                // The other fold's fit groups the keys differently, so the folds play differently.
-                f.groupHi = new int[]{-1, 1, 3, 99};
-            }
-            f.insured.clear();
-            f.insured.add("2 10 10");
-            f.plans.add("same-8 same -");
-            f.plans.add("X-1,8 own -1");
-            for (int k = -4; k <= 4; k++) {
-                f.bets.add("same-8 " + k + " " + Math.max(1, Math.min(8, 2 * k + (fold == 0 ? 1 : 2))) + " 1");
-            }
-            for (int k = -2; k <= 2; k++) {
-                f.bets.add("X-1,8 " + k + " " + (k <= 0 ? 1 : 4) + " " + (k == 0 ? "0.5" : "1"));
-            }
+            StrategyFixture f = hiLo("first", fold);
             String path = "strategy-hi-lo-hi-lo-lite-p80-f" + fold + ".txt";
             write(dir.resolve(path), f.lines());
             index.put(path, new String[]{HILO, "80", Integer.toString(fold), "first"});
@@ -65,7 +50,9 @@ final class BundleFixture {
             }
         }
         write(dir.resolve("exact.tsv"), e);
-        Files.write(dir.resolve("states.bin"), new StatesFixture(40).bytes());
+        StatesFixture states = new StatesFixture(40);
+        states.plans = new ArrayList<>(List.of("same-8", "X-1,8"));
+        Files.write(dir.resolve("states.bin"), states.bytes());
         index.put("chart.tsv", null);
         index.put("exact.tsv", null);
         index.put("states.bin", null);
@@ -83,6 +70,27 @@ final class BundleFixture {
         }
         write(dir.resolve("manifest.sha256"), manifest);
         return dir;
+    }
+
+    /** Hi-Lo's fold file of the fixture bundle, in a scope: the two folds group keys differently and bet differently. */
+    static StrategyFixture hiLo(String scope, int fold) {
+        StrategyFixture f = TableTest.varied(scope);
+        f.fold = fold;
+        if (fold == 1) {
+            // The other fold's fit groups the keys differently, so the folds play differently.
+            f.groupHi = new int[]{-1, 1, 3, 99};
+        }
+        f.insured.clear();
+        f.insured.add("2 10 10");
+        f.plans.add("same-8 same -");
+        f.plans.add("X-1,8 own -1");
+        for (int k = -4; k <= 4; k++) {
+            f.bets.add("same-8 " + k + " " + Math.max(1, Math.min(8, 2 * k + (fold == 0 ? 1 : 2))) + " 1");
+        }
+        for (int k = -2; k <= 2; k++) {
+            f.bets.add("X-1,8 " + k + " " + (k <= 0 ? 1 : 4) + " " + (k == 0 ? "0.5" : "1"));
+        }
+        return f;
     }
 
     static void write(Path file, List<String> lines) throws IOException {

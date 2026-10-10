@@ -192,6 +192,11 @@ public final class Strategy {
             this.dealKeyKnown = false;
         }
 
+        /** Another deal from the same round start (check P2's next re-deal): the deal's key is forgotten. */
+        public void redeal() {
+            this.dealKeyKnown = false;
+        }
+
         /** The deal's play key: the cards the deal showed (three; four with the hole-card plant). */
         public int dealKey(Round.Decision d) {
             if (!dealKeyKnown) {

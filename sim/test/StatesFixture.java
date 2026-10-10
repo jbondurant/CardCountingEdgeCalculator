@@ -34,6 +34,25 @@ final class StatesFixture {
     /** Section rows; each gets one section at 80% and one at 70%, with one plan. */
     final List<String> rows = new ArrayList<>(List.of("Chart, no count, flat", "Hi-Lo = Hi-Lo Lite"));
     boolean trailingByte;
+    /** The plans every section lists. */
+    List<String> plans = new ArrayList<>(List.of("same-8"));
+
+    /** A section entry's values: {betKey, rvPlay, rvInsurance, bet per plan...}. */
+    interface Filler {
+        double[] fill(String row, int pen, int record);
+    }
+
+    /** By default made-up values, which test the format and nothing else. */
+    Filler filler = (row, pen, i) -> {
+        double[] v = new double[3 + plans.size()];
+        v[0] = i % 7 - 3;
+        v[1] = -0.005 + i * 1e-6;
+        v[2] = i % 11 == 0 ? 0.01 : 0;
+        for (int p = 0; p < plans.size(); p++) {
+            v[3 + p] = 1 + (i + p) % 8;
+        }
+        return v;
+    };
 
     StatesFixture(int shoes) {
         this.shoes = shoes;
@@ -82,8 +101,10 @@ final class StatesFixture {
                 writeString(out, row);
                 out.writeInt(pc[0]);
                 out.writeInt(pc[1]);
-                out.writeInt(1);
-                writeString(out, "same-8");
+                out.writeInt(plans.size());
+                for (String p : plans) {
+                    writeString(out, p);
+                }
                 List<Integer> in = new ArrayList<>();
                 for (int i = 0; i < records.size(); i++) {
                     if (records.get(i).depth < pc[1]) {
@@ -92,11 +113,14 @@ final class StatesFixture {
                 }
                 out.writeInt(in.size());
                 for (int i : in) {
+                    double[] v = filler.fill(row, pc[0], i);
                     out.writeInt(i);
-                    out.writeInt(i % 7 - 3);
-                    out.writeDouble(-0.005 + i * 1e-6);
-                    out.writeDouble(i % 11 == 0 ? 0.01 : 0);
-                    out.writeDouble(1 + i % 8);
+                    out.writeInt((int) v[0]);
+                    out.writeDouble(v[1]);
+                    out.writeDouble(v[2]);
+                    for (int p = 0; p < plans.size(); p++) {
+                        out.writeDouble(v[3 + p]);
+                    }
                 }
             }
         }

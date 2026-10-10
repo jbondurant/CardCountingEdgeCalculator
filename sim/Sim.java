@@ -18,6 +18,10 @@ import java.util.Arrays;
  * [--plant a,b]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and the
  * chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
  * {@code OUT/summary-p3.json}.
+ * <li>{@code p2 --bundle DIR --out DIR --sim-commit SHA [--k K] [--threads T] [--plant a,b]}: checks
+ * D1 and D4 on the bundle's states.bin, then check P2 at K re-deals a state (seed 20261009), in
+ * chunks of 1,000 states under {@code OUT/p2/}, then {@code OUT/summary-p2.json}. It stops before
+ * P2 if D1 or D4 fails.
  * </ul>
  *
  * <p>Tests: {@code javac -d out-test -cp out:lib/junit-platform-console-standalone-1.10.2.jar
@@ -49,6 +53,9 @@ public final class Sim {
                 break;
             case "p3":
                 p3(Arrays.copyOfRange(args, 1, args.length));
+                break;
+            case "p2":
+                System.exit(p2(Arrays.copyOfRange(args, 1, args.length)) ? 0 : 1);
                 break;
             default:
                 System.err.println("unknown command " + args[0]);
@@ -107,6 +114,50 @@ public final class Sim {
         facts.put("plants", plants.describe());
         Summary.write(out.resolve("summary-p3.json"), facts, Summary.p3(rows, sums, bundle.exact, plants));
         System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-p3.json"));
+    }
+
+    /** Checks D1 and D4, then P2; false if an exact check failed (P2 is then not run). */
+    static boolean p2(String[] args) throws Exception {
+        Plants plants = plants(args);
+        Bundle bundle = new Bundle(Path.of(required(args, "--bundle")), plants);
+        Path out = Path.of(required(args, "--out"));
+        String commit = required(args, "--sim-commit");
+        int k = Integer.parseInt(option(args, "--k", "120000"));
+        int threads = Integer.parseInt(option(args, "--threads", "1"));
+        States states = bundle.states();
+        States.D1 d1 = states.d1(new Round(Rules.montreal(plants)), bundle.chart);
+        P2 p2 = new P2(P2.SEED, k, states, bundle.rows(true), bundle.chart, plants);
+        java.util.List<String> d4first = new java.util.ArrayList<>();
+        long[] d4 = p2.d4(d4first);
+        java.util.List<String> checks = new java.util.ArrayList<>();
+        checks.add("D1\t" + d1.matched + " of " + states.n + " records card for card and in q to the bit; "
+                + d1.valued + " valued by the walk; " + d1.mismatches + " mismatches");
+        checks.addAll(d1.first);
+        checks.add("D4\t" + (d4[0] - d4[1]) + " of " + d4[0] + " bet keys and bets equal to states.bin's; " + d4[1] + " mismatches");
+        checks.addAll(d4first);
+        java.nio.file.Files.createDirectories(out);
+        java.nio.file.Files.write(out.resolve("checks.txt"), checks);
+        checks.forEach(System.out::println);
+        if (!d1.cardForCard() || d4[1] != 0) {
+            System.out.println("an exact check failed: P2 is not run");
+            return false;
+        }
+        long t0 = System.nanoTime();
+        double[] sums = p2.chunked(out.resolve("p2"), commit, bundle.sha256, 1000, threads, -1);
+        java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
+        facts.put("check", "P2");
+        facts.put("simulatorCommit", commit);
+        facts.put("bundleSha256", bundle.sha256);
+        facts.put("seed", Long.toString(P2.SEED));
+        facts.put("k", Integer.toString(k));
+        facts.put("states", Integer.toString(states.n));
+        facts.put("threads", Integer.toString(threads));
+        facts.put("wallSeconds", String.format("%.1f", (System.nanoTime() - t0) / 1e9));
+        facts.put("java", System.getProperty("java.version"));
+        facts.put("plants", plants.describe());
+        Summary.write(out.resolve("summary-p2.json"), facts, p2.comparisons(sums));
+        System.out.println("P2: " + p2.rows().size() + " rows; summary in " + out.resolve("summary-p2.json"));
+        return true;
     }
 
     /** Check D1 against a states.bin: true when every state matches and, for the main file, the rounds are A8's. */
