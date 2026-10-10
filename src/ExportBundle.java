@@ -363,6 +363,11 @@ final class ExportBundle {
         return parseStrategy(lines(file), file.getFileName().toString());
     }
 
+    /** A strategy file's text, parsed as readStrategy parses the file. */
+    static Strategy readStrategyText(String text) {
+        return parseStrategy(lines(text, "a strategy file"), "a strategy file");
+    }
+
     /** A strategy file parsed by B2.1's table, in its order, every count of lines checked. */
     static Strategy parseStrategy(List<String> lines, String source) {
         Cursor c = new Cursor(lines, source);
@@ -1203,7 +1208,11 @@ final class ExportBundle {
      * cards left cannot make the deal. This is the order B4's play cells list their keys in.
      */
     static double[][] tagSums(int[] tags, int[] dealt, int p1, int p2, int up) {
-        int[][] cls = classes(tags);
+        return tagSums(tags, classes(tags), dealt, p1, p2, up);
+    }
+
+    /** The same, with the count's classes(tags) worked out once by the caller. */
+    static double[][] tagSums(int[] tags, int[][] cls, int[] dealt, int p1, int p2, int up) {
         int[][] left = new int[11][];
         for (int r = 1; r <= 10; r++) {
             left[r] = new int[cls[r].length + 1];

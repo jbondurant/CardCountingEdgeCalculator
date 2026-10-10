@@ -576,4 +576,109 @@ public class StrategyExportTest {
         assertThrows(IllegalStateException.class, () -> StrategyExport.export(bundle, scorer, header, everyRow(), labels,
                 keyColumns(), 1, new PrintStream(new ByteArrayOutputStream(), true, "UTF-8")));
     }
+    /**
+     * The command line, as the real export will be run: rows named in a results file written as
+     * FullIndexRun writes results.ser, scored at the report's M_play, the catalog's columns in
+     * keys-sample.tsv; and a full-play row named on it is refused.
+     */
+    @Test
+    public void theCommandLineExportsRowsNamedInAResultsFile() throws Exception {
+        SystemScorer published = new SystemScorer(st, new Bootstrap(st.shoes, 0, Bootstrap.SEED), SystemScorer.M_PLAY);
+        List<CountKeys.Count> two = Arrays.asList(catalog("Hi-Lo"), catalog("Hi-Opt II"));
+        ArrayList<SystemScorer.Result> scored = new ArrayList<>();
+        for (CountKeys.Count c : two) {
+            scored.add(published.score(c, CountKeys.bettingVariant(c)));
+        }
+        Path ser = shared.resolve("results.ser");
+        try (java.io.ObjectOutputStream o = new java.io.ObjectOutputStream(Files.newOutputStream(ser))) {
+            o.writeUTF(FullIndexRun.identity("test", states, st.shoes, st.size, 0, 1, two, new int[]{0, 1, 2}, null));
+            o.writeObject(scored);
+            o.writeObject(new double[0]);
+        }
+        Path out = shared.resolve("export-cli");
+        PrintStream was = System.out;
+        ByteArrayOutputStream text = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(text, true, "UTF-8"));
+        try {
+            StrategyExport.main(new String[]{states.toString(), "--published", ser.toString(), "--out", out.toString(),
+                    "--row", catalog("Hi-Opt II").name + " + ace side count@80", "--row", "Hi-Lo = Hi-Lo Lite, betting only@70,80",
+                    "--plans", "same-2,same-8,own-8,played-8"});
+        } finally {
+            System.setOut(was);
+        }
+        String log = text.toString("UTF-8");
+        assertTrue(log.contains("round trip passed"), log);
+        assertEquals(3 * 2 + 6, Files.list(out).count());
+        ExportBundle.KeysSample ks = ExportBundle.readKeysSample(out.resolve("keys-sample.tsv"));
+        assertEquals(CountKeys.catalog().size() + 1 + 8, ks.counts.length, Arrays.toString(ks.counts));
+        ExportBundle.Strategy s = ExportBundle.readStrategy(out.resolve(ExportBundle.Strategy.fileName(
+                catalog("Hi-Opt II").name + " + ace side count", 80, 1)));
+        assertEquals(catalog("Hi-Opt II").name, s.playCount);
+        assertTrue(s.ace > 0);
+        assertEquals(4, s.plans.size());
+        assertThrows(IllegalArgumentException.class, () -> StrategyExport.wanted(scored, "Hi-Lo = Hi-Lo Lite, full play",
+                new int[]{2}));
+    }
+    /**
+     * A full-play file, which no fixture here can fit (that takes the player trees), written from a
+     * model made by hand: it reads back to the same model and the same text, its later lines in
+     * B2.1's order, and a later line out of order is refused.
+     */
+    @Test
+    public void aFullPlayFileReadsBackToItself() {
+        ExportBundle.Strategy s = ExportBundle.readStrategyText(StrategyExport.format(handMadeFull()));
+        String text = StrategyExport.format(s);
+        assertEquals(StrategyExport.format(handMadeFull()), text);
+        assertEquals(2, s.laterLo.length);
+        assertTrue(s.stands[1][5]);
+        assertFalse(s.stands[0][5]);
+        assertTrue(text.contains("\nlater\t0\t12\t0\t1\tH\n"), text);
+        assertTrue(text.contains("\nlater\t1\t18\t1\t10\t"), text);
+        String swapped = text.replace("later\t0\t12\t0\t1\tH\nlater\t0\t13\t0\t1\t",
+                "later\t0\t13\t0\t1\tH\nlater\t0\t12\t0\t1\t");
+        assertNotEquals(text, swapped);
+        assertThrows(IllegalArgumentException.class, () -> ExportBundle.readStrategyText(swapped));
+    }
+
+    static ExportBundle.Strategy handMadeFull() {
+        ExportBundle.Strategy s = new ExportBundle.Strategy();
+        CountKeys.Count c = catalog("Hi-Lo");
+        s.row = c.name + ", full play";
+        s.scope = ExportBundle.Scope.FULL;
+        s.pen = 80;
+        s.cut = 332;
+        s.fold = 1;
+        s.trained = 1234.5;
+        s.playCount = c.name;
+        s.tags = c.tag.clone();
+        s.scale = 1;
+        s.trueCounted = true;
+        s.divisor = 1;
+        s.deckSum = 0;
+        s.betCount = c.name;
+        s.betTags = c.tag.clone();
+        s.betDeckSum = 0;
+        s.ace = 0;
+        s.lo = new int[]{-9, 1};
+        s.hi = new int[]{0, 7};
+        s.first = new PlayerMove[2][Deals.COUNT][];
+        s.insure = new boolean[2][ScoringStates.ACE_UP];
+        s.insure[1][Deals.index(10, 10, 1)] = true;
+        for (int g = 0; g < 2; g++) {
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (!Deals.playerNatural(i)) {
+                    s.first[g][i] = FullIndexFit.chartRanking(RULES, i);
+                }
+            }
+        }
+        s.laterLo = new int[]{-12, 2};
+        s.laterHi = new int[]{1, 9};
+        s.stands = new boolean[2][ExportBundle.CELLS];
+        s.stands[1][5] = true;
+        s.plans.add(new ExportBundle.Plan("same-8", "same", null, new int[]{-3, 0, 4}, new double[]{1, 1.5, 8},
+                new double[]{1, 1, 1}));
+        s.plans.add(new ExportBundle.Plan("X-1.0,8", "own", -1, new int[]{-3, 0, 4}, new double[]{0, 1, 8},
+                new double[]{0, 0.25, 1}));
+        return s;
+    }
 }

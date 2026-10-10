@@ -15,8 +15,8 @@ Part A was written on 9 October 2026 from `src/ShoeRun.java` and what it calls
 `test/ShoeSpecTest.java`: the test reads the two data blocks below, compiles the two Java
 blocks exactly as they are written here, and compares them with the engine on every round start
 of all 60,000 shoes. If this file and the engine ever disagree, the engine is what made
-`runs/montreal-80.states`, so this file is the one corrected. Part B describes code that does
-not exist yet; StrategyExport's own tests will hold it to Part B.
+`runs/montreal-80.states`, so this file is the one corrected. Part B is the format
+`StrategyExport` writes, and its own tests hold it to Part B (end of this file).
 
 Words used throughout: a **kind** is one of the 26 card kinds of A1; a **rank** is the
 contract's rank, 1 to 10 (ROUND_CONTRACT.md); the **dealt order** is a shoe's 416 cards in the
@@ -513,7 +513,7 @@ valuation stream one `nextLong` per round start.
 
 PLAN_COMPUTE.md 1.2 names the files; this part fixes their format, so that the simulator's author
 can write the reader before the exporter exists and the exporter's author writes exactly this.
-Nothing here is built yet. Where the plan left a detail open, B6 lists the choice made here.
+Where the plan left a detail open, B6 lists the choice made here.
 
 ### B0. The bundle
 
@@ -951,5 +951,10 @@ Three more, planted the same way in the engine against Part B's checks, with 17 
 | a decision's true count over the cards left at the round's start, the seen cards not taken out | `CountKeys.keyAfter` | 1 | Hi-Opt II at depth 0 with 5 cards seen |
 | a split hand plays the first listed move even when it is not legal | `SplitPlay` | 1 | a split hand on hard 9 against a 2, where Split is not legal, is played Split |
 
-Part B's files themselves are not tested here, since no code writes them yet. StrategyExport's
-tests will read them back with a reader written from Part B, and its round trip will score them.
+Part B's files themselves are not tested here. `src/StrategyExport.java` writes them and
+`src/ExportBundle.java` reads them back from this file's words; `test/StrategyExportTest.java`
+(run it alone, as above, about a minute) writes a bundle from a state file of 60 real shoes made
+in a temporary directory, never the run's, and requires the round trip to give back
+SystemScorer's figures for 16 rows of six counts (a true count, one with an ace side count, a
+running count, a colour count, the null count, and a count of our own with a divisor and a
+betting vector), and to refuse a bundle with any of twelve bugs written into it.

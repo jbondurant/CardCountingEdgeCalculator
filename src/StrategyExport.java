@@ -841,11 +841,21 @@ final class StrategyExport {
 
         /** a and b equal within RELATIVE of the larger, or refused, naming what. */
         void same(double a, double b, String what) {
+            same(a, b, 0, what);
+        }
+
+        /**
+         * a and b equal within RELATIVE of the larger of them and scale, or refused, naming what.
+         * A sum taken in another order differs by rounding in proportion to the sizes of its terms,
+         * not of its result, so a figure near zero made of large terms of both signs is compared
+         * against the mean size of its terms (scale) rather than against itself.
+         */
+        void same(double a, double b, double scale, String what) {
             compared++;
             if (a == b) {
                 return;
             }
-            double d = Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b));
+            double d = Math.abs(a - b) / Math.max(scale, Math.max(Math.abs(a), Math.abs(b)));
             if (!(d <= RELATIVE)) {
                 throw new IllegalStateException("round trip: " + what + " is " + a + " in the bundle and " + b
                         + (d == d ? ", " + d + " apart relative" : ""));
@@ -896,7 +906,7 @@ final class StrategyExport {
             int t = classes[Deals.P1[deal]][0] + classes[Deals.P2[deal]][0] + classes[Deals.UP[deal]][0];
             return new double[][]{{ExportBundle.keyAt(s, rc, depth, t, 3), 1}};
         }
-        double[][] sums = ExportBundle.tagSums(s.tags, dealt, Deals.P1[deal], Deals.P2[deal], Deals.UP[deal]);
+        double[][] sums = ExportBundle.tagSums(s.tags, classes, dealt, Deals.P1[deal], Deals.P2[deal], Deals.UP[deal]);
         for (double[] e : sums) {
             e[0] = ExportBundle.keyAt(s, rc, depth, (int) e[0], 3);
         }
@@ -1114,7 +1124,7 @@ final class StrategyExport {
         double[] pooledA = new double[figures.size()];
         double[] pooledB = new double[figures.size()];
         for (int f = 0; f < 2; f++) {
-            double[][] sums = exactSums(st, again, f);
+            double[][] sums = b5Sums(st, again, f);
             List<ExportBundle.Exact> lines = exact.get(x.row + "\t" + x.pen + "\t" + f);
             r.require(lines != null && lines.size() == figures.size(), where + ", fold " + f + ": exact.tsv has "
                     + (lines == null ? 0 : lines.size()) + " lines, not " + figures.size());
@@ -1133,12 +1143,20 @@ final class StrategyExport {
                 pooledB[fi] += e.sumB;
             }
         }
+        // Each figure twice against the report: summed as SystemScorer.scoreOnce sums it (by fold,
+        // then bet key), which should give Entry.estimate to the bit or nearly; and pooled from
+        // exact.tsv's per-shoe sums, as the simulator will pool them, whose order differs, so it
+        // is held to the mean size of the figure's terms (Report.same).
+        double[] engine = engineOrder(st, again, files);
+        double[] scale = termScale(st, again);
         int checked = 0;
         for (int fi = 0; fi < figures.size(); fi++) {
             int m = metric(sec.labels, fi);
             if (m >= 0) {
-                r.same(pooledA[fi] / pooledB[fi], x.estimate[m], where + ": " + figures.get(fi)
-                        + " pooled over the folds, against the report's estimate");
+                r.same(engine[fi], x.estimate[m], where + ": " + figures.get(fi)
+                        + " summed in the engine's order, against the report's estimate");
+                r.same(pooledA[fi] / pooledB[fi], x.estimate[m], scale[fi], where + ": " + figures.get(fi)
+                        + " pooled over the folds from exact.tsv, against the report's estimate");
                 checked++;
             }
         }
@@ -1158,6 +1176,112 @@ final class StrategyExport {
         }
         r.lines.add(where + ": " + sec.index.length + " states replayed from the strategy files equal states.bin; "
                 + checked + " figures pooled from exact.tsv equal Entry.estimate; " + shoes);
+    }
+
+    /**
+     * B5's sums of one fold, worked out again from B5's words for the round trip, apart from
+     * exactSums, which wrote exact.tsv: a and b per shoe first, then the sums and moments over the
+     * fold's shoes in shoe order. Kept apart so that a mistake in the writer's sums is not made
+     * again here and passed; an EV figure's terms are (w x bet) x RV, as Entry.shoeSums sums them.
+     */
+    static double[][] b5Sums(ScoringStates st, ExportBundle.Section sec, int fold) {
+        int figures = 3 + 2 * sec.labels.length;
+        double[][] a = new double[figures][st.shoes];
+        double[] b = new double[st.shoes];
+        for (int e = 0; e < sec.index.length; e++) {
+            int s = sec.index[e];
+            if ((st.shoe[s] & 1) != fold) {
+                continue;
+            }
+            int i = st.shoe[s];
+            double w = 1 / st.q[s];
+            double rv = sec.rvPlay[e] + sec.rvInsurance[e];
+            b[i] += w;
+            a[0][i] += w * rv;
+            a[1][i] += w * sec.rvPlay[e];
+            a[2][i] += w * sec.rvInsurance[e];
+            for (int l = 0; l < sec.labels.length; l++) {
+                a[3 + 2 * l][i] += w * sec.bet[e][l] * rv;
+                a[4 + 2 * l][i] += w * sec.bet[e][l];
+            }
+        }
+        double[][] out = new double[figures][5];
+        for (int fi = 0; fi < figures; fi++) {
+            for (int i = fold; i < st.shoes; i += 2) {
+                out[fi][0] += a[fi][i];
+                out[fi][1] += b[i];
+                out[fi][2] += a[fi][i] * a[fi][i];
+                out[fi][3] += a[fi][i] * b[i];
+                out[fi][4] += b[i] * b[i];
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A row's figures from a section's values, summed in SystemScorer.scoreOnce's order: fold 0,
+     * then fold 1; within a fold, PLAY and INSURANCE state by state, and FLAT, the bets' EV and
+     * their average bet key by key, upward, each key's sums taken over its states in record order
+     * and multiplied by the key's bet from the fold's file (SystemScorer.bets). Then each over the
+     * pooled weight. In figures(labels)'s order.
+     */
+    static double[] engineOrder(ScoringStates st, ExportBundle.Section sec, ExportBundle.Strategy[] files) {
+        int plans = sec.labels.length;
+        double[] sum = new double[3 + 2 * plans];
+        double weight = 0;
+        for (int f = 0; f < 2; f++) {
+            java.util.TreeMap<Integer, double[]> byKey = new java.util.TreeMap<>();
+            for (int e = 0; e < sec.index.length; e++) {
+                int s = sec.index[e];
+                if (st.fold(s) != f) {
+                    continue;
+                }
+                double w = st.weight[s];
+                sum[1] += w * sec.rvPlay[e];
+                sum[2] += w * sec.rvInsurance[e];
+                double[] k = byKey.computeIfAbsent(sec.betKey[e], x -> new double[2]);
+                k[0] += w;
+                k[1] += w * (sec.rvPlay[e] + sec.rvInsurance[e]);
+            }
+            double vw = 0;
+            double flat = 0;
+            for (double[] k : byKey.values()) {
+                vw += k[0];
+                flat += k[1];
+            }
+            weight += vw;
+            sum[0] += flat;
+            for (int l = 0; l < plans; l++) {
+                ExportBundle.Plan plan = files[f].plans.get(l);
+                for (Map.Entry<Integer, double[]> k : byKey.entrySet()) {
+                    double bet = plan.bet(k.getKey());
+                    sum[3 + 2 * l] += bet * k.getValue()[1];
+                    sum[4 + 2 * l] += bet * k.getValue()[0];
+                }
+            }
+        }
+        for (int fi = 0; fi < sum.length; fi++) {
+            sum[fi] /= weight;
+        }
+        return sum;
+    }
+
+    /** Each figure's mean term size over both folds, sum of |w x| over sum of w: the scale its rounding goes by. */
+    static double[] termScale(ScoringStates st, ExportBundle.Section sec) {
+        int figures = 3 + 2 * sec.labels.length;
+        double[] out = new double[figures];
+        double weight = 0;
+        for (int e = 0; e < sec.index.length; e++) {
+            double w = st.weight[sec.index[e]];
+            weight += w;
+            for (int fi = 0; fi < figures; fi++) {
+                out[fi] += Math.abs(w * x(fi, sec.rvPlay[e], sec.rvInsurance[e], sec.bet[e]));
+            }
+        }
+        for (int fi = 0; fi < figures; fi++) {
+            out[fi] /= weight;
+        }
+        return out;
     }
 
     /** The B2.2 parameters of one column of keys-sample.tsv: its bet count's, and the play count's that keys its play. */
