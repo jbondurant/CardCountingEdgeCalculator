@@ -20,12 +20,15 @@ final class AllStates {
     final short[] depth;
     /** Cards dealt of each kind before state s, at s x KINDS + k. */
     final byte[] dealt;
+    /** Where each valued state, in the file's order, is among these. */
+    final int[] valuedAt;
 
-    private AllStates(int shoes, int size, short[] depth, byte[] dealt) {
+    private AllStates(int shoes, int size, short[] depth, byte[] dealt, int[] valuedAt) {
         this.shoes = shoes;
         this.size = size;
         this.depth = depth;
         this.dealt = dealt;
+        this.valuedAt = valuedAt;
     }
 
     /**
@@ -40,6 +43,7 @@ final class AllStates {
         byte[] dealt = new byte[capacity * ShoeRun.KINDS];
         int size = 0;
         int record = 0;
+        int[] valuedAt = new int[st.size];
         for (int i = 0; i < shoes; i++) {
             for (ShoeRun.State s : run.deal(i)) {
                 if (size == depth.length) {
@@ -58,6 +62,7 @@ final class AllStates {
                                 + (record >= st.size ? "missing" : "shoe " + st.shoe[record] + " round "
                                 + st.round[record]) + ": the file was made with other settings or other code");
                     }
+                    valuedAt[record] = size - 1;
                     record++;
                 }
             }
@@ -67,7 +72,53 @@ final class AllStates {
                     + record + ": the file was made with other settings or other code");
         }
         return new AllStates(shoes, size, java.util.Arrays.copyOf(depth, size),
-                java.util.Arrays.copyOf(dealt, size * ShoeRun.KINDS));
+                java.util.Arrays.copyOf(dealt, size * ShoeRun.KINDS), valuedAt);
+    }
+
+    /**
+     * For each valued state s of st, the lowest bet key c gives over the round starts of s's shoe
+     * up to s, s included (PLAN_COMPUTE.md 3.2): a player who leaves the table at the first round
+     * start below a threshold key is still seated at s exactly when this is at least that key. A
+     * shoe's round starts are these states from one of depth 0 to the next. The key each valued
+     * state gets from the tallies dealt again must be the key its stored tallies give, at every
+     * state: replay checked the tallies themselves, and this checks that the keys walked are the
+     * ones the scorer bets on.
+     */
+    int[] minKey(CountKeys.Count c, ScoringStates st) {
+        if (st.size != valuedAt.length) {
+            throw new IllegalArgumentException(st.size + " states, " + valuedAt.length + " found when dealt again");
+        }
+        int[] out = new int[st.size];
+        int record = 0;
+        int lowest = Integer.MAX_VALUE;
+        int[] d = new int[ShoeRun.KINDS];
+        for (int s = 0; s < size && record < out.length; s++) {
+            if (depth[s] == 0) {
+                lowest = Integer.MAX_VALUE;
+            }
+            for (int k = 0; k < ShoeRun.KINDS; k++) {
+                d[k] = dealt[s * ShoeRun.KINDS + k];
+            }
+            int key = c.betKey(d, depth[s]);
+            lowest = Math.min(lowest, key);
+            if (valuedAt[record] == s) {
+                int stored = c.betKey(st.dealt[record], st.depth[record]);
+                if (stored != key) {
+                    throw new IllegalStateException("state " + record + " has bet key " + stored + " from its stored "
+                            + "tallies but " + key + " dealt again");
+                }
+                out[record++] = lowest;
+            }
+        }
+        if (record != out.length) {
+            throw new IllegalStateException("only " + record + " of " + out.length + " valued states found");
+        }
+        return out;
+    }
+
+    /** minKey for the scorer's plans that leave the table (SystemScorer.roundStarts), on the states st holds. */
+    SystemScorer.RoundStarts roundStarts(ScoringStates st) {
+        return c -> minKey(c, st);
     }
 
     private static boolean same(ScoringStates st, int r, ShoeRun.State s) {
