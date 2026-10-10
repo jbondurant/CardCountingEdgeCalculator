@@ -1,8 +1,9 @@
 # How the shoes are dealt, and the files the simulator reads
 
 This file is for the author of the independent simulator (`sim/`, PLAN_COMPUTE.md section 1),
-who works from four sources only: ROUND_CONTRACT.md, Loto-Québec's published blackjack rules,
-this file, and nothing of the engine. Part A says how the engine lays out, shuffles and deals
+who works from ROUND_CONTRACT.md, Loto-Québec's published blackjack rules and this file, which
+holds both the shoe's procedure and the file formats of PLAN_COMPUTE.md 1.2, and who reads none
+of the engine's code. Part A says how the engine lays out, shuffles and deals
 its 60,000 shoes, which round starts it records, how it decides which of them to value, and
 when each card enters a count, so that the simulator can deal the same shoes card for card
 (check D1). Part B gives the files of the export bundle the simulator reads, and is **the
@@ -139,12 +140,12 @@ prose of A4 to A6 says the same in words.
 
 - **Layout.** Before shuffling, the 416 cards lie deck by deck, and within a deck kind by kind
   from 0 to 25, two of each kind side by side: kinds `0 0 1 1 2 2 ... 25 25`, eight times.
-- **The shuffle.** Shoe `i` of a run with seed `s` is shuffled by its own generator,
-  `new java.util.SplittableRandom(mix(s, i, 0))`, with a Fisher–Yates shuffle from the top index
+- **The shuffle.** Shoe number `n` of a run with seed `s` is shuffled by its own generator,
+  `new java.util.SplittableRandom(mix(s, n, 0))`, with a Fisher–Yates shuffle from the top index
   down: for `i` from 415 down to 1, `j = nextInt(i + 1)`, then cards `i` and `j` swap. The
   result, index 0 first, is the dealt order. No card is burned.
 - **The valuation draw.** A second generator of the shoe's own,
-  `new java.util.SplittableRandom(mix(s, i, 1))`, makes exactly one `nextDouble()` draw at every
+  `new java.util.SplittableRandom(mix(s, n, 1))`, makes exactly one `nextDouble()` draw at every
   round start, in order, whether or not the state is valued. The state is valued when the draw
   is less than `q` (strictly). So the cards never depend on `q`, and a larger `q0` values every
   state a smaller one did.
@@ -359,17 +360,17 @@ in order, never skipping one, and its last card is the one before `next`:
    own, which works the same way in its place, and only then the second. A split hand's first
    decision is on its two cards: Hit is legal when the total is under 21 and the hand is not a
    split ace; Double is legal unless it is a split ace (double after split on ranks 2 to 10);
-   Split is legal on a pair within the limit; Surrender never. A split ace therefore takes its one card and stands, and a split ace
-   that draws a ten, or a split ten that draws an ace, is an ordinary 21, not a blackjack. Its
-   later decisions are as in 4.
+   Split is legal on a pair within the limit; Surrender never. A split ace therefore takes its
+   one card and stands, and a split ace that draws a ten, or a split ten that draws an ace, is an
+   ordinary 21, not a blackjack. Its later decisions are as in 4.
 6. **The dealer.** Once every hand has ended: if at least one hand stood, or doubled without
    passing 21, the dealer turns the hole card and draws the next cards in order while the total
    is under 17, or is a soft 17 (the dealer hits soft 17). If every hand busted, the dealer draws
    nothing.
 
-`next` is then the index after the last card the round drew. A round never needs more cards
-than are left in these shoes (the walk stops by depth 332, leaving at least 84), and the engine
-would stop with an error if one did.
+`next` is then the index after the last card the round drew. The last round of a shoe starts
+with at least 85 cards left, and no round of the 60,000 main shoes runs out (ShoeSpecTest deals
+them all); the engine would stop with an error if one did.
 
 Two consequences a simulator writer should not miss. The hole card is dealt fourth, before any
 player draw, so a player's hits take cards from `from + 4` on. And a split's two second cards
@@ -377,13 +378,13 @@ are both drawn before either split hand is played, which is ROUND_CONTRACT.md's 
 
 ### A5. The walk: round starts and the cut card
 
-Shoe `i` is dealt from depth 0. A round starts while the depth is less than the cut, 332 for the
+Shoe `n` is dealt from depth 0. A round starts while the depth is less than the cut, 332 for the
 main file; the state recorded at that start holds the shoe, the round's number within the shoe
 (from 0), the depth, the cards dealt so far by kind, and `q`. Then the valuation draw is made (A3),
 then the round is played (A4) and every card it took is added to the tallies, and the depth
-becomes `next`. The first round start whose depth is 332 or more is not a round: the shoe ends,
-and the next shoe is a fresh shuffle. Shoes are numbered 0 to 59,999 and are independent: shoe
-`i` depends only on the seed and `i`, so any shoe can be dealt alone.
+becomes `next`. Once the depth is 332 or more no round starts: the shoe ends, and the next shoe
+is a fresh shuffle. Shoes are numbered 0 to 59,999 and are independent: shoe
+`n` depends only on the seed and `n`, so any shoe can be dealt alone.
 
 The engine deals to cut 332 once. The 70% and 75% games are the same walk stopped earlier:
 their round starts are exactly the 80% walk's round starts whose depth is below 291 or 312, with
@@ -406,7 +407,8 @@ A count's tally at any moment is over the cards the player has seen. Precisely:
   not seen, so it is counted among the cards left.
 - **On split hands** the count does not move: every decision of every split hand, and a resplit,
   is keyed on the deal's play key (FULL_INDEX_PLAYS.md section 1; it keeps the exact split
-  valuation possible). This is a convention, and the simulator's mode B measures it.
+  valuation possible). This is a convention, and the simulator's variant with a count that keeps
+  moving through split hands measures what it changes (PLAN_COMPUTE.md 1.5).
 - **After the round** every card it took enters the tallies, the hole card included, as above.
 
 Insurance is decided on the deal's play key, before the peek. Nothing else of a round depends on
@@ -506,3 +508,395 @@ final class PortableSplittableRandom {
 
 So one card shuffle uses 415 or a few more `nextInt` draws (a rejection takes another), and the
 valuation stream one `nextLong` per round start.
+
+## Part B. The export bundle: the format StrategyExport must write
+
+PLAN_COMPUTE.md 1.2 names the files; this part fixes their format, so that the simulator's author
+can write the reader before the exporter exists and the exporter's author writes exactly this.
+Nothing here is built yet. Where the plan left a detail open, B6 lists the choice made here.
+
+### B0. The bundle
+
+`StrategyExport` writes one directory, `runs/sim/export-<sha>/`, `<sha>` being the exporter's
+commit, abbreviated to 7 hexadecimal digits:
+
+| File | What |
+|---|---|
+| `manifest.sha256` | one line per other file, `<sha256 hex>  <path>` (two spaces), sorted by path, as `shasum -a 256` prints and `shasum -a 256 -c` checks |
+| `index.tsv` | every other file with its size in bytes, and for each strategy file its row, penetration, fold and scope (B2) |
+| `chart.tsv` | the chart's answer to every decision (B1) |
+| `strategy-<slug>-p<P>-f<F>.txt` | one fitted strategy: one row, one penetration, one fold (B2) |
+| `states.bin` | every valued state of the main file, and the engine's bet key, round value and bets per row and penetration (B3) |
+| `keys-sample.tsv` | the engine's bet and play keys for a sample of states and deals (B4) |
+| `exact.tsv` | the test folds' sums and per-shoe moments of every exported figure (B5) |
+
+**Conventions for every text file.** UTF-8, lines ending in a single `\n`, the last line too;
+fields separated by one tab; no field contains a tab or a line break. A line starting with `#`
+is a comment and is skipped, except where a section below gives a `#` line a meaning. Integers
+are in decimal with an optional leading `-`. A double is written by Java's `Double.toString`
+(on Java 19 and later the shortest decimal that reads back to the same double) and read with
+`Double.parseDouble`, so it comes back to the bit; `NaN` and `Infinity` never appear. Booleans
+are `0` or `1`.
+
+`index.tsv` begins with the line `path	bytes	row	pen	fold	scope` and has one line per file
+of the bundle other than itself and `manifest.sha256`, sorted by path; the last four fields are
+`-` for files that are not strategy files. The exporter refuses to write a bundle whose total
+size it has not measured, and prints the total in its log (PLAN_COMPUTE.md 1.8).
+
+A **row** is one line of the report: a count with its play and its bets (`SystemScorer.Entry`),
+named exactly as the report names it, for example `Hi-Lo = Hi-Lo Lite` or
+`Hi-Opt II + ace side count`. Its **slug** is the name in lower case with every run of
+characters other than `a`-`z` and `0`-`9` replaced by one `-`, and leading or trailing `-`
+removed; the exporter refuses two rows with the same slug. `<P>` is 70, 75 or 80 and `<F>` is 0
+or 1.
+
+### B1. chart.tsv
+
+The chart (`BasicStrategy`) plays every round of the walk (A4), every decision a first-decision
+strategy leaves to it, and every non-contested later decision of a full-play strategy. Its
+answers do not depend on the number of cards in the hand beyond whether the decision is a first
+decision, nor on whether the hand came from a split (only through which moves are legal), nor on
+the shoe or a count.
+
+```
+# chart.tsv: SHOE_SPEC.md B1, format 1
+# fingerprint 1af534aac9abcb39
+up	total	soft	pair	fromSplit	first	legal	move
+1	4	0	0	0	0	0	S
+...
+```
+
+- Line 1 is the comment above. Line 2 is `# fingerprint ` and the chart's fingerprint, which
+  must equal `chart.fingerprint` in A2. Line 3 is the header shown.
+- Then exactly 253,440 lines, in the order `ShoeSpec.chartDecisions()` gives (A3): up-card 1
+  to 10, then total 4 to 21, soft 0 then 1, pair rank 0 to 10, fromSplit 0 then 1, first 0
+  then 1, and `legal` 0 to 15, the innermost. `legal` is a bit set: 1 Hit, 2 Double, 4 Split,
+  8 Surrender (Stand is always legal).
+- `move` is one letter: `S` Stand, `H` Hit, `D` Double, `P` Split, `R` Surrender, numbered 0
+  to 4 in that order for the fingerprint.
+- The reader rehashes: `ShoeSpec.fingerprint` over the 253,440 move numbers in file order must
+  give line 2's fingerprint, or the file is refused.
+- Many lines are decisions no round can reach (a soft 4, a pair of tens with a total of 7);
+  their answers are still the chart's, so the fingerprint covers them.
+
+A decision is looked up by its up-card, total, softness, pair rank, whether the hand came from a
+split, whether it is a first decision, and its legal moves, as A4 says. A hand at a first
+decision has two cards; a hand at any other decision has three or more.
+
+### B2. strategy-\<slug\>-p\<P\>-f\<F\>.txt
+
+One file holds everything one row plays at one penetration on the states of one fold: the keys,
+the first decisions, insurance, the later plays if it has them, and the bets. A file of fold
+`F` was fitted on the other fold's states and plays the states of fold `F` (A7). The simulator
+plays a state, or a fresh shoe's round, of fold `F` with the fold-`F` file only; on fresh shoes
+(check P3) each fold's file plays every shoe and the two are pooled by the folds' test weights
+(PLAN_COMPUTE.md 1.6).
+
+**B2.1 Lines.** Each line is a keyword and its fields, in this order; a keyword marked once
+appears exactly once.
+
+| Keyword and fields | Once? | Meaning |
+|---|---|---|
+| `format	strategy	1` | first line | this format |
+| `row	NAME` | once | the row's name, exactly as the report prints it |
+| `scope	SCOPE` | once | `first`: count-based first decision, the chart after it; `full`: count-based play on every decision (B2.4); `betting`: the chart on every decision, the count's insurance and bets |
+| `pen	P	CUT` | once | 70, 75 or 80, and its cut, 291, 312 or 332 |
+| `fold	F	TRAINED` | once | the fold played, 0 or 1, and the weight of the training states fitted on (Σ 1/q) |
+| `playcount	NAME` | once | the count whose key plays: the row's count, or for a betting variant its base |
+| `tags	t0 … t25` | once | that count's tags by kind (A1), 26 integers at its whole-number scale |
+| `scale	S` | once | what the published tags were multiplied by to make them whole: 1 or 2 for a catalog count, 10,000 for a count of our own (COUNT_DESIGN.md), whose tags are real numbers kept to four decimals |
+| `mode	MODE` | once | `true` or `running` |
+| `divisor	D` | once | the key divisor, at least 1 (1 for every catalog count) |
+| `decksum	X` | once | what 52 cards add to the count: Σ over kinds of 2 × tag; 0 exactly when the count is balanced |
+| `betcount	NAME` | once | the count whose key bets: the row's count, its ace side-count variant, or its betting vector's variant |
+| `bettags	b0 … b25` | once | the tags the bet key counts, by kind (equal to `tags` unless the row bets on its own vector) |
+| `betdecksum	Y` | once | Σ over kinds of 2 × bet tag |
+| `ace	M` | once | the ace side count's weight for betting, 0 for none |
+| `groups	G` | once | the number of first-decision groups |
+| `group	g	lo	hi` | G lines, g = 0 to G − 1 | the lowest and highest training play key in group g |
+| `first	g	p1	p2	up	M…` | scope `first` and `full`: for every group and every deal but the player's naturals | the deal's legal first moves, best first |
+| `insure	g	p1	p2` | any number | the ace-up deal (p1, p2, ace) is insured in group g; a deal not listed is not insured |
+| `lgroups	L` | scope `full` only, once | the number of later-play groups |
+| `lgroup	l	lo	hi` | L lines | as `group`, for the later-play keys |
+| `later	l	total	soft	up	S\|H` | scope `full`: every later group × the 110 contested spots | stand or hit |
+| `plan	LABEL	RULE	EXIT` | one per plan | a bet plan (B2.5) |
+| `bet	LABEL	KEY	UNITS	PLAY` | for every plan and every key of the fold's test states | the bet at that key |
+| `unseen	nearest	lower` | once | the rule for a key with no `bet` line (B2.5) |
+| `end` | last line | the file is whole |
+
+Lines appear in the order of the table. Within a keyword: `group` and `lgroup` lines by g (or l);
+`first` lines by g, then up-card, then p1, then p2 (so within a group in the engine's deal order,
+`Deals`); `insure` lines by g, then p1, then p2; `later` lines by l, then up-card, then hard before
+soft, then total; `plan` lines in the order the plans are scored; `bet` lines by plan in `plan`
+order, then by key, increasing. A deal is `p1 ≤ p2` and `up`, ranks 1 to 10: the player's two
+cards as an unordered pair and the dealer's up-card. The player's naturals (1, 10, any up) have no first decision and no line; so
+each group has 540 `first` lines, one for each of the 550 deals less the 10 naturals.
+
+**B2.2 Keys.** All three keys are whole numbers, computed from integers; where a ratio is
+rounded it is rounded once, from the double nearest to the exact ratio, to the nearest whole
+number with ties toward zero:
+
+    round(n, d) = (int) (signum(x) · ceil(|x| − 0.5)),   x = (double) n / (double) d
+
+in Java's double arithmetic (`CountKeys.roundedRatio` and `GranularCount.roundToGrain`). With
+`RC` the sum of the tags (`tags`) of every card of the shoe's tallies, `RCb` the same with the
+bet tags, `depth` the cards dealt before the round, `left = 416 − depth`, and `aces` the aces
+left (16 + 16 less the aces dealt, kinds 0 and 1):
+
+- **Bet key**, at the round start: for `mode true`,
+  `round(52 · RCb − Y · depth + M · (52 · aces − 4 · left), left · D)`; for `mode running`,
+  `RCb` if D is 1, else `round(RCb, D)`. (`M` is 0 unless the row bets with an ace side count.)
+- **Key at a decision**, with `T` the sum of the tags of the cards of this round seen so far and
+  `s` how many they are (A6; 3 at the first decision and for insurance, so this is the deal's
+  **play key**): for `mode true`, `round(52 · (RC + T) − X · (depth + s), (416 − depth − s) · D)`;
+  for `mode running`, `RC + T` if D is 1, else `round(RC + T, D)`.
+
+All products fit in a 64-bit integer; compute them in one. A colour or face count's key at a
+decision depends on the kinds of the cards seen, not only their ranks; a simulator dealing real
+cards knows them.
+
+**B2.3 Groups.** The group of a key `k` is the first g, in order, whose `hi` is at least `k`;
+the last group takes every key above its `hi`. So a key below every training key falls in group 0
+and one above every training key in the last group. `lo` is for reading only. Later-play groups
+work the same way over `lgroup` lines.
+
+**B2.4 How a file is played.** Each decision of a round is answered as follows; the round's
+cards and rules are A4's.
+
+- **The bet**, at the round start, before any card: the bet key (B2.2) from the tallies, then
+  the plan's bet at that key (B2.5).
+- **Insurance**, when the up-card is an ace, before the peek: the deal's play key gives the group
+  g; insure if and only if `insure g p1 p2` is listed. Insurance costs half the bet and pays 2 to
+  1: +1 bet if the hole card is ten-valued, −0.5 bet if not. A betting-scope file insures this
+  way too: its insurance is its count's, fitted in its play groups.
+- **The dealt hand's first decision.** Scope `first` and `full`: the deal's play key gives the
+  group g; play the first move of `first g p1 p2 up`, which is always legal on the dealt hand.
+  Scope `betting`: the chart.
+- **The dealt hand's later decisions**, on three cards or more. Scope `full`, at a contested spot
+  (hard 12 to 16, or soft 13 to 18, against any up-card): the key at the decision (B2.2, with
+  `s = 3 + draws`) gives the later group l; stand or hit as `later l total soft up` says. At any
+  other spot, and in scopes `first` and `betting`: the chart.
+- **Split hands.** Scopes `first` and `betting`: the chart, every decision. Scope `full`: the
+  count is frozen at the deal's play key (A6), which gives one first-decision group g and one
+  later group l for every split hand of the round:
+  - a split hand's first decision on (r, x), r the split rank: if r and x are an ace and a
+    ten-valued card, stand; otherwise the moves of `first g min(r,x) max(r,x) up`, in order, and
+    play the first that is legal on this split hand (A4's step 5). A resplit is this rule on
+    (r, r), whose list may start with `P`. If none is legal, stand.
+  - a split hand's later decision: at a contested spot, `later l total soft up`, and hit only if
+    Hit is legal; elsewhere the chart.
+  A file of scope `full` lists in `first` every legal move of the deal, best first by its fitted
+  value, so this always finds the best legal move by the same fit. A (group, deal) that no
+  training state reached lists the chart's order instead: the chart's move with every move
+  offered, its move with Split taken away, then Stand (so a move may appear twice).
+- **The payoff** of the round is ROUND_CONTRACT.md's, times the bet, plus the insurance result
+  times the bet.
+
+`first` lines for scope `first` are read the same way, but only their first move is used.
+`later` cells that no training state reached, or whose fitted sum was exactly zero, are already
+written as the chart plays them.
+
+**B2.5 Plans and bets.** A plan is a rule that turns a key into a bet in units:
+
+- `plan	LABEL	RULE	EXIT`: `LABEL` is the plan's name, ASCII letters, digits and `.,+-`
+  only (`same-1` to `same-8`, `own-1` to `own-8`, `played-1` to `played-8` for the report's
+  plans, and PLAN_COMPUTE.md section 3's names, such as `P16`, `S16`, `B0,8`, `X-1.0,8`). `RULE`
+  is `same` when the row hands out the same schedule's bets in order of its fitted advantage, or
+  `own` when each key bets its own fitted advantage; the simulator does not need it to play.
+  `EXIT` is `-`, or for a plan that leaves the table for the rest of the shoe a key: the player
+  stays seated while the lowest bet key of every round start of the shoe so far, this one
+  included, is at least `EXIT`, and bets 0 on every later round of the shoe once it is not.
+- `bet	LABEL	KEY	UNITS	PLAY`: at bet key `KEY` the round is played with probability `PLAY`
+  at `UNITS` units, and sat out (bet 0) otherwise. `PLAY` is 1 except on the one block of keys of
+  a back-counting plan that straddles its entry threshold (PLAN_COMPUTE.md 3.2), and a key whose
+  plan sits out is written with `UNITS` 0 and `PLAY` 0. The simulator draws the play-or-sit coin
+  from a stream of its own. The engine's figures use the expected bet, `UNITS × PLAY`, and so
+  does states.bin (B3).
+- Every plan has a `bet` line for exactly the keys that occur among the fold's test states at
+  this penetration, in increasing key order; those are the keys the engine's figures use.
+- `unseen	nearest	lower`: a key with no `bet` line (it can occur on fresh shoes) takes the bet
+  of the listed key nearest to it, the lower one when two are equally near. The simulator counts,
+  per file and plan, how many rounds and how much weight used this rule, and reports them.
+
+The flat bet (1 unit, every round) needs no plan.
+
+### B3. states.bin
+
+Every valued state of the main file, and, for each exported row and penetration, what the
+engine says of each: its bet key, its round value under the fold's fitted play and insurance,
+and its bet under each plan. Check D1 compares the simulator's own valued states with the
+records; check P2 re-deals each state's cards left and compares the simulator's mean payoff
+with the engine's round value, weighted by `1/q` and the bet.
+
+Binary, big-endian (Java's `DataOutputStream`): `i8`, `i32` and `i64` are two's-complement
+integers of 1, 4 and 8 bytes, `f64` an IEEE 754 double written by `writeDouble` (its raw bits:
+the value exactly), and `str` an `i32` byte count followed by that many bytes of UTF-8.
+
+| Part | Fields |
+|---|---|
+| header | `magic` 8 bytes, ASCII `SIMSTATE`; `version` i32 = 1; `seed` i64; `q0` f64; `u0` f64; `cut` i32; `shoes` i32; `n` i32, the number of valued states |
+| n records, in the state file's order (shoe, then round) | `shoe` i32; `round` i32; `depth` i32; `q` f64; `fold` i8, `shoe & 1`; `dealt` 26 × i8, the tallies by kind (A1) |
+| `sections` i32 | how many (row, penetration) sections follow |
+| each section | `row` str, the row's name; `pen` i32, 70, 75 or 80; `cut` i32; `plans` i32, then that many `label` str, in the order of the row's strategy files' `plan` lines; `m` i32, the states of this penetration (depth below cut), then m state entries in record order |
+| each state entry | `index` i32, the record's place, 0 to n − 1; `betKey` i32; `rvPlay` f64; `rvInsurance` f64; then one `bet` f64 per plan |
+| trailer | `magic` 8 bytes, ASCII `SIMSTEND` |
+
+- `seed`, `q0`, `u0` and `cut` are the state file's header (20260928, 0.008, 0.02, 332);
+  `shoes` is 60,000, and `n` 60,743.
+- A record's `q` is the state file's own double, to the bit, and is the state's weight's
+  inverse: every engine figure weights the state `1/q`.
+- `rvPlay` is the round value per unit bet under the fitted play of the fold the state belongs
+  to (the fold-`fold` strategy file), before insurance, from the engine's exact values: the round
+  as it starts at that state, averaged over every card that could come. For a betting-scope row
+  it is the chart's value. `rvInsurance` is what that fold's fitted insurance adds, also per unit.
+  The round value the bets multiply is their sum.
+- `bet` is the engine's expected bet under the plan at the state's bet key, `UNITS × PLAY` from
+  the fold's file; for a plan with an exit, 0 once the shoe's lowest bet key so far has fallen
+  below it.
+- The sections are sorted by row name, then penetration. A row of the report with no strategy
+  file in the bundle has no section.
+
+So a P2 estimate for a row, penetration and plan is `Σ (1/q) · bet · payoff / Σ (1/q)` over the
+section's states, against the engine's `Σ (1/q) · bet · (rvPlay + rvInsurance) / Σ (1/q)`; with
+the flat bet, `bet` is 1. The exporter's round trip (PLAN_COMPUTE.md 1.2) checks that these
+records, scored as the engine scores, give the report's figures within 1e-12 relative.
+
+### B4. keys-sample.tsv
+
+The engine's keys for a sample of states and deals, for every count the comparison scores, so
+that check D2 can hold the simulator's own key code (from its own reading of
+counting-systems.json and B2.2) to the engine's for all of them, simulated or not.
+
+```
+# keys-sample.tsv: SHOE_SPEC.md B4, format 1
+# sample seed 20261009
+line	state	shoe	round	depth	p1	p2	up	<count 1>	<count 2>	…
+bet	0	0	0	0	-	-	-	0	0	…
+play	0	0	0	0	1	1	1	-1	0	…
+```
+
+- Line 1 is the comment above; line 2 is `# sample seed ` and the seed the exporter drew the
+  sample with. Line 3 is the header: eight fixed columns, then one column per count, named
+  exactly as the report names the row. The counts are every catalog entry (duplicates made one,
+  in catalog order), then the null count, then every betting variant (ace side-count variants,
+  then the registered counts' own betting variants, if any). The header is the only place the
+  list of counts is given, and the reader takes it from there.
+- `state` is the record's place in states.bin, so the tallies and depth come from there; `shoe`,
+  `round` and `depth` repeat them for reading.
+- A `bet` line holds each count's bet key at the state (B2.2), `-` in `p1`, `p2` and `up`.
+- A `play` line holds each count's play key for the deal (p1 ≤ p2, up): the key of the deal's
+  three cards seen at the state, for the count that plays the column's row (a betting variant
+  plays on its base, so its column repeats its base's key). For a count that tags some rank by
+  colour or face, a deal's ranks do not fix its key, and the cell lists every key the deal can
+  have with its chance, given the kinds left, the three cards drawn without replacement:
+  `key:chance;key:chance;…`, in the order `CountKeys.tagSums` meets them, the chances adding to 1.
+  A deal the cards left cannot make is `-` in those columns; the other columns still give its key.
+- The lines: for 2,000 states drawn without replacement from the 60,743 with the sample seed,
+  in record order, a `bet` line, then `play` lines for 10 deals drawn with the same generator
+  from the 550, in deal order (up-card, then p1, then p2). The first 20 records also have `play`
+  lines for all 550 deals, whether drawn or not, so every deal is covered. About 31,000 lines.
+
+D2 requires every key to be equal and every chance to agree within 1e-12 relative.
+
+### B5. exact.tsv
+
+The engine's side of every comparison, with what its standard error needs when the fit is held
+fixed. One line per strategy file and figure:
+
+```
+# exact.tsv: SHOE_SPEC.md B5, format 1
+row	pen	fold	figure	metric	shoes	sumA	sumB	sumAA	sumAB	sumBB
+```
+
+- `row`, `pen` and `fold` name the strategy file. `figure` is `flat`, `play`, `insurance`, or
+  `ev:LABEL` and `bet:LABEL` for each plan of the file. `metric` is the figure's index in
+  `SystemScorer.METRICS` (0 `flat`, 1 `play`, 2 `insurance`, then for s = 1 to 8: 2 + s
+  `ev:same-s`, 10 + s `bet:same-s`, 18 + s `ev:own-s`, 26 + s `bet:own-s`, 34 + s
+  `ev:played-s`, 42 + s `bet:played-s`), or −1 for a figure the report does not have.
+- For a state j of the file's fold in this penetration, with weight `w = 1/q`, let `x` be
+  `rvPlay + rvInsurance` for `flat`, `rvPlay` for `play`, `rvInsurance` for `insurance`,
+  `bet × (rvPlay + rvInsurance)` for `ev:LABEL` and `bet` for `bet:LABEL` (B3). For each shoe i
+  of the fold, `a_i = Σ w·x` and `b_i = Σ w` over its states (both 0 for a shoe with none). Then
+  `shoes` is the number of shoes in the fold (30,000, those with no state in this penetration
+  included), `sumA = Σ a_i`, `sumB = Σ b_i`, `sumAA = Σ a_i²`, `sumAB = Σ a_i·b_i` and
+  `sumBB = Σ b_i²`.
+
+The fold's estimate is `sumA / sumB`. Pooled over the two folds, `R = (sumA₀ + sumA₁) /
+(sumB₀ + sumB₁)` is the report's figure (`Entry.estimate[pen][metric]`, within 1e-12
+relative). Shoes are independent, so with the fit held fixed the linearised standard error of
+R over the `n = shoes₀ + shoes₁` shoes is
+`sqrt(n/(n − 1) · Σ(sumAA − 2R·sumAB + R²·sumBB)) / Σ sumB`, the sums over both folds.
+SIM_CHECK.md fixes the exact form it uses before the first pilot.
+
+### B6. Choices this part made that the plan left open
+
+PLAN_COMPUTE.md 1.2 names the files and what they hold; these details are this file's, and
+StrategyExport follows them unless this file is changed first:
+
+1. The two counts of a row are named in the strategy file (`playcount`, `betcount`) and their
+   key parameters given (`tags`, `bettags`, `decksum`, `betdecksum`, `ace`, `divisor`, `mode`),
+   with the formulas written once, in B2.2, rather than as text in every file. The plan's "each
+   key formula as an exact integer ratio" is B2.2's ratios with the file's parameters in them.
+2. Later-play groups get their own lines (`lgroups`, `lgroup`), since the engine grows them
+   apart from the first-decision groups (FullIndexFit).
+3. `first` lines list moves as the full-play fit ranks them (FullIndexFit.rankings), including
+   the chart's order with repeats for a (group, deal) no training state reached, and are written
+   for scope `first` too, where only the first move is read.
+4. A key with no `bet` line takes the nearest listed key's bet, the lower on a tie, and the file
+   says so (`unseen nearest lower`); the plan said "nearest present key" without a tie rule.
+5. `bet` lines carry the coin's probability (`PLAY`) beside the units, so the back-counting plans
+   of PLAN_COMPUTE.md 3.2 need no other line; an exit plan carries its exit key on its `plan`
+   line.
+6. states.bin keeps the round value in two parts, the play's and the insurance's, so P2 can be
+   split by them; it holds per state the fold's own strategy's values only, since a state is
+   scored by one fold's strategy.
+7. exact.tsv gives per-shoe moments (`sumAA`, `sumAB`, `sumBB`) rather than a standard error, so
+   that pooling the folds, or another SE formula, needs no second export.
+8. keys-sample.tsv takes its list of counts from its header, and a betting variant's play column
+   repeats its base's key.
+9. The bundle has `index.tsv`, with every file's size and each strategy file's row, penetration,
+   fold and scope, so the simulator need not open a file to know what it holds.
+
+## How this file is held to the engine
+
+`test/ShoeSpecTest.java` (run it alone: `java -Xmx1g -jar lib/junit-platform-console-standalone-1.10.2.jar
+--class-path build/classes:build/test-classes:lib/mongo-java-driver-3.12.14.jar --select-class
+ShoeSpecTest`, from the repository's root, about 25 seconds):
+
+- A2's block against `ShoeRun`, `SystemScorer.CUTS`, `StateRun.CUT_80` and `StateRun.montreal()`;
+  A1's block against `ShoeRun.rankOf`, `red`, `simulatorRank` and `suit`.
+- A2's mix constants, assembled as A3 describes, against `ShoeRun.mix` on 20,000 inputs, and
+  A3's words on the shuffle and the valuation draw, coded from A2's constants, against
+  `ShoeRun.shuffled` and `ShoeRun.deal`.
+- A3's code, compiled from this file, against ShoeRun: `mix`, the layout, the shuffle on five
+  seeds, u and q to the bit on 50,000 tallies, and the walk over all 60,000 main shoes, every
+  round start compared in shoe, round, depth, tallies, q's bits and the valuation, with the
+  totals of A8.
+- A4's prose, transcribed in the test, against `ConcreteRound` in every round of those shoes
+  (3,644,432 rounds).
+- B1's order and the fingerprint against `BasicStrategy.fingerprint`, and the chart's
+  independence of the number of cards and of a split.
+- A9's code against `java.util.SplittableRandom`: every bound from 1 to 416 and 50 doubles and
+  longs on 400 seeds.
+- Nine planted changes to A3's code (a mix constant, a shift, the shuffle's direction, the
+  layout, the valuation's stream, u's last division, a round at the cut card, a round's cards
+  counted at its own start, the hole card left out of the count), each compiled and each seen.
+
+Planted by hand on 9 October 2026, one at a time, in a copy of the source or of this file (each
+copy compiled and the test run against it, the worktree untouched), to show the test fails when
+the spec and the engine diverge in either direction:
+
+| Planted | Where | Tests that failed | First failure |
+|---|---|---|---|
+| a mix multiplier changed | `ShoeRun.mix` | 5 of 11 | shoe 0 round 1: the spec's depth 5 tallies differ from ShoeRun's |
+| shuffle from the bottom up | `ShoeRun.shuffled` | 3 | shoe 0 is shuffled differently |
+| valuation on stream 2 | `ShoeRun.deal` | 3 | shoe 0 round 8 valued by ShoeRun, not by the spec |
+| dealer draws even when every hand busted | `ConcreteRound` | 1 | A4's prose ends the round at another card |
+| `q0 = 0.0081` | A2 | 1 | 46,011 states valued at 70%, not 45,495 |
+| kind 13 written as black | A1 | 1 | kind 13 is red |
+| `nextInt(i)` for `nextInt(i + 1)` (Sattolo's shuffle) | A3 | 3 | shoe 0 is shuffled differently |
+| `mix.shift2 = 28` | A2 | 3 | the mix from A2's constants differs from ShoeRun.mix |
+| `rule.max.hands.other = 3` | A2 | 1 | the engine splits to 4 hands |
+
+Part B is not tested here: it describes files no code writes yet. StrategyExport's tests will
+read them back with a reader written from Part B.

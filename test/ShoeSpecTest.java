@@ -598,8 +598,9 @@ public class ShoeSpecTest {
             if (prose != engine) {
                 proseMisses[0]++;
                 if (firstMiss[0] == null) {
-                    firstMiss[0] = "the round at card " + from + " of " + Arrays.toString(ranks) + " ends at " + engine
-                            + ", A4's prose says " + prose;
+                    firstMiss[0] = "the round at card " + from + " (ranks from there "
+                            + Arrays.toString(Arrays.copyOfRange(ranks, from, Math.min(ranks.length, from + 24)))
+                            + ") ends at " + engine + ", A4's prose says " + prose;
                 }
             }
             return engine;
@@ -653,8 +654,9 @@ public class ShoeSpecTest {
 
     /**
      * chart.tsv's order (B1) is BasicStrategy.fingerprint's, and the fingerprint in A2 is the
-     * chart's. A4 looks a decision up without the hand's number of cards beyond whether it is a
-     * first decision, which holds because the chart's answer does not depend on it.
+     * chart's. B1 says the chart's answer depends neither on the hand's number of cards beyond
+     * whether it is a first decision nor on whether the hand came from a split, which lets a
+     * full-play file's split hands read the chart's later play (B2.4); both are checked here.
      */
     @Test
     public void theChartsOrderAndFingerprintAreTheEngines() {
@@ -669,6 +671,9 @@ public class ShoeSpecTest {
             for (int cards = 2; cards <= 12; cards++) {
                 assertEquals(CHART.choose(decision), CHART.choose(decision(d, cards)), decision.toString());
             }
+            int[] otherSplit = d.clone();
+            otherSplit[4] = 1 - d[4];
+            assertEquals(CHART.choose(decision), CHART.choose(decision(otherSplit, first ? 2 : 3)), decision.toString());
         }
         String engine = BasicStrategy.fingerprint(CHART);
         assertEquals(engine, code.fingerprint(moves));
