@@ -261,4 +261,106 @@ public class KeyEdgesTest {
         // is that of A -2, 2 and 3 +1, 4 and 5 +2, 6 and 7 +1, ten -2, 412/169.
         assertEquals(412 / 169.0, CountKeys.betSpread(PlayerTreeOrderTest.named("Hi-Opt II").sideCounted()), 1e-14);
     }
+
+    /**
+     * A row's figures with the plays refitted are the scorer's own resamples: the flat figure
+     * rebuilt from the resample sink's per-key sums is Entry.boot's flat figure on every
+     * resample (the check 5.4 makes of run A' against c06c061). Held, the same figure moves only
+     * with the weights. Every check of the row passes.
+     */
+    @Test
+    public void refittedFiguresAreTheScorersResamples() {
+        int resamples = 8;
+        Scored s = new Scored(97, resamples, Arrays.asList(PlayerTreeOrderTest.named("Hi-Lo"),
+                PlayerTreeOrderTest.named("Omega II")));
+        for (SystemScorer.Result res : s.results) {
+            for (SystemScorer.Entry e : res.entries) {
+                for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                    KeyEdges.Edges ed = KeyEdges.edges(e.name, KeyEdges.Layer.FIRST, new KeyEdges.Axis(e.count),
+                            s.col.values(e.name, p), s.st, s.sc.boot, s.col.refitted(e.name, p),
+                            e.estimate[p][SystemScorer.FLAT]);
+                    assertEquals(new ArrayList<String>(), ed.failures, e.name);
+                    for (int r = 0; r < resamples; r++) {
+                        double want = e.boot[p][SystemScorer.FLAT][r];
+                        assertEquals(want, ed.flat.refit[r], 1e-12 * Math.abs(want), e.name + " resample " + r);
+                    }
+                    assertEquals("refitted", ed.flat.how);
+                    assertEquals(resamples, ed.flat.held.length);
+                    assertNotNull(ed.line, "a true count has a line");
+                    assertNull(ed.pivot);
+                }
+            }
+        }
+    }
+
+    /**
+     * Widening applies a band's ratio to the bins whose Hi-Lo-equivalent position is in it, never
+     * below 1, and leaves the chart and the perfect layers alone: a bin up to 0 under a ratio of
+     * 0.5 is not narrowed, a bin of +1 to +3 under 2 has its interval twice as wide about its mean.
+     */
+    /** Synthetic figures with held resamples drawn at random about their estimates. */
+    private static KeyEdges.Figure[] figures(Random rnd, int n, int resamples) {
+        KeyEdges.Figure[] out = new KeyEdges.Figure[n];
+        for (int k = 0; k < n; k++) {
+            double[] h = new double[resamples];
+            for (int r = 0; r < resamples; r++) {
+                h[r] = 0.01 * k + 0.001 * rnd.nextGaussian();
+            }
+            out[k] = new KeyEdges.Figure(0.01 * k, h, null);
+        }
+        return out;
+    }
+
+    /** A row of Hi-Lo with keys -5 to +4, each standing alone, under the layer given, with random held resamples. */
+    private static KeyEdges.Edges synthetic(KeyEdges.Layer layer) {
+        Random rnd = new Random(103);
+        KeyEdges.Table t = toy(new int[]{200, 200, 200, 200, 200, 200, 200, 200, 200, 200});
+        KeyEdges.Bins bins = KeyEdges.bins(t);
+        assertEquals(10, bins.size());
+        int nf = KeyEdges.TOP.length + KeyEdges.BANDS.length + 1;
+        return new KeyEdges.Edges("Hi-Lo", layer, 2, new KeyEdges.Axis(PlayerTreeOrderTest.named("Hi-Lo")), t, bins,
+                figures(rnd, 10, 400), figures(rnd, 10, 400), figures(rnd, 10, 400), new double[10], figures(rnd, nf, 400),
+                figures(rnd, 1, 400)[0], figures(rnd, 3, 400), null);
+    }
+
+    /**
+     * Widening applies a band's ratio to the bins whose Hi-Lo-equivalent position is in it, never
+     * below 1, and leaves the chart and the perfect layers alone: keys -5 to 0 under a ratio of
+     * 0.5 are not narrowed, +1 to +3 under 2 have intervals twice as wide about their mean, +4
+     * under 1.25 a quarter wider; full play says its later plays are held.
+     */
+    @Test
+    public void widenAppliesEachBandsRatioAndNeverNarrows() {
+        KeyEdges.Widening w = new KeyEdges.Widening();
+        w.band[0] = 0.5;
+        w.band[1] = 2;
+        w.band[2] = 1.25;
+        Arrays.fill(w.byShare, 1.5);
+        w.measuredOn.add("a test");
+        KeyEdges.Edges first = synthetic(KeyEdges.Layer.FIRST);
+        KeyEdges.Edges full = synthetic(KeyEdges.Layer.FULL);
+        KeyEdges.Edges chart = synthetic(KeyEdges.Layer.CHART);
+        KeyEdges.Edges perfect = synthetic(KeyEdges.Layer.PERFECT_FIRST);
+        for (KeyEdges.Edges e : Arrays.asList(first, full, chart, perfect)) {
+            w.apply(e);
+        }
+        double[] want = {1, 1, 1, 1, 1, 1, 2, 2, 2, 1.25};
+        for (int b = 0; b < 10; b++) {
+            KeyEdges.Figure f = first.edge[b];
+            assertEquals(want[b], f.widen, 0, "bin " + b);
+            assertEquals(want[b], full.share[b].widen, 0, "bin " + b);
+            Bootstrap.Interval h = f.heldInterval();
+            Bootstrap.Interval x = f.interval();
+            assertEquals(f.widen * h.se, x.se, 1e-12, "bin " + b);
+            assertEquals(1, chart.edge[b].widen, 0);
+            assertEquals(1, perfect.insurance[b].widen, 0);
+            assertEquals("held, not widened: fitted on nothing", chart.edge[b].how);
+        }
+        assertTrue(full.edge[0].how.contains("later plays held fixed"), full.edge[0].how);
+        assertFalse(first.edge[0].how.contains("later plays"), first.edge[0].how);
+        assertEquals(1.5, first.byShare[0].widen, 0);
+        assertEquals(1.5, first.flat.widen, 0);
+        assertEquals(2, first.line[0].widen, 0, "the line takes the largest band's");
+        assertEquals(1, chart.byShare[0].widen, 0);
+    }
 }

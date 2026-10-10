@@ -883,4 +883,426 @@ final class KeyEdges {
             return book(key) * hiLo;
         }
     }
+
+    // --------------------------------------------------------------------- figures
+
+    /**
+     * One figure: its estimate, its resamples with the values held and, where the plays were
+     * refitted on every resample (run A'), with them refitted. Its interval is the refitted one
+     * where there is one; otherwise the held one, spread widen times as far from its mean
+     * (Bootstrap.widen) when a ratio has been set (Widening).
+     */
+    static final class Figure {
+        final double estimate;
+        final double[] held;
+        final double[] refit;
+        /** What the held resamples are widened by; 1 until Widening sets it. */
+        double widen = 1;
+        /** Why: "refitted", "held, not widened: fitted on nothing", or the ratio's source. */
+        String how;
+
+        Figure(double estimate, double[] held, double[] refit) {
+            this.estimate = estimate;
+            this.held = held;
+            this.refit = refit;
+            this.how = refit != null ? "refitted" : held != null ? "held" : "no resamples";
+        }
+
+        /** The interval the page shows, or null with no resamples. */
+        Bootstrap.Interval interval() {
+            if (refit != null) {
+                return Bootstrap.interval(estimate, refit);
+            }
+            if (held == null) {
+                return null;
+            }
+            return Bootstrap.interval(estimate, widen == 1 ? held : Bootstrap.widen(held, widen));
+        }
+
+        Bootstrap.Interval heldInterval() {
+            return held == null ? null : Bootstrap.interval(estimate, held);
+        }
+
+        Bootstrap.Interval refitInterval() {
+            return refit == null ? null : Bootstrap.interval(estimate, refit);
+        }
+    }
+
+    /** The book keys over which a true count's line is fitted (PLAN_COMPUTE.md 5.2, "Derived"). */
+    static final double LINE_FROM = -3;
+    static final double LINE_TO = 6;
+
+    /**
+     * A true count's line through its keys' edges over book keys LINE_FROM to LINE_TO: weighted
+     * least squares, each key weighted by its n_eff on the estimate (the inverse of the variance
+     * of its mean when its states spread alike; fixed, so every resample fits the same line
+     * through its own means). {slope per book step, intercept, the book key where the line
+     * crosses zero}. A key with no weight on a resample is left out of that resample's fit.
+     */
+    static double[] line(Sums s, Axis axis, double[] nEff) {
+        double sw = 0;
+        double sx = 0;
+        double sy = 0;
+        double sxx = 0;
+        double sxy = 0;
+        for (int k = 0; k < s.key.length; k++) {
+            double x = axis.book(s.key[k]);
+            if (x < LINE_FROM || x > LINE_TO || s.weight[k] == 0 || !(nEff[k] > 0)) {
+                continue;
+            }
+            double y = s.value[k] / s.weight[k];
+            double w = nEff[k];
+            sw += w;
+            sx += w * x;
+            sy += w * y;
+            sxx += w * x * x;
+            sxy += w * x * y;
+        }
+        double det = sw * sxx - sx * sx;
+        double slope = (sw * sxy - sx * sy) / det;
+        double intercept = (sy - slope * sx) / sw;
+        return new double[]{slope, intercept, -intercept / slope};
+    }
+
+    /** The edge at key k on these sums, NaN where it has no weight. */
+    static double edgeAt(Sums s, int key) {
+        int k = Arrays.binarySearch(s.key, key);
+        return k < 0 || s.weight[k] == 0 ? Double.NaN : s.value[k] / s.weight[k];
+    }
+
+    /** Everything section 5 computes for one row at one penetration under one layer. */
+    static final class Edges {
+        final String row;
+        final Layer layer;
+        final int p;
+        final Axis axis;
+        final Table table;
+        final Bins bins;
+        /** Per bin: its edge, its share of rounds and the part of its edge insurance gives. */
+        final Figure[] edge;
+        final Figure[] share;
+        final Figure[] insurance;
+        /** Per bin: its n_eff, pooled. */
+        final double[] binNEff;
+        /** TOP's edges, then BANDS', then the share of rounds in keys of positive edge (shareFigures). */
+        final Figure[] byShare;
+        final Figure flat;
+        /** A true count's slope per book step, intercept and break-even book key; null for a running count. */
+        final Figure[] line;
+        /** A running count's edge at its pivot; null without one. */
+        final Figure pivot;
+        /** The checks of PLAN_COMPUTE.md 5.4 this row failed; none, or its intervals are not shown. */
+        final List<String> failures = new ArrayList<>();
+
+        Edges(String row, Layer layer, int p, Axis axis, Table table, Bins bins, Figure[] edge, Figure[] share,
+              Figure[] insurance, double[] binNEff, Figure[] byShare, Figure flat, Figure[] line, Figure pivot) {
+            this.row = row;
+            this.layer = layer;
+            this.p = p;
+            this.axis = axis;
+            this.table = table;
+            this.bins = bins;
+            this.edge = edge;
+            this.share = share;
+            this.insurance = insurance;
+            this.binNEff = binNEff;
+            this.byShare = byShare;
+            this.flat = flat;
+            this.line = line;
+            this.pivot = pivot;
+        }
+
+        /** Bin b's key as shown: its one key, or a tail's boundary (its highest for "at most", lowest for "at least"). */
+        int binKey(int b) {
+            return bins.kind[b] == Bin.AT_MOST ? table.sums.key[bins.to[b] - 1] : table.sums.key[bins.from[b]];
+        }
+    }
+
+    /** A figure computed on every resample of some sums; null when there are none. */
+    private interface OfSums {
+        double of(Sums s);
+    }
+
+    private static double[] each(Sums[] r, OfSums f) {
+        if (r == null) {
+            return null;
+        }
+        double[] out = new double[r.length];
+        for (int k = 0; k < r.length; k++) {
+            out[k] = f.of(r[k]);
+        }
+        return out;
+    }
+
+    private static Figure figure(Sums point, Sums[] held, Sums[] refit, OfSums f) {
+        return new Figure(f.of(point), each(held, f), each(refit, f));
+    }
+
+    /**
+     * The figures of one row at one penetration under one layer, from its per-state values (keyed
+     * as its axis shows them: pooled into whole steps first where the axis says so), with held
+     * resamples when boot is given and refitted ones when the resample sink's sums are. The row's
+     * flat figure from the scorer, when given, is checked against Sum share x edge and the top
+     * 100% (check 2 of 5.4), and every key that stands is checked for weight on 99.9% of
+     * resamples (check 5).
+     */
+    static Edges edges(String row, Layer layer, Axis axis, Values v, ScoringStates st, Bootstrap boot, Refitted rf,
+                       double scorersFlat) {
+        Values keyed = axis.rebinned ? v.rekeyed(axis.rebin()) : v;
+        Table t = table(keyed);
+        Bins bins = bins(t);
+        int[] keys = t.sums.key;
+        Sums[] held = boot == null || boot.resamples == 0 ? null : held(keyed, keys, st, boot);
+        Sums[] refit = rf == null ? null : refitted(rf, keys, axis.rebin());
+        int nb = bins.size();
+        Figure[] edge = new Figure[nb];
+        Figure[] share = new Figure[nb];
+        Figure[] ins = new Figure[nb];
+        double[] binNEff = new double[nb];
+        for (int b = 0; b < nb; b++) {
+            int bb = b;
+            edge[b] = figure(t.sums, held, refit, s -> {
+                double[] x = binSums(s, bins, bb);
+                return x[1] / x[0];
+            });
+            share[b] = figure(t.sums, held, refit, s -> binSums(s, bins, bb)[0] / s.total);
+            ins[b] = figure(t.sums, held, refit, s -> {
+                double[] x = binSums(s, bins, bb);
+                return x[2] / x[0];
+            });
+            binNEff[b] = nEff(t, bins.from[b], bins.to[b]);
+        }
+        int nf = TOP.length + BANDS.length + 1;
+        Figure[] byShare = new Figure[nf];
+        for (int k = 0; k < nf; k++) {
+            int kk = k;
+            byShare[k] = figure(t.sums, held, refit, s -> shareFigures(s)[kk]);
+        }
+        Figure flat = figure(t.sums, held, refit, Sums::flat);
+        Figure[] line = null;
+        if (axis.count.trueCounted) {
+            double[] ne = new double[t.keys()];
+            for (int k = 0; k < ne.length; k++) {
+                ne[k] = t.nEff(k);
+            }
+            line = new Figure[3];
+            for (int c = 0; c < 3; c++) {
+                int cc = c;
+                line[c] = figure(t.sums, held, refit, s -> line(s, axis, ne)[cc]);
+            }
+        }
+        Figure pivot = axis.pivot == NO_PIVOT ? null : figure(t.sums, held, refit, s -> edgeAt(s, axis.pivot));
+        Edges e = new Edges(row, layer, keyed.p, axis, t, bins, edge, share, ins, binNEff, byShare, flat, line, pivot);
+        check(e, held, refit, scorersFlat);
+        return e;
+    }
+
+    /** Checks 2 and 5 of PLAN_COMPUTE.md 5.4 on one row's figures; failures go into e.failures. */
+    static void check(Edges e, Sums[] held, Sums[] refit, double scorersFlat) {
+        Table t = e.table;
+        double shares = 0;
+        double weighted = 0;
+        for (int k = 0; k < t.keys(); k++) {
+            shares += t.share(k);
+            weighted += t.share(k) * t.edge(k);
+        }
+        double flat = t.sums.flat();
+        double top = topEdge(t.sums, 1.0);
+        if (!(Math.abs(shares - 1) <= 1e-12)) {
+            e.failures.add("shares add to " + shares + ", not 1");
+        }
+        for (double[] pair : new double[][]{{weighted, flat}, {top, flat}, {flat, scorersFlat}}) {
+            if (!Double.isNaN(pair[1]) && !(Math.abs(pair[0] - pair[1]) <= 1e-12 * Math.abs(pair[1]))) {
+                e.failures.add("the flat figure " + pair[1] + " is not matched: " + pair[0]);
+            }
+        }
+        for (Sums[] r : new Sums[][]{held, refit}) {
+            if (r == null) {
+                continue;
+            }
+            for (int k = 0; k < t.keys(); k++) {
+                if (t.nEff(k) < MIN_N_EFF) {
+                    continue;
+                }
+                int empty = 0;
+                for (Sums s : r) {
+                    empty += s.weight[k] == 0 ? 1 : 0;
+                }
+                if (empty > 0.001 * r.length) {
+                    e.failures.add("key " + t.sums.key[k] + " (n_eff " + t.nEff(k) + ") has no weight on " + empty + " of "
+                            + r.length + " resamples");
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------- widening
+
+    /** The bands of Hi-Lo-equivalent position a ratio is measured in: up to 0, +1 to +3, +4 and up. */
+    static final String[] POSITION_BANDS = {"up to 0", "+1 to +3", "+4 and up"};
+
+    /** The band of a position on Hi-Lo's steps, rounded to the nearest step; -1 for none (a running count). */
+    static int positionBand(double position) {
+        if (Double.isNaN(position)) {
+            return -1;
+        }
+        return position < 0.5 ? 0 : position < 3.5 ? 1 : 2;
+    }
+
+    /**
+     * How much holding the plays narrows an interval, measured on counts refitted outright
+     * (PLAN_COMPUTE.md 5.3, item 3), and applied to every row that was not. Holding the plays
+     * leaves out the noise of fitting them, which sits where play groups are thin: the high keys.
+     * A whole-row ratio would be close to 1, since a flat figure's SE is mostly shoe luck, so a
+     * ratio is measured per band of Hi-Lo-equivalent position and per share of rounds:
+     * - per band, for each refitted count, sqrt(sum of refitted SE^2 / sum of held SE^2) over its
+     *   bins in the band, and the largest over the counts;
+     * - per figure by share of rounds (top-q, bands, positive share), refitted SE over held SE,
+     *   the largest over the counts; and the same for each count's difference from Hi-Lo, taken
+     *   resample by resample, where holding the plays understated the SE two to three times
+     *   (KO: 0.011% held, 0.034% refitted, COUNTING_COMPARISON.md section 6).
+     * Every ratio is applied as at least 1, so no interval is narrowed. A running count's bins
+     * have no position; they take the largest of the band ratios, and so do the line's figures
+     * and a pivot's, which span bands.
+     */
+    static final class Widening {
+        final double[] band = new double[POSITION_BANDS.length];
+        final double[] byShare = new double[TOP.length + BANDS.length + 1];
+        final double[] difference = new double[TOP.length + BANDS.length + 1];
+        final List<String> measuredOn = new ArrayList<>();
+
+        /** The ratios measured on rows refitted outright, each with held and refitted resamples; hiLo among them. */
+        static Widening measure(List<Edges> refitted, Edges hiLo) {
+            Widening w = new Widening();
+            Arrays.fill(w.band, 1);
+            Arrays.fill(w.byShare, 1);
+            Arrays.fill(w.difference, 1);
+            for (Edges e : refitted) {
+                w.measuredOn.add(e.row);
+                double[] r2 = new double[POSITION_BANDS.length];
+                double[] h2 = new double[POSITION_BANDS.length];
+                for (int b = 0; b < e.edge.length; b++) {
+                    int band = positionBand(e.axis.hiLoPosition(e.binKey(b)));
+                    Bootstrap.Interval r = e.edge[b].refitInterval();
+                    Bootstrap.Interval h = e.edge[b].heldInterval();
+                    if (band < 0 || r == null || h == null) {
+                        continue;
+                    }
+                    r2[band] += r.se * r.se;
+                    h2[band] += h.se * h.se;
+                }
+                for (int b = 0; b < r2.length; b++) {
+                    if (h2[b] > 0) {
+                        w.band[b] = Math.max(w.band[b], Math.sqrt(r2[b] / h2[b]));
+                    }
+                }
+                for (int k = 0; k < w.byShare.length; k++) {
+                    w.byShare[k] = Math.max(w.byShare[k], ratio(e.byShare[k].refitInterval(), e.byShare[k].heldInterval()));
+                    if (e != hiLo) {
+                        Figure d = difference(e.byShare[k], hiLo.byShare[k]);
+                        w.difference[k] = Math.max(w.difference[k], ratio(d.refitInterval(), d.heldInterval()));
+                    }
+                }
+            }
+            return w;
+        }
+
+        private static double ratio(Bootstrap.Interval refit, Bootstrap.Interval held) {
+            return refit == null || held == null || !(held.se > 0) ? 1 : refit.se / held.se;
+        }
+
+        double largestBand() {
+            double m = 1;
+            for (double b : band) {
+                m = Math.max(m, b);
+            }
+            return m;
+        }
+
+        /**
+         * Sets the widening of every figure of e that holds its plays. The chart and the perfect
+         * layers are fitted on nothing and are left as they are; a figure refitted on every
+         * resample needs none. Full play holds its later plays on every resample and can borrow
+         * only the first decisions' ratio, and says so.
+         */
+        void apply(Edges e) {
+            if (e.layer == Layer.CHART || e.layer == Layer.PERFECT_FIRST || e.layer == Layer.PERFECT_FULL) {
+                for (Figure f : all(e)) {
+                    if (f.refit == null && f.held != null) {
+                        f.how = "held, not widened: fitted on nothing";
+                    }
+                }
+                return;
+            }
+            String source = "widened by a ratio measured on other counts (" + String.join(", ", measuredOn) + ")";
+            if (e.layer == Layer.FULL) {
+                source += "; later plays held fixed, their fitting uncertainty not included";
+            }
+            for (int b = 0; b < e.edge.length; b++) {
+                int band = positionBand(e.axis.hiLoPosition(e.binKey(b)));
+                double r = band < 0 ? largestBand() : band(band);
+                set(e.edge[b], r, source);
+                set(e.share[b], r, source);
+                set(e.insurance[b], r, source);
+            }
+            for (int k = 0; k < e.byShare.length; k++) {
+                set(e.byShare[k], byShare[k], source);
+            }
+            set(e.flat, byShare[TOP.length - 1], source);
+            if (e.line != null) {
+                for (Figure f : e.line) {
+                    set(f, largestBand(), source);
+                }
+            }
+            if (e.pivot != null) {
+                set(e.pivot, largestBand(), source);
+            }
+        }
+
+        private double band(int b) {
+            return Math.max(1, band[b]);
+        }
+
+        private static void set(Figure f, double ratio, String source) {
+            if (f.refit == null && f.held != null) {
+                f.widen = Math.max(1, ratio);
+                f.how = source + ", x" + String.format(java.util.Locale.ROOT, "%.3f", f.widen);
+            }
+        }
+
+        private static List<Figure> all(Edges e) {
+            List<Figure> out = new ArrayList<>();
+            out.addAll(Arrays.asList(e.edge));
+            out.addAll(Arrays.asList(e.share));
+            out.addAll(Arrays.asList(e.insurance));
+            out.addAll(Arrays.asList(e.byShare));
+            out.add(e.flat);
+            if (e.line != null) {
+                out.addAll(Arrays.asList(e.line));
+            }
+            if (e.pivot != null) {
+                out.add(e.pivot);
+            }
+            return out;
+        }
+    }
+
+    /**
+     * a - b resample by resample, which pairs them, since every row is resampled with the same
+     * draws; refitted where both were refitted, held where both were held.
+     */
+    static Figure difference(Figure a, Figure b) {
+        return new Figure(a.estimate - b.estimate, minus(a.held, b.held), minus(a.refit, b.refit));
+    }
+
+    private static double[] minus(double[] a, double[] b) {
+        if (a == null || b == null) {
+            return null;
+        }
+        double[] d = new double[a.length];
+        for (int r = 0; r < d.length; r++) {
+            d[r] = a[r] - b[r];
+        }
+        return d;
+    }
 }
