@@ -1119,4 +1119,142 @@ final class ExportBundle {
         }
         return sb.toString();
     }
+
+    // ------------------------------------------------------------------ B2.2: keys, from the file's parameters
+
+    /*
+     * Why the keys are worked out here again, from B2.2's words and a strategy file's own
+     * parameters, rather than with CountKeys: the round trip has to show that the parameters the
+     * file gives (tags, deck sums, divisor, mode, ace weight) make the keys the engine bet and
+     * played on. Computing them with the engine's Count would pass a file whose tags line was
+     * wrong. ShoeSpecTest holds these same formulas to CountKeys for every count the comparison
+     * scores, so the two together tie the file to the engine.
+     */
+
+    /** B2.2's rounding: the double nearest n / d, to the nearest whole number, ties toward zero. */
+    static int round(long n, long d) {
+        double x = (double) n / (double) d;
+        return (int) (Math.signum(x) * Math.ceil(Math.abs(x) - 0.5));
+    }
+
+    /** The sum of the tags of every card of a tally by kind. */
+    static long tally(int[] tags, int[] dealt) {
+        long rc = 0;
+        for (int k = 0; k < KINDS; k++) {
+            rc += (long) dealt[k] * tags[k];
+        }
+        return rc;
+    }
+
+    /** B2.2's bet key of a state, from a file's bet tags, bet deck sum, ace weight, mode and divisor. */
+    static int betKey(Strategy s, int[] dealt, int depth) {
+        long rcb = tally(s.betTags, dealt);
+        long d = s.divisor;
+        if (!s.trueCounted) {
+            return d == 1 ? (int) rcb : round(rcb, d);
+        }
+        long left = ShoeRun.CARDS - depth;
+        long aces = 2L * 2 * ShoeRun.DECKS - dealt[0] - dealt[1];
+        return round(52 * rcb - (long) s.betDeckSum * depth + (long) s.ace * (52 * aces - 4 * left), left * d);
+    }
+
+    /** B2.2's key at a decision: seen cards of the round seen, their tags adding to t, after a tally of rc. */
+    static int keyAt(Strategy s, long rc, int depth, int t, int seen) {
+        long d = s.divisor;
+        if (!s.trueCounted) {
+            return d == 1 ? (int) (rc + t) : round(rc + t, d);
+        }
+        return round(52 * (rc + t) - (long) s.deckSum * (depth + seen), (long) (ShoeRun.CARDS - depth - seen) * d);
+    }
+
+    /**
+     * The tag classes of a count, from its tags by kind: for each rank 1 to 10, the distinct tags
+     * its kinds carry, in kind order. A rank of one class is tagged alike whatever its colour or
+     * face; a count with any rank of two classes is the colour or face count of B4.
+     */
+    static int[][] classes(int[] tags) {
+        int[][] out = new int[11][];
+        for (int r = 1; r <= 10; r++) {
+            List<Integer> distinct = new ArrayList<>();
+            for (int k = 0; k < KINDS; k++) {
+                if (rank(k) == r && !distinct.contains(tags[k])) {
+                    distinct.add(tags[k]);
+                }
+            }
+            out[r] = distinct.stream().mapToInt(Integer::intValue).toArray();
+        }
+        return out;
+    }
+
+    static boolean kindAware(int[] tags) {
+        for (int[] c : classes(tags)) {
+            if (c != null && c.length > 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The tag sums the deal's three cards (p1, p2, up) can carry with their chances, given the
+     * cards dealt by kind: each card's tag class drawn without replacement from what is left of
+     * its rank, p1 first, then p2, then the up-card, classes tried in order, and a sum met again
+     * added to the first entry with it. {sum, chance} pairs in the order first met; none when the
+     * cards left cannot make the deal. This is the order B4's play cells list their keys in.
+     */
+    static double[][] tagSums(int[] tags, int[] dealt, int p1, int p2, int up) {
+        int[][] cls = classes(tags);
+        int[][] left = new int[11][];
+        for (int r = 1; r <= 10; r++) {
+            left[r] = new int[cls[r].length + 1];
+        }
+        for (int k = 0; k < KINDS; k++) {
+            int r = rank(k);
+            int c = 0;
+            while (cls[r][c] != tags[k]) {
+                c++;
+            }
+            int n = 2 * ShoeRun.DECKS - dealt[k];
+            left[r][c] += n;
+            left[r][cls[r].length] += n;
+        }
+        List<double[]> out = new ArrayList<>();
+        spread(new int[]{p1, p2, up}, cls, left, 0, 0, 1.0, out);
+        return out.toArray(new double[0][]);
+    }
+
+    private static void spread(int[] ranks, int[][] cls, int[][] left, int at, int sum, double p, List<double[]> out) {
+        if (at == 3) {
+            for (double[] e : out) {
+                if (e[0] == sum) {
+                    e[1] += p;
+                    return;
+                }
+            }
+            out.add(new double[]{sum, p});
+            return;
+        }
+        int r = ranks[at];
+        int n = cls[r].length;
+        if (left[r][n] <= 0) {
+            return;
+        }
+        for (int c = 0; c < n; c++) {
+            if (left[r][c] <= 0) {
+                continue;
+            }
+            double pc = p * left[r][c] / left[r][n];
+            left[r][c]--;
+            left[r][n]--;
+            spread(ranks, cls, left, at + 1, sum + cls[r][c], pc, out);
+            left[r][c]++;
+            left[r][n]++;
+        }
+    }
+
+    /** The contract's rank of a kind, as A1 gives it: 1 for the ace, 2 to 9, and 10 for the ten, J, Q and K. */
+    static int rank(int kind) {
+        int rank13 = kind / 2;
+        return rank13 >= 9 ? 10 : rank13 + 1;
+    }
 }
