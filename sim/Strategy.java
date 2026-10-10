@@ -203,6 +203,21 @@ public final class Strategy {
             return dealKey;
         }
 
+        /** The play key of a deal whose first s seen cards are these (for playouts shared by first move). */
+        public int keyOfDeal(int[] seen, int s) {
+            return keys.playKey(rc, depth, seen, s);
+        }
+
+        /** Whether the ace-up deal (p1, p2) is insured at this play key. */
+        public boolean insuredAt(int key, int p1, int p2) {
+            return insure[group(groupHi, key)][deal(Math.min(p1, p2), Math.max(p1, p2), 1)];
+        }
+
+        /** The dealt hand's first move at this play key, scopes first and full. */
+        public int firstMoveAt(int key, int p1, int p2, int up) {
+            return firstMoves[group(groupHi, key)][deal(Math.min(p1, p2), Math.max(p1, p2), up)][0];
+        }
+
         @Override
         public boolean insure(Round.Decision d) {
             int g = group(groupHi, dealKey(d));
