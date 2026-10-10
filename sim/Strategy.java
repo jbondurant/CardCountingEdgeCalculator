@@ -58,8 +58,6 @@ public final class Strategy {
         final int[] keys;
         final double[] units;
         final double[] play;
-        /** Rounds that met a key with no bet line and took the nearest one's (B2.5); counted by the caller. */
-        public long unseenRounds;
 
         Plan(String label, String rule, Integer exit, int[] keys, double[] units, double[] play) {
             this.label = label;

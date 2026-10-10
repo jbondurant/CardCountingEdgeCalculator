@@ -14,6 +14,10 @@ import java.util.Arrays;
  * <li>{@code d1 --states states.bin [--chart chart.tsv]}: check D1 in full. Walks every shoe the
  * file's header names and holds each state it values to the file's next record, card for card
  * and in q to the bit; for the main file, also the round starts to A8.
+ * <li>{@code p3 --bundle DIR --out DIR --sim-commit SHA [--chunks N] [--chunk-size S] [--threads T]
+ * [--plant a,b]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and the
+ * chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
+ * {@code OUT/summary-p3.json}.
  * </ul>
  *
  * <p>Tests: {@code javac -d out-test -cp out:lib/junit-platform-console-standalone-1.10.2.jar
@@ -43,6 +47,9 @@ public final class Sim {
             case "d1":
                 System.exit(d1(Arrays.copyOfRange(args, 1, args.length)) ? 0 : 1);
                 break;
+            case "p3":
+                p3(Arrays.copyOfRange(args, 1, args.length));
+                break;
             default:
                 System.err.println("unknown command " + args[0]);
                 System.exit(2);
@@ -56,6 +63,50 @@ public final class Sim {
             }
         }
         return otherwise;
+    }
+
+    static Plants plants(String[] args) {
+        String list = option(args, "--plant", "");
+        return list.isEmpty() ? Plants.NONE : Plants.of(list.split(","));
+    }
+
+    static String required(String[] args, String name) {
+        String v = option(args, name, null);
+        if (v == null) {
+            throw new IllegalArgumentException("missing " + name);
+        }
+        return v;
+    }
+
+    /** Check P3: the run, then its summary beside the chunks. */
+    static void p3(String[] args) throws Exception {
+        Plants plants = plants(args);
+        Bundle bundle = new Bundle(Path.of(required(args, "--bundle")), plants);
+        Path out = Path.of(required(args, "--out"));
+        String commit = required(args, "--sim-commit");
+        int chunks = Integer.parseInt(option(args, "--chunks", "38"));
+        int size = Integer.parseInt(option(args, "--chunk-size", "1000000"));
+        int threads = Integer.parseInt(option(args, "--threads", "1"));
+        java.util.List<Row> rows = bundle.rows(true);
+        long t0 = System.nanoTime();
+        double[] sums = P3.chunked(bundle, rows, out.resolve("p3"), commit, P3.SEED, chunks, size, threads, plants, -1);
+        double seconds = (System.nanoTime() - t0) / 1e9;
+        java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
+        facts.put("check", "P3");
+        facts.put("simulatorCommit", commit);
+        facts.put("bundleSha256", bundle.sha256);
+        facts.put("seed", Long.toString(P3.SEED));
+        facts.put("generator", "xoshiro256** seeded by SplitMix64: Xoshiro.of(seed, shoe, 0 cards / 1 coins, 0)");
+        facts.put("shoes", Long.toString((long) chunks * size));
+        facts.put("chunks", chunks + " of " + size + " shoes");
+        facts.put("threads", Integer.toString(threads));
+        facts.put("wallSeconds", String.format("%.1f", seconds));
+        facts.put("loadAverage", Double.toString(java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+                .getSystemLoadAverage()));
+        facts.put("java", System.getProperty("java.version"));
+        facts.put("plants", plants.describe());
+        Summary.write(out.resolve("summary-p3.json"), facts, Summary.p3(rows, sums, bundle.exact, plants));
+        System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-p3.json"));
     }
 
     /** Check D1 against a states.bin: true when every state matches and, for the main file, the rounds are A8's. */
