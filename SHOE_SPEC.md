@@ -531,7 +531,8 @@ commit, abbreviated to 7 hexadecimal digits:
 | `exact.tsv` | the test folds' sums and per-shoe moments of every exported figure (B5) |
 
 **Conventions for every text file.** UTF-8, lines ending in a single `\n`, the last line too;
-fields separated by one tab; no field contains a tab or a line break. A line starting with `#`
+fields separated by one tab (in this file's examples and in the keyword table of B2.1, the gap
+between fields is a tab character); no field contains a tab or a line break. A line starting with `#`
 is a comment and is skipped, except where a section below gives a `#` line a meaning. Integers
 are in decimal with an optional leading `-`. A double is written by Java's `Double.toString`
 (on Java 19 and later the shortest decimal that reads back to the same double) and read with
@@ -666,9 +667,11 @@ cards and rules are A4's.
 - **The bet**, at the round start, before any card: the bet key (B2.2) from the tallies, then
   the plan's bet at that key (B2.5).
 - **Insurance**, when the up-card is an ace, before the peek: the deal's play key gives the group
-  g; insure if and only if `insure g p1 p2` is listed. Insurance costs half the bet and pays 2 to
-  1: +1 bet if the hole card is ten-valued, −0.5 bet if not. A betting-scope file insures this
-  way too: its insurance is its count's, fitted in its play groups.
+  g; insure if and only if `insure g p1 p2` is listed. The player's natural (1, 10) is an ace-up
+  deal like any other here, and insuring it is what the table calls even money. Insurance costs
+  half the bet and pays 2 to 1: +1 bet if the hole card is ten-valued, −0.5 bet if not. A
+  betting-scope file insures this way too: its insurance is its count's, fitted in its play
+  groups.
 - **The dealt hand's first decision.** Scope `first` and `full`: the deal's play key gives the
   group g; play the first move of `first g p1 p2 up`, which is always legal on the dealt hand.
   Scope `betting`: the chart.
@@ -689,8 +692,11 @@ cards and rules are A4's.
   value, so this always finds the best legal move by the same fit. A (group, deal) that no
   training state reached lists the chart's order instead: the chart's move with every move
   offered, its move with Split taken away, then Stand (so a move may appear twice).
-- **The payoff** of the round is ROUND_CONTRACT.md's, times the bet, plus the insurance result
-  times the bet.
+- **The payoff.** A dealer natural loses the bet, or pushes against a player's natural; a
+  player's natural against no dealer natural is paid 3 to 2; every other round is settled hand
+  by hand as ROUND_CONTRACT.md settles it (which values a round given no dealer natural; the
+  engine's round values, B3, include the dealer's naturals). All of it is times the bet, plus the
+  insurance result times the bet.
 
 `first` lines for scope `first` are read the same way, but only their first move is used.
 `later` cells that no training state reached, or whose fitted sum was exactly zero, are already
@@ -765,14 +771,15 @@ records, scored as the engine scores, give the report's figures within 1e-12 rel
 
 The engine's keys for a sample of states and deals, for every count the comparison scores, so
 that check D2 can hold the simulator's own key code (from its own reading of
-counting-systems.json and B2.2) to the engine's for all of them, simulated or not.
+counting-systems.json and B2.2) to the engine's for all of them, simulated or not. The values in
+the example are illustrative.
 
 ```
 # keys-sample.tsv: SHOE_SPEC.md B4, format 1
 # sample seed 20261009
 line	state	shoe	round	depth	p1	p2	up	<count 1>	<count 2>	…
 bet	0	0	0	0	-	-	-	0	0	…
-play	0	0	0	0	1	1	1	-1	0	…
+play	0	0	0	0	1	1	1	0	0	…
 ```
 
 - Line 1 is the comment above; line 2 is `# sample seed ` and the seed the exporter drew the
@@ -928,6 +935,14 @@ the spec and the engine diverge in either direction:
 | `nextInt(i)` for `nextInt(i + 1)` (Sattolo's shuffle) | A3 | 3 | shoe 0 is shuffled differently |
 | `mix.shift2 = 28` | A2 | 3 | the mix from A2's constants differs from ShoeRun.mix |
 | `rule.max.hands.other = 3` | A2 | 1 | the engine splits to 4 hands |
+
+Three more, planted the same way in the engine against Part B's checks, with 17 tests:
+
+| Planted | Where | Tests that failed (of 17) | First failure |
+|---|---|---|---|
+| a key equal to a group's top goes to the next group | `SystemScorer.Groups.of` | 1 | key −16, the top of group 0, stays in group 0 by B2.3 and moves to group 1 in the planted engine |
+| a decision's true count over the cards left at the round's start, the seen cards not taken out | `CountKeys.keyAfter` | 1 | Hi-Opt II at depth 0 with 5 cards seen |
+| a split hand plays the first listed move even when it is not legal | `SplitPlay` | 1 | a split hand on hard 9 against a 2, where Split is not legal, is played Split |
 
 Part B's files themselves are not tested here, since no code writes them yet. StrategyExport's
 tests will read them back with a reader written from Part B, and its round trip will score them.
