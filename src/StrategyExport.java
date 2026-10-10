@@ -1359,6 +1359,23 @@ final class StrategyExport {
             }
         }
         r.equal(ks.lines.size(), at, "keys-sample.tsv's lines");
+        // B4's words, counted from the file rather than from sample(), which wrote it: each of the
+        // first 20 records has a bet line and a play line for every deal.
+        int[] bets = new int[Math.min(EVERY_DEAL_STATES, st.size)];
+        int[] plays = new int[bets.length];
+        for (ExportBundle.KeyLine l : ks.lines) {
+            if (l.state < bets.length) {
+                if (l.bet) {
+                    bets[l.state]++;
+                } else {
+                    plays[l.state]++;
+                }
+            }
+        }
+        for (int s = 0; s < bets.length; s++) {
+            r.require(bets[s] == 1 && plays[s] == Deals.COUNT, "keys-sample.tsv: record " + s + " has " + bets[s]
+                    + " bet lines and " + plays[s] + " play lines, not 1 and " + Deals.COUNT);
+        }
         r.lines.add("keys-sample.tsv: " + at + " lines, " + keys + " keys of " + counts.size()
                 + " counts equal to B2.2 worked out from each count's tags");
     }
@@ -1413,7 +1430,12 @@ final class StrategyExport {
                 }
                 Built b = build(scorer, byPen[p], w.entry, labels);
                 for (ExportBundle.Strategy s : b.fold) {
-                    Files.write(partial.resolve(s.fileName()), format(s).getBytes(StandardCharsets.UTF_8));
+                    if (Files.exists(partial.resolve(s.fileName()))) {
+                        throw new IllegalArgumentException(s.row + " at " + s.pen + "%, fold " + s.fold + ": "
+                                + s.fileName() + " is written already; B0 refuses two rows with one slug, or a row twice");
+                    }
+                    Files.write(partial.resolve(s.fileName()), format(s).getBytes(StandardCharsets.UTF_8),
+                            java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE);
                     strategies.add(s);
                 }
                 sections.add(b.section);

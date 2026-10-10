@@ -33,9 +33,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * by a hash. Planted by hand in StrategyExport's source on 9 October 2026, one at a time, each
  * compiled and this class run against it, the source restored after:
  *
- * | Planted in StrategyExport                                        | Failed                     |
- * |------------------------------------------------------------------|----------------------------|
- * (filled in below once run)
+ * | Planted in StrategyExport | What refused it |
+ * |---|---|
+ * | fold f's bets fitted on round values carrying the other fold's insurance | the export's own round trip: Hi-Lo at 80%, ev:own-6 6.7e-6 off the report's |
+ * | fold f's file given the other fold's ranked first moves | the export: the other fold's groups do not fit (index out of bounds) |
+ * | the same schedule's bets taken from the own ramp's column | the export: Hi-Lo at 70%, ev:same-2 2.8% off the report's |
+ * | bet lines for every key of the penetration, not only the fold's test keys | the export: same-1 of fold 0 lists keys its test states do not hold |
+ * | a betting variant's bet column of keys-sample.tsv keyed on its base | the export: Hi-Opt II + ace side count's bet key at state 0 |
+ * | states.bin's two round values each written in the other's place | the export: state 0's round value |
+ * | keys-sample.tsv's play keys after two cards seen, not three | the export: Own test count, state 0, deal 16 |
+ * | a fold's training weight summed over its test states | the export: Hi-Lo at 70%, fold 0's training weight |
+ * | exact.tsv's sumAB written as the sum of a squared | at first nothing: the round trip summed exact.tsv with the writer's own function. It now works B5 out apart (b5Sums), and the export refuses: Hi-Lo at 70%, fold 0, flat, sumAB |
+ * | the first 19 records, not 20, given every deal | at first only theKeySampleCoversTheStatesAndDeals (15,288 lines expected, 14,748 written), since the round trip took the sample's shape from the writer's own sample(). It now also counts B4's first 20 records from the file, and the export refuses: record 19 has 10 play lines, not 550 |
+ *
+ * A plant the export refuses fails every test here, since the bundle is written once for the
+ * class; the line above names the first refusal. The fold plants are the exporter's side of a bug
+ * PLAN_COMPUTE.md 1.6 plants in the simulator, "the other fold's strategy scored".
  */
 public class StrategyExportTest {
 

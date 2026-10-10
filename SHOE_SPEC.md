@@ -895,6 +895,26 @@ clean-ups):
 The round trip of PLAN_COMPUTE.md 1.2 is what shows these choices right: the bundle read back
 and scored must give `Entry.estimate` and `Entry.shoeSums` within 1e-12 relative.
 
+What `StrategyExport` does beyond the lines above (9 October 2026):
+
+- It writes into `DIR.partial` and renames it to `DIR` only once the round trip has passed, so a
+  bundle directory without that suffix is one that passed.
+- The round trip reads the bundle with `ExportBundle`, written from this part's words, never
+  with the writer. Every state of every section is played again from its fold's strategy file
+  alone: the bet key from the file's bet tags by B2.2, the round value from the file's first
+  moves (or chart.tsv's, betting only) in the groups its play-key parts fall in, on the engine's
+  stored move values, the insurance from the `insure` lines, the bet from the `bet` lines. Each
+  must equal states.bin's. Each figure is then compared with `Entry.estimate` twice: summed as
+  `SystemScorer.scoreOnce` sums it (fold, then bet key), and pooled from exact.tsv, whose order
+  differs and which is held to the mean size of the figure's terms rather than to the figure.
+  exact.tsv's sums are worked out again from B5's words, apart from the code that wrote them.
+- It exports the report's 24 plans unless told fewer (`--plans`). A section of states.bin takes
+  4 + 4 + 8 + 8 + 24 × 8 = 216 bytes a state with all 24, about 13 MB at 80% on the main file, so the plan's
+  estimate of 1 to 3 MB a section holds only for about 2 plans; the exporter prints the bundle's
+  measured size.
+- Full-play rows are refused: their later plays and Hit and Split values come from the replay
+  (PLAN_COMPUTE.md 6.1), which is to call the writer's `format` and `writeStates` with them.
+
 ## How this file is held to the engine
 
 `test/ShoeSpecTest.java` (run it alone: `java -Xmx1g -jar lib/junit-platform-console-standalone-1.10.2.jar
