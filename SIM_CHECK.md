@@ -8,8 +8,9 @@ each part's machine-hour budget, the rule that turns a pilot's speeds and SDs in
 the SEs that rule implies, and the rules that pick the paths the page draws. So no row, size,
 seed or threshold is chosen after a result is seen (PLAN_COMPUTE.md 6.2).
 
-Nothing here has run. No simulated figure exists yet, and none of the exact figures this file
-names is copied into it.
+Nothing here has run, and no simulated figure exists yet. The only published numbers this file
+uses are a few of report-final's standard errors, as assumptions for section 8's table of the
+SEs the rule implies; no exact figure is copied into it.
 
 **What is left to fill in, and only this.** Section 8's two blocks, one a part, each printed by
 `java SimCheckPlan fill sim-pilot-partN.tsv` from that part's pilot: its measured speeds, the SD
@@ -47,7 +48,8 @@ reason before the run it affects, and listed on the page with that commit. Seeds
   penetration.
 - **Test**: one figure compared by one statistical check, P3 (fresh shoes) or P2 (the main
   file's own states). A test has a z and passes or fails; a figure has one or two tests.
-- **Exact check**: one of D0 to D6, which must match to the bit or the card.
+- **Exact check**: one of D0 to D6, which must match to the bit or the card, or within the
+  1e-12 it states (D0 and D3).
 - **Part 1 and part 2**: the simulator's two runs (PLAN_COMPUTE.md 6.2). Part 1, before the
   replay of c06c061: the chart, the null count and the catalog's first-decision rows. Part 2,
   after the replay and the page look: full play, the wide plans, and the registered counts F1
@@ -67,12 +69,12 @@ results.ser. A metric such as `same(8)` is SystemScorer's index of that name; FL
 with the fitted play and insurance, except for the chart, whose flat row has no insurance. The
 three wide plans are PLAN_COMPUTE.md 3.1's, with 3.2's bet convention. P16, same schedule: the
 bets one unit per 0.25% of true advantage would place, from 1 to 16 units, handed out in the
-count's own order. B0,8, back-counting, same schedule: the same up to 8 units on rounds with a
+count's own order. B0,8, back-counting, same schedule: the same, 1 to 8 units, on rounds with a
 true advantage of 0 or more and nothing below, handed out the same way, so every count sits out
 the same share of rounds and picks which by its own order (the block straddling the threshold
 played at random, 3.2). X-1,8, own rule: each key's own bet, 1 to 8 units on its fitted
-advantage, until the shoe's lowest bet key so far falls below the key of a -1% fitted advantage,
-then nothing until the shuffle.
+advantage, until a round start of the shoe has a key whose fitted advantage is under -1%; from
+that round on, nothing until the shuffle.
 
 The counts, short name to the entry that holds them:
 
@@ -242,7 +244,8 @@ F1's and F2's four at first decisions). The 55 in all and the two parts' budgets
 
 ## 5. The exact checks
 
-Each must match exactly; one that does not fails the whole check, whatever the z tests say.
+Each must match exactly, or within the 1e-12 it states; one that does not fails the whole
+check, whatever the z tests say.
 They run before each part's pilot, and a failure stops the part there.
 
 - **D0, the round trip** (in the exporter, engine side, PLAN_COMPUTE.md 1.2). The bundle, read
@@ -285,10 +288,11 @@ places on the round (0 when it sits out). E is the engine's figure, `Entry.estim
 of the source file. Every sum below is a double summed in a fixed order.
 
 **P3, fresh shoes** (every figure). For each fold instance f and shoe h, Y_hf is the sum of b·X
-over the shoe's rounds at the figure's penetration, and N_h the number of those rounds (watched,
-for B and X plans). The folds are pooled shoe by shoe with their test weights from exact.tsv,
-W_f = (sum of 1/q over fold f's test states) / (sum over all valued states), at that
-penetration: Y_h = W_1·Y_h1 + W_2·Y_h2. Over S shoes:
+over the shoe's rounds at the figure's penetration, and N_h the number of those rounds, every
+round dealt, so that B and X plans are per round watched. The folds are pooled shoe by shoe
+with their test weights from exact.tsv, W_f = (sum of 1/q over fold f's test states) / (sum
+over all valued states), at that penetration: Y_h = W_1·Y_h1 + W_2·Y_h2 (the chart, one
+instance, is its own Y_h). Over S shoes:
 
 - the simulated figure, μ = ΣY_h / ΣN_h;
 - its SE, the ratio estimator's with shoes as the independent units:
@@ -515,13 +519,14 @@ are not in the pass family.
   play. The cumulative win in units is written every 100 rounds; at 50 and 80 rounds an hour the
   page draws the first 50,000 and 80,000 rounds of the same paths. The 20 drawn are the first 20,
   and none is replaced or chosen for its look; the caption says so.
-- **The per-shoe records** (Y, N, m), m the lowest the shoe's cumulative win falls to, for PLAN_COMPUTE.md 2.4's
-  ruin check: the same two strategies at 1-8, on P3's first 2 chunks, shoe h played by fold
-  (h mod 2) + 1 as above.
+- **The per-shoe records** (Y, N, m), m the lowest the shoe's cumulative win falls to, for
+  PLAN_COMPUTE.md 2.4's ruin check: the same two strategies at 1-8, on P3's first 2 chunks, shoe
+  h played by fold (h mod 2) + 1 as above.
 - **The ruin paths**: 20,000 bankroll paths, each drawing shoes with replacement from those
   records with a generator seeded from 20261010 and the path's index; each path is run from
-  B_25%, B_5% and B_1% on the same draws, is ruined when bankroll + m ≤ 0, and stops where the
-  formula's remaining risk is under 5e-5.
+  B_25%, B_5% and B_1% (the formula's, at the simulator's own μ and σ_eff from the same records)
+  on the same draws, is ruined when bankroll + m ≤ 0, and stops where the formula's remaining
+  risk is under 5e-5.
 - **Trip risk and the chance of being behind**: consecutive blocks of whole shoes from the
   records in shoe order, from shoe 0, each the fewest shoes reaching H·r rounds; a last
   incomplete block is dropped.
