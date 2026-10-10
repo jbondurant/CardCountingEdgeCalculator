@@ -33,6 +33,10 @@ import java.util.List;
  * The ordering comes from the training fold alone; the bet sizes the schedule hands out are
  * the test fold's own distribution, which no count's outcomes enter.
  *
+ * Asked for (wide), the wider plans of PLAN_COMPUTE.md section 3 are scored beside all of this
+ * the same two ways, with spreads to 1-20, a finer unit and sitting out (Plan, Wide), from the
+ * same fitted advantage and blocks, after every existing sum is made, so no existing figure moves.
+ *
  * Each count is scored two or four ways from one fit: as itself; betting only, with the
  * chart playing and the count setting insurance and bets; and, for the ace-neutral systems,
  * with the ace side count moving the bet key, itself and betting only.
@@ -1883,6 +1887,49 @@ final class SystemScorer {
         return out;
     }
 
+    /**
+     * Check 1 of PLAN_COMPUTE.md 3.5 on one scored entry, in words, nothing when it holds: plan P8
+     * gives the 1-8 same schedule and own ramp the entry already holds, with their average bets,
+     * to the bit, at every penetration scored, on the estimate and on every resample kept. A run
+     * scoring the wide plans calls it on every item before keeping it, so a P8 that strays from the
+     * existing figures stops the run rather than reaching a report.
+     */
+    static List<String> p8Check(Entry e) {
+        List<String> bad = new ArrayList<>();
+        if (e.widePlans == null) {
+            return bad;
+        }
+        int p8 = planIndex(e.widePlans, "P8");
+        int[][] pairs = {{W_SAME, same(SPREADS)}, {W_SAME_BET, sameBet(SPREADS)}, {W_OWN, own(SPREADS)},
+                {W_OWN_BET, ownBet(SPREADS)}};
+        int[] rows = wideRows(e.widePlans);
+        for (int p = 0; p < CUTS.length; p++) {
+            if (e.estimate[p] == null || e.wide[p] == null) {
+                continue;
+            }
+            for (int[] pair : pairs) {
+                int at = wideAt(p8, pair[0]);
+                if (Double.doubleToLongBits(e.wide[p][at]) != Double.doubleToLongBits(e.estimate[p][pair[1]])) {
+                    bad.add(e.name + " at " + PENETRATIONS[p] + ": P8's " + WIDE_NAMES[pair[0]] + " " + e.wide[p][at]
+                            + ", the 1-8 figure " + e.estimate[p][pair[1]]);
+                }
+                for (int k = 0; k < rows.length; k++) {
+                    if (rows[k] != at || e.boot[p] == null) {
+                        continue;
+                    }
+                    for (int r = 0; r < e.boot[p][pair[1]].length; r++) {
+                        if (Double.doubleToLongBits(e.wideBoot[p][k][r]) != Double.doubleToLongBits(e.boot[p][pair[1]][r])) {
+                            bad.add(e.name + " at " + PENETRATIONS[p] + ", resample " + r + ": P8's " + WIDE_NAMES[pair[0]]
+                                    + " " + e.wideBoot[p][k][r] + ", the 1-8 figure " + e.boot[p][pair[1]][r]);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return bad;
+    }
+
     static boolean anyExit(Plan[] plans) {
         for (Plan p : plans) {
             if (!p.sameSchedule()) {
@@ -1893,15 +1940,15 @@ final class SystemScorer {
     }
 
     /**
-     * Each plan's reference bets, g on each state's chart advantage: [plan][state], the states
-     * indexed as chart is. They depend on nothing a resample changes, so a penetration works them
-     * out once (Pen.planBets).
+     * Each plan's reference bets, g on each state's chart advantage: [state][plan], the states
+     * indexed as chart is, a state's plans side by side since planIntegral reads them so. They
+     * depend on nothing a resample changes, so a penetration works them out once (Pen.planBets).
      */
     static double[][] referenceBets(Plan[] plans, double[] chart) {
-        double[][] out = new double[plans.length][chart.length];
-        for (int i = 0; i < plans.length; i++) {
-            for (int j = 0; j < chart.length; j++) {
-                out[i][j] = plans[i].bet(chart[j]);
+        double[][] out = new double[chart.length][plans.length];
+        for (int j = 0; j < chart.length; j++) {
+            for (int i = 0; i < plans.length; i++) {
+                out[j][i] = plans[i].bet(chart[j]);
             }
         }
         return out;
@@ -1910,16 +1957,16 @@ final class SystemScorer {
     /**
      * scheduleIntegral for plans: at every block boundary, the integral of each plan's reference
      * bets g and of 1[g > 0] over the quantiles of byChart's states, [plan][0 for g, 1 for
-     * 1[g > 0]][boundary], ref[plan][j] being g at state j. It walks the states as
+     * 1[g > 0]][boundary], ref[j][plan] being g at state j. It walks the states as
      * scheduleIntegral does, with the same arithmetic, so a plan whose g is spread s's clamp gives
      * spread s's integral to the bit. A block's bets follow from its two integrals (Wide.add).
      */
-    static double[][][] planIntegral(int[] byChart, double[] w, double[][] ref, double[] blockWeight, int blocks) {
+    static double[][][] planIntegral(int[] byChart, double[] w, double[][] ref, int np, double[] blockWeight,
+                                     int blocks) {
         double[] boundary = new double[blocks + 1];
         for (int b = 0; b < blocks; b++) {
             boundary[b + 1] = boundary[b] + blockWeight[b];
         }
-        int np = ref.length;
         double[][][] integral = new double[np][2][blocks + 1];
         double cw = 0;
         double[] cg = new double[np];
@@ -1930,10 +1977,11 @@ final class SystemScorer {
             if (wj == 0) {
                 continue;
             }
+            double[] gj = ref[j];
             while (next < blocks && boundary[next] <= cw + wj) {
                 double part = boundary[next] - cw;
                 for (int i = 0; i < np; i++) {
-                    double g = ref[i][j];
+                    double g = gj[i];
                     integral[i][0][next] = cg[i] + part * g;
                     integral[i][1][next] = cz[i] + (g > 0 ? part : 0);
                 }
@@ -1941,7 +1989,7 @@ final class SystemScorer {
             }
             cw += wj;
             for (int i = 0; i < np; i++) {
-                double g = ref[i][j];
+                double g = gj[i];
                 cg[i] += wj * g;
                 cz[i] += g > 0 ? wj : 0;
             }
@@ -1999,7 +2047,7 @@ final class SystemScorer {
      */
     static final class Wide {
         final Plan[] plans;
-        /** [plan][state]: each plan's reference bet on each state's chart advantage. */
+        /** [state][plan]: each plan's reference bet on each state's chart advantage. */
         final double[][] ref;
         /** Per state, the lowest bet key of its shoe so far, itself included; null when no plan leaves. */
         final int[] minKey;
@@ -2012,8 +2060,8 @@ final class SystemScorer {
         double[][] detail;
 
         Wide(Plan[] plans, double[][] ref, int[] minKey) {
-            if (ref.length != plans.length) {
-                throw new IllegalArgumentException("reference bets for " + ref.length + " plans, not " + plans.length);
+            if (ref.length > 0 && ref[0].length != plans.length) {
+                throw new IllegalArgumentException("reference bets for " + ref[0].length + " plans, not " + plans.length);
             }
             this.plans = plans;
             this.ref = ref;
@@ -2053,7 +2101,7 @@ final class SystemScorer {
             own = true;
             weight += foldWeight;
             int keys = vw.length;
-            double[][][] integral = planIntegral(testByChart, w, ref, blockWeight, blocks);
+            double[][][] integral = planIntegral(testByChart, w, ref, plans.length, blockWeight, blocks);
             for (int i = 0; i < plans.length; i++) {
                 Plan plan = plans[i];
                 int at = i * WIDE_METRICS;
@@ -2126,7 +2174,7 @@ final class SystemScorer {
          * round values, handed the fold's reference bets in that order.
          */
         void addBlocks(double[] blockWeight, double[] blockSum, int blocks, int[] byChart, double[] w) {
-            double[][][] integral = planIntegral(byChart, w, ref, blockWeight, blocks);
+            double[][][] integral = planIntegral(byChart, w, ref, plans.length, blockWeight, blocks);
             for (int b = 0; b < blocks; b++) {
                 weight += blockWeight[b];
             }
@@ -3608,10 +3656,9 @@ final class SystemScorer {
                 continue;
             }
             int at = i * WIDE_METRICS;
-            double[] g = acc.ref[i];
             for (int j = 0; j < w.length; j++) {
                 int s = pen.states[j];
-                double bet = g[j];
+                double bet = acc.ref[j][i];
                 acc.sums[at + W_SAME] += w[j] * bet * st.chart[s];
                 acc.sums[at + W_SAME_BET] += w[j] * bet;
                 acc.sums[at + W_SAME_SHARE] += bet > 0 ? w[j] : 0;

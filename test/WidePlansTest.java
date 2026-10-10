@@ -167,6 +167,47 @@ public class WidePlansTest {
     }
 
     /**
+     * One fold's same-schedule sums for a row bet on each state's own value, by the naive route:
+     * the test states of weight not zero in order of their round value, equal values one block,
+     * handed the reference bets of the same states (ownValueBets).
+     */
+    static void naiveOwnValue(SystemScorer.Plan[] plans, int[] test, double[] w, double[] rv, double[] chart,
+                              double[] sums) {
+        Integer[] byValue = Arrays.stream(test).filter(j -> w[j] != 0).boxed().toArray(Integer[]::new);
+        Arrays.sort(byValue, Comparator.comparingDouble(j -> rv[j]));
+        List<Block> blocks = new ArrayList<>();
+        double last = Double.NaN;
+        for (int j : byValue) {
+            if (blocks.isEmpty() || rv[j] != last) {
+                blocks.add(new Block());
+            }
+            last = rv[j];
+            Block b = blocks.get(blocks.size() - 1);
+            b.weight += w[j];
+            b.sum += w[j] * rv[j];
+            sums[sums.length - 1] += w[j];
+        }
+        double[][][] pc = pieces(plans, blocks, test, w, chart);
+        for (int i = 0; i < plans.length; i++) {
+            if (plans[i].exit != Double.NEGATIVE_INFINITY) {
+                continue;
+            }
+            boolean sits = plans[i].enter != Double.NEGATIVE_INFINITY;
+            int at = i * SystemScorer.WIDE_METRICS;
+            for (int b = 0; b < blocks.size(); b++) {
+                Block x = blocks.get(b);
+                double expected = pc[i][b][0] / x.weight;
+                double play = sits ? pc[i][b][1] / x.weight : 1;
+                double placed = !sits ? expected : pc[i][b][1] == 0 ? 0 : pc[i][b][0] / pc[i][b][1];
+                sums[at + SystemScorer.W_SAME] += expected * x.sum;
+                sums[at + SystemScorer.W_SAME_BET] += expected * x.weight;
+                sums[at + SystemScorer.W_SAME_SHARE] += play * x.weight;
+                sums[at + SystemScorer.W_SAME_BET2] += play * x.weight * placed * placed;
+            }
+        }
+    }
+
+    /**
      * The 23 plans and four more whose thresholds and units make the grid's advantages land on
      * them in other ways: a back-counting plan at +0.25% with cap 4, one entering at -1.25%, one
      * leaving at +0.5%, and one at a unit of 0.5%.
@@ -197,7 +238,8 @@ public class WidePlansTest {
      * lie on a grid of 0.25% that holds every threshold, so rounds exactly at a threshold occur;
      * keys are few, so blocks span several states and straddle thresholds; a tenth of the weights
      * are 0, as a resample's are; and half the folds fit their training keys one state each with
-     * rising round values, so the fitted advantage too sits on a threshold.
+     * rising round values, so the fitted advantage too sits on a threshold. The same folds bet on
+     * each state's own value (ownValueBets) are the naive split of blocks of equal round value.
      */
     @Test
     public void everyPlanIsTheNaiveQuantileSplitOnRandomSmallFolds() {
@@ -229,8 +271,10 @@ public class WidePlansTest {
             }
             SystemScorer.BetKeys bk = keys(raw);
             SystemScorer.Wide acc = SystemScorer.Wide.of(plans, chart, minKey);
+            SystemScorer.Wide byValue = SystemScorer.Wide.of(plans, chart, null);
             double[] sums = new double[SystemScorer.METRICS + 1];
             double[] naive = new double[plans.length * SystemScorer.WIDE_METRICS + 1];
+            double[] naiveByValue = new double[naive.length];
             for (int f = 0; f < 2; f++) {
                 int ff = f;
                 int[] test = java.util.stream.IntStream.range(0, n).filter(j -> fold[j] == ff).toArray();
@@ -240,6 +284,8 @@ public class WidePlansTest {
                 int[] byChart = Arrays.stream(order).mapToInt(Integer::intValue).toArray();
                 acc.detail = new double[bk.value.length][plans.length * SystemScorer.KEY_COLS];
                 SystemScorer.bets(bk, train, test, byChart, w, rv, chart, sums, null, acc);
+                SystemScorer.ownValueBets(test, byChart, w, rv, rv, chart, new double[SystemScorer.METRICS + 1], byValue);
+                naiveOwnValue(plans, test, w, rv, chart, naiveByValue);
                 double[][] keys = new double[bk.value.length][plans.length * SystemScorer.KEY_COLS];
                 naiveFold(plans, bk.value, bk.index, train, test, w, rv, chart, minKey, naive, keys);
                 for (int k = 0; k < bk.value.length; k++) {
@@ -269,6 +315,10 @@ public class WidePlansTest {
                     boolean none = m < SystemScorer.W_OWN && !plans[i].sameSchedule();
                     double want = none || weight == 0 ? Double.NaN : naive[at] / weight;
                     close(want, got[at], "trial " + trial + " " + plans[i] + " " + SystemScorer.WIDE_NAMES[m]);
+                    double v = byValue.figures()[at];
+                    double vw = naiveByValue[naiveByValue.length - 1];
+                    close(m >= SystemScorer.W_OWN || none || vw == 0 ? Double.NaN : naiveByValue[at] / vw, v,
+                            "trial " + trial + " on its own value, " + plans[i] + " " + SystemScorer.WIDE_NAMES[m]);
                 }
             }
         }
@@ -329,6 +379,7 @@ public class WidePlansTest {
 
     /** Every figure of P8 is spread 8's, to the bit: estimate, every resample and every key. */
     private static void p8IsSpreadEight(SystemScorer.Entry e, boolean own) {
+        assertEquals(new ArrayList<String>(), SystemScorer.p8Check(e), e.name);
         int p8 = SystemScorer.planIndex(e.widePlans, "P8");
         int s8 = SystemScorer.SPREADS;
         int[][] pairs = {{SystemScorer.W_SAME, SystemScorer.same(s8)}, {SystemScorer.W_SAME_BET, SystemScorer.sameBet(s8)},
@@ -391,6 +442,15 @@ public class WidePlansTest {
         }
         SystemScorer.Entry oracle = sc.references().get(2);
         p8IsSpreadEight(oracle, false);
+        // The check a run makes on every item finds one bit off, on the estimate or on one resample.
+        SystemScorer.Entry e = sc.score(FullIndexFitTest.HI_LO, null).entries.get(0);
+        double[] row = e.wideBoot(2, "P8", SystemScorer.W_SAME);
+        row[3] = Math.nextUp(row[3]);
+        assertEquals(1, SystemScorer.p8Check(e).size(), SystemScorer.p8Check(e).toString());
+        row[3] = Math.nextDown(row[3]);
+        int at = SystemScorer.wideAt(SystemScorer.planIndex(e.widePlans, "P8"), SystemScorer.W_OWN_BET);
+        e.wide[1][at] = Math.nextDown(e.wide[1][at]);
+        assertEquals(1, SystemScorer.p8Check(e).size(), SystemScorer.p8Check(e).toString());
     }
 
     /** Two Results' existing figures the same to the bit, full play and the 1-8 half fit included. */
