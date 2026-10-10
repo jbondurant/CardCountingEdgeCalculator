@@ -43,6 +43,10 @@ class P3Test {
         String index = Files.readString(idx);
         Files.writeString(idx, index.replace("states.bin\t", "states.bin\t1"));
         assertThrows(IOException.class, () -> new Bundle(dir, Plants.NONE));
+        Files.writeString(idx, index);
+        new Bundle(dir, Plants.NONE);
+        assertEquals("hi-opt-ii-ace-side-count", Bundle.slug("Hi-Opt II + ace side count"));
+        assertEquals("hi-lo-hi-lo-lite", Bundle.slug("Hi-Lo = Hi-Lo Lite"));
     }
 
     @Test

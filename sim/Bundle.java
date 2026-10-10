@@ -43,6 +43,11 @@ public final class Bundle {
         }
     }
 
+    /** B0's slug: the row's name in lower case, each run of other characters than a-z and 0-9 one '-', none at the ends. */
+    static String slug(String row) {
+        return row.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+    }
+
     static String key(String row, int pen, int fold) {
         return row + "\t" + pen + "\t" + fold;
     }
@@ -86,13 +91,19 @@ public final class Bundle {
             }
             index.put(f[0], f);
         }
+        java.util.Set<String> expected = new java.util.TreeSet<>(listed.keySet());
+        expected.remove("index.tsv");
+        if (!expected.equals(new java.util.TreeSet<>(index.keySet()))
+                || !new ArrayList<>(index.keySet()).equals(new ArrayList<>(expected))) {
+            throw new IOException("index.tsv must list every file of the manifest but itself, sorted by path");
+        }
         this.chart = Chart.load(dir.resolve("chart.tsv"));
         this.exact = Exact.read(dir.resolve("exact.tsv"));
         for (String[] f : index.values()) {
             if (!f[2].equals("-")) {
                 Strategy s = Strategy.load(dir.resolve(f[0]), plants);
                 if (!s.row.equals(f[2]) || s.pen != Integer.parseInt(f[3]) || s.fold != Integer.parseInt(f[4])
-                        || !s.scope.equals(f[5])) {
+                        || !s.scope.equals(f[5]) || !f[0].equals("strategy-" + slug(s.row) + "-p" + s.pen + "-f" + s.fold + ".txt")) {
                     throw new IOException(f[0] + " is not what index.tsv says it is");
                 }
                 if (strategies.put(key(s.row, s.pen, s.fold), s) != null) {
