@@ -11,7 +11,15 @@ import java.util.Arrays;
  * first N shoes (all 60,000 by default) with the chart and prints the round starts, valued states
  * and weights at the three cuts; with all 60,000 it compares them with SHOE_SPEC.md A8. Without
  * {@code --chart} it plays {@link Chart#textbook()}, the stand-in.
+ * <li>{@code d1 --states states.bin [--chart chart.tsv]}: check D1 in full. Walks every shoe the
+ * file's header names and holds each state it values to the file's next record, card for card
+ * and in q to the bit; for the main file, also the round starts to A8.
  * </ul>
+ *
+ * <p>Tests: {@code javac -d out-test -cp out:lib/junit-platform-console-standalone-1.10.2.jar
+ * sim/test/*.java}, then one class at a time, from the repository's root: {@code java -jar
+ * lib/junit-platform-console-standalone-1.10.2.jar --class-path out:out-test --select-class
+ * sim.WalkTest}.
  */
 public final class Sim {
 
@@ -32,6 +40,9 @@ public final class Sim {
             case "walk":
                 System.exit(walk(Arrays.copyOfRange(args, 1, args.length)) ? 0 : 1);
                 break;
+            case "d1":
+                System.exit(d1(Arrays.copyOfRange(args, 1, args.length)) ? 0 : 1);
+                break;
             default:
                 System.err.println("unknown command " + args[0]);
                 System.exit(2);
@@ -45,6 +56,34 @@ public final class Sim {
             }
         }
         return otherwise;
+    }
+
+    /** Check D1 against a states.bin: true when every state matches and, for the main file, the rounds are A8's. */
+    static boolean d1(String[] args) throws Exception {
+        String statesFile = option(args, "--states", null);
+        if (statesFile == null) {
+            throw new IllegalArgumentException("d1 needs --states states.bin");
+        }
+        String chartFile = option(args, "--chart", null);
+        Chart chart = chartFile == null ? Chart.textbook() : Chart.load(Path.of(chartFile));
+        States states = States.read(Path.of(statesFile));
+        States.D1 d = states.d1(new Round(Rules.montreal()), chart);
+        boolean ok = d.cardForCard();
+        System.out.println("D1: " + d.matched + " of " + states.n + " records matched card for card and in q to the bit; "
+                + d.valued + " states valued by the walk; " + d.mismatches + " mismatches");
+        for (String m : d.first) {
+            System.out.println("  " + m);
+        }
+        if (states.isMainFile()) {
+            for (int p = 0; p < 3; p++) {
+                boolean match = d.rounds[p] == A8_ROUNDS[p];
+                ok &= match;
+                System.out.println(Shoe.PENS[p] + "%: " + d.rounds[p] + " round starts" + (match ? " = A8" : ", A8 says " + A8_ROUNDS[p]));
+            }
+        } else {
+            System.out.println("not the main file's header: the round starts are not held to A8");
+        }
+        return ok;
     }
 
     /** Walks the shoes and, for all 60,000, holds the totals to A8; true when they match or were not compared. */
