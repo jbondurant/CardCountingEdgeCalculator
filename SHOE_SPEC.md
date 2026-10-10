@@ -785,9 +785,9 @@ play	0	0	0	0	1	1	1	0	0	…
 - Line 1 is the comment above; line 2 is `# sample seed ` and the seed the exporter drew the
   sample with. Line 3 is the header: eight fixed columns, then one column per count, named
   exactly as the report names the row. The counts are every catalog entry (duplicates made one,
-  in catalog order), then the null count, then every betting variant (ace side-count variants,
-  then the registered counts' own betting variants, if any). The header is the only place the
-  list of counts is given, and the reader takes it from there.
+  in catalog order), then the null count, then the registered counts, if any, then every betting
+  variant (ace side-count variants, then the registered counts' own betting variants, if any).
+  The header is the only place the list of counts is given, and the reader takes it from there.
 - `state` is the record's place in states.bin, so the tallies and depth come from there; `shoe`,
   `round` and `depth` repeat them for reading.
 - A `bet` line holds each count's bet key at the state (B2.2), `-` in `p1`, `p2` and `up`.
@@ -802,6 +802,13 @@ play	0	0	0	0	1	1	1	0	0	…
   in record order, a `bet` line, then `play` lines for 10 deals drawn with the same generator
   from the 550, in deal order (up-card, then p1, then p2). The first 20 records also have `play`
   lines for all 550 deals, whether drawn or not, so every deal is covered. About 31,000 lines.
+- The draw, exactly (`StrategyExport.sample`): one `java.util.SplittableRandom(seed)`. The states
+  are the first 2,000 places of a Fisher–Yates shuffle of 0 to n − 1 run from the bottom up (for
+  t from 0, swap place t with place `t + nextInt(n − t)`), sorted; all n when n is 2,000 or
+  fewer. Then, for each state drawn, in record order, 10 deals the same way from 0 to 549, sorted.
+  Each of the first 20 records has its `bet` line, drawn or not, and lists all 550 deals in place
+  of the 10 drawn for it. The reader need not repeat the draw: the lines say which states and
+  deals they are.
 
 D2 requires every key to be equal and every chance to agree within 1e-12 relative.
 
