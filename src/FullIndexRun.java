@@ -32,11 +32,13 @@ import java.util.List;
  * the run will hold, and refuses to start if not, naming the item; after the passes it checks
  * again with what the run holds, letting the split values kept go if that makes the room.
  *
- * --counts FILE runs the counts a candidates file or custom-counts.json lists (CustomCounts),
- * each with its betting variant, in place of the null count and the catalog; on the main state
- * file only the registration is taken, committed as it stands, and the run's start is written to
- * the ledger (CustomCounts.lookOnMain). --pens 2 (or 0,1,2) runs those penetrations alone. The
- * identity names every count's tags, divisor, betting vector and form, so a resume with any of
+ * --counts FILE runs the counts a candidates file or a registration lists (CustomCounts), each
+ * with its betting variant, in place of the null count and the catalog; on the main state file
+ * only a registration is taken, committed as it stands, and only the full-play one where the
+ * registration names one (custom-counts-fullplay.json); the ledger must hold no look at another
+ * registration unless --second-look is given; and the run's start is written to the ledger once
+ * every refusal is behind, as its passes start. --pens 2 (or 0,1,2) runs those penetrations alone.
+ * The identity names every count's tags, divisor, betting vector and form, so a resume with any of
  * them changed is refused, saying what differs.
  *
  * The trees go in a store of the run's own (--trees PATH, by default trees.bin in the output
@@ -48,7 +50,7 @@ import java.util.List;
  *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --states FILE --out DIR
  * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH]
- * [--counts FILE] [--pens P,P] [--resume]
+ * [--counts FILE] [--pens P,P] [--resume] [--second-look]
  */
 public final class FullIndexRun {
 
@@ -65,6 +67,20 @@ public final class FullIndexRun {
      * can run it on classes built without a commit.txt and a disk of any size.
      */
     static void run(String[] args, String commit, PrintStream log, long diskMargin) throws Exception {
+        run(args, commit, log, diskMargin, 0.8);
+    }
+
+    /**
+     * The same with the share of the heap a run may fill (JointRun.heapFill) given, so a test can
+     * make the heap check refuse.
+     *
+     * On the main file with counts, every refusal comes before the look is written to the ledger:
+     * the registration and the ledger (CustomCounts.checkOnMain) before a state is read; then the
+     * states, the tree store (a read-only one's identity, or a new one's room on disk), the
+     * checkpoint, the strategies and the heap; the ledger line is written as the passes start
+     * (JointRun.beforePasses).
+     */
+    static void run(String[] args, String commit, PrintStream log, long diskMargin, double heapFill) throws Exception {
         Path states = null;
         Path out = null;
         Path treeFile = null;
@@ -76,6 +92,7 @@ public final class FullIndexRun {
         int resamples = 1000;
         int threads = 6;
         boolean resume = false;
+        boolean secondLook = false;
         for (int a = 0; a < args.length; a++) {
             switch (args[a]) {
                 case "--states":
@@ -111,10 +128,13 @@ public final class FullIndexRun {
                 case "--resume":
                     resume = true;
                     break;
+                case "--second-look":
+                    secondLook = true;
+                    break;
                 default:
                     throw new IllegalArgumentException("usage: FullIndexRun --states FILE --out DIR [--shoes N] "
                             + "[--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH] "
-                            + "[--counts FILE] [--pens P,P] [--resume]; not " + args[a]);
+                            + "[--counts FILE] [--pens P,P] [--resume] [--second-look]; not " + args[a]);
             }
         }
         if (states == null || out == null) {
@@ -134,6 +154,15 @@ public final class FullIndexRun {
             throw new IllegalStateException(countsFile + " is a candidates file; the main file scores only the counts "
                     + "registered in " + CustomCounts.REGISTERED);
         }
+        if (listing != null && main && listing.fullPlayFile != null) {
+            throw new IllegalStateException(countsFile + " names its full-play registration, " + listing.fullPlayFile
+                    + ": the main file is scored with full play on the counts that file lists (COUNT_DESIGN.md, section 8, "
+                    + "step 8); give --counts " + listing.fullPlayFile);
+        }
+        // The registration and the ledger before a state is read.
+        String blob = listing != null && main ? CustomCounts.checkOnMain(listing, secondLook) : null;
+        List<String> otherLooks = blob == null ? new ArrayList<>()
+                : CustomCounts.otherLooks(CustomCounts.ledgerOf(listing), CustomCounts.registeredBlobs(listing, blob));
         String treeIdentity = commit + "\n" + stateFile(states) + "\nstates ";
         ScoringStates st = FullIndexPilot.load(states, shoes);
         treeIdentity += st.size;
@@ -159,7 +188,6 @@ public final class FullIndexRun {
         } else {
             counts.addAll(listing.counts());
         }
-        String blob = listing != null && main ? CustomCounts.checkOnMain(listing) : null;
         String identity = identity(commit, states, shoes, st.size, resamples, threads, counts, pens,
                 listing == null ? null : listing.file + (blob == null ? ", a file not registered" : ", blob " + blob));
         log.printf("FullIndexRun %s%s: %d shoes, %d valued states of %s, read and never written; %d counts at %d "
@@ -170,6 +198,10 @@ public final class FullIndexRun {
         if (listing != null) {
             log.printf("Counts from %s%s.%n", listing.file, blob == null ? "" : ", git blob " + blob);
         }
+        if (!otherLooks.isEmpty()) {
+            log.printf("A SECOND LOOK (--second-look): the ledger holds %d look%s at another registration, the first: %s%n",
+                    otherLooks.size(), otherLooks.size() == 1 ? "" : "s", otherLooks.get(0));
+        }
         log.printf("Started %s, load average %.2f; states read in %.1f s.%n", java.time.LocalDateTime.now(),
                 FullIndexTimingReport.loadAverage(), (System.nanoTime() - t0) / 1e9);
         log.flush();
@@ -178,12 +210,6 @@ public final class FullIndexRun {
         FullIndexCheckpoint ck = new FullIndexCheckpoint(out, identity);
         // Checked first, so a refused resume leaves the trees as they are.
         ck.open(resume);
-        if (blob != null) {
-            // Every refusal is behind: the look is written to the ledger, to be committed before the next.
-            CustomCounts.appendLedger(CustomCounts.ledgerOf(listing), commit, blob, "FullIndexRun "
-                    + (resume ? "resumed" : "started") + " into " + out + ", " + resamples + " resamples, penetrations "
-                    + java.util.Arrays.toString(pens));
-        }
         TreeStore store = noTrees ? null
                 : readOnlyTrees ? TreeStore.readOnly(st, treeFile, stateFile(states) + "\nstates " + st.size)
                 : new TreeStore(st, treeFile, treeIdentity, diskMargin);
@@ -192,6 +218,17 @@ public final class FullIndexRun {
         run.checkpoint = ck;
         run.resume = resume;
         run.log = log;
+        run.heapFill = heapFill;
+        if (blob != null) {
+            // Every refusal is behind once the strategies are made and the heap checked: the look is
+            // written to the ledger as the passes start, to be committed before the next.
+            String what = "FullIndexRun " + (resume ? "resumed" : "started") + " into " + out + ", " + resamples
+                    + " resamples, penetrations " + java.util.Arrays.toString(pens)
+                    + (otherLooks.isEmpty() ? "" : ", A SECOND LOOK (--second-look): the ledger held " + otherLooks.size()
+                    + " look" + (otherLooks.size() == 1 ? "" : "s") + " at another registration");
+            Path ledger = CustomCounts.ledgerOf(listing);
+            run.beforePasses = () -> CustomCounts.appendLedger(ledger, commit, blob, what);
+        }
         if (store != null) {
             if (!store.readOnly) {
                 run.beforeCheckpoint = store::sync;
@@ -280,7 +317,11 @@ public final class FullIndexRun {
         return b.toString();
     }
 
-    /** Each count's EV at penetration p both ways and its gain from full play, flat and on the 1-8 same schedule. */
+    /**
+     * Each row that plays, a count's and its betting variant's (a side count's or a betting vector's,
+     * by its own name), at penetration p both ways and its gain from full play, flat and on the 1-8
+     * same schedule. A row bet on its own value is a bound, not a count, and is left out.
+     */
     static void summary(PrintStream out, FullIndexFit.Scored sc, SystemScorer scorer, int p) {
         int[] metrics = {SystemScorer.same(SystemScorer.SPREADS), SystemScorer.FLAT};
         String[] names = {"1-8 same schedule", "flat"};
@@ -291,11 +332,20 @@ public final class FullIndexRun {
             out.println("| Count | First decisions | Full play | Gain | its held SE |");
             out.println("|---|---|---|---|---|");
             for (SystemScorer.Result r : sc.results) {
-                SystemScorer.Entry first = r.entries.get(0);
-                SystemScorer.Entry full = r.fullEntries.get(0);
-                Bootstrap.Interval g = SystemScorer.gain(full, first, p, m, 1);
-                out.printf("| %s | %+.4f | %+.4f | %+.4f | %.4f |%n", r.count.name, 100 * first.estimate[p][m],
-                        100 * full.estimate[p][m], 100 * g.estimate, 100 * g.se);
+                for (SystemScorer.Entry full : r.fullEntries) {
+                    if (full.ownValue) {
+                        continue;
+                    }
+                    SystemScorer.Entry first = null;
+                    for (SystemScorer.Entry e : r.entries) {
+                        if (!e.bettingOnly && !e.ownValue && e.count == full.count) {
+                            first = e;
+                        }
+                    }
+                    Bootstrap.Interval g = SystemScorer.gain(full, first, p, m, 1);
+                    out.printf("| %s | %+.4f | %+.4f | %+.4f | %.4f |%n", first.name, 100 * first.estimate[p][m],
+                            100 * full.estimate[p][m], 100 * g.estimate, 100 * g.se);
+                }
             }
         }
     }

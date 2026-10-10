@@ -28,8 +28,9 @@ public class CustomCountsTest {
             + "    \"betting\": [-20000, 10000, 10000, 20000, 20000, 10000, 10000, 0, 0, -20000] },\n"
             + "  { \"name\": \"F1r start\", \"family\": \"F1r\", \"form\": \"running\", \"divisor\": 2250,\n"
             + "    \"tags\": [-9000, 11000, 11000, 11000, 11000, 11000, 1000, 1000, 1000, -9000] },\n"
-            + "  { \"name\": \"Hi-Opt II at g\", \"role\": \"control\", \"catalog\": \"Hi-Opt II\", \"divisor\": 500 },\n"
-            + "  { \"name\": \"Hi-Lo\", \"role\": \"control\", \"catalog\": \"Hi-Lo\" } ] }\n";
+            + "  { \"name\": \"Hi-Opt II at grain 500/10000\", \"role\": \"control\", \"catalog\": \"Hi-Opt II\", "
+            + "\"divisor\": 500 },\n"
+            + "  { \"name\": \"Hi-Lo = Hi-Lo Lite\", \"role\": \"control\", \"catalog\": \"Hi-Lo\" } ] }\n";
 
     static Path write(Path dir, String name, String text) throws Exception {
         Path f = dir.resolve(name);
@@ -146,10 +147,32 @@ public class CustomCountsTest {
                 r.replace("\"flat\": [\"F1 start\"]", "\"flat\": [\"Hi-Lo\"]"),
                 r.replace("\"name\": \"F1r start\", \"family\": \"F1r\",",
                         "\"name\": \"F1r start\", \"family\": \"F1r\", \"role\": \"headline\","),
-                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": \"F1 start\"")}) {
+                r.replace("\"flat\": [\"F1 start\"]", "\"flat\": \"F1 start\""),
+                // A catalog count named otherwise than the loader names it, as the report will.
+                r.replace("\"Hi-Opt II at grain 500/10000\"", "\"Hi-Opt II at g\""),
+                r.replace("\"Hi-Lo = Hi-Lo Lite\"", "\"Hi-Lo\""),
+                // A full-play registration named badly, or both ways at once.
+                r.replace("\"cells\":", "\"fullPlay\": {\"file\": \"x.json\", \"blob\": \"abc\"}, \"cells\":"),
+                r.replace("\"cells\":", "\"fullPlay\": {\"file\": \"../x.json\", \"blob\": \"" + BLOB + "\"}, \"cells\":"),
+                r.replace("\"cells\":", "\"fullPlay\": \"x.json\", \"cells\":"),
+                r.replace("\"cells\":", "\"registeredWith\": \"bad.json\", \"cells\":"),
+                r.replace("\"cells\":", "\"registeredWith\": \"a.json\", \"fullPlay\": {\"file\": \"x.json\", "
+                        + "\"blob\": \"" + BLOB + "\"}, \"cells\":"),
+                CANDIDATES.replace("\"counts\":", "\"registeredWith\": \"a.json\", \"counts\":")}) {
             assertThrows(IllegalArgumentException.class, () -> CustomCounts.read(write(dir, "bad.json", bad)), bad);
         }
+        // Named as the loader names it, a catalog count reads; and a full-play registration is named by file and blob.
+        CustomCounts.Listing named = CustomCounts.read(write(dir, "named.json", r.replace("\"cells\":",
+                "\"fullPlay\": {\"file\": \"x.json\", \"blob\": \"" + BLOB + "\"}, \"cells\":")));
+        assertEquals("x.json", named.fullPlayFile);
+        assertEquals(BLOB, named.fullPlayBlob);
+        assertEquals("Hi-Opt II at grain 500/10000", named.entries.get(3).count.name);
+        assertEquals("a.json", CustomCounts.read(write(dir, "with.json", r.replace("\"cells\":",
+                "\"registeredWith\": \"a.json\", \"cells\":"))).registeredWith);
     }
+
+    /** A git blob hash, for the files that name one. */
+    static final String BLOB = "0123456789abcdef0123456789abcdef01234567";
 
     /** A small state file with the seed given, for the refusals that read a header. */
     static Path stateFile(Path dir, long seed) throws Exception {
@@ -235,12 +258,72 @@ public class CustomCountsTest {
         CustomCounts.lookOnMain(l, "deadbeef", "a second look");
         CustomCounts.git(repo, "commit", "-q", "-am", "second look");
 
-        // Changed after its commit: refused until committed, and then the hash is the new one.
+        // Changed after its commit: refused until committed; then, the ledger holding looks at the
+        // registration as it was, refused as a second look unless one is asked for, with the new hash.
         Files.write(counts, registered().replace("\"abc\"", "\"abd\"").getBytes(StandardCharsets.UTF_8));
         e = assertThrows(IllegalStateException.class, () -> CustomCounts.checkOnMain(CustomCounts.read(counts)));
         assertTrue(e.getMessage().contains("not committed"), e.getMessage());
         CustomCounts.git(repo, "commit", "-q", "-am", "a second registration");
-        assertNotEquals(blob, CustomCounts.checkOnMain(CustomCounts.read(counts)));
+        e = assertThrows(IllegalStateException.class, () -> CustomCounts.checkOnMain(CustomCounts.read(counts)));
+        assertTrue(e.getMessage().contains("second look") && e.getMessage().contains("--second-look"), e.getMessage());
+        String again = CustomCounts.checkOnMain(CustomCounts.read(counts), true);
+        assertNotEquals(blob, again);
+        assertEquals(2, CustomCounts.otherLooks(ledger, java.util.Collections.singleton(again)).size());
+        assertEquals(0, CustomCounts.otherLooks(ledger, new HashSet<>(Arrays.asList(again, blob))).size());
+    }
+
+    /**
+     * A registration and its full-play registration: the one names the other by file and blob, the
+     * other names it back, and their ledger lines are one look. Each is refused where the two do
+     * not tie up as committed: the full-play file changed after the registration named it, or a
+     * full-play file the registration does not name.
+     */
+    @Test
+    public void aRegistrationAndItsFullPlayRegistrationAreOneLook() throws Exception {
+        Path repo = Files.createTempDirectory("two-files");
+        CustomCounts.git(repo, "init", "-q");
+        CustomCounts.git(repo, "config", "user.email", "test@example.com");
+        CustomCounts.git(repo, "config", "user.name", "test");
+        Path full = write(repo, CustomCounts.FULL_PLAY, fullPlay("abc"));
+        String fullBlob = CustomCounts.git(repo, "hash-object", "--", CustomCounts.FULL_PLAY);
+        Path counts = write(repo, CustomCounts.REGISTERED, naming(fullBlob));
+        Path ledger = write(repo, CustomCounts.LEDGER, CustomCounts.LEDGER_HEADER + "\n");
+        CustomCounts.git(repo, "add", ".");
+        CustomCounts.git(repo, "commit", "-q", "-m", "register");
+        String blob = CustomCounts.checkOnMain(CustomCounts.read(counts));
+        assertEquals(fullBlob, CustomCounts.checkOnMain(CustomCounts.read(full)));
+        assertEquals(new HashSet<>(Arrays.asList(blob, fullBlob)), CustomCounts.registeredBlobs(CustomCounts.read(full),
+                fullBlob));
+        // A look under the registration, then one under the full-play file: one look, no second asked for.
+        CustomCounts.lookOnMain(CustomCounts.read(counts), "deadbeef", "step 7");
+        CustomCounts.git(repo, "commit", "-q", "-am", "step 7");
+        CustomCounts.lookOnMain(CustomCounts.read(full), "deadbeef", "step 8");
+        CustomCounts.git(repo, "commit", "-q", "-am", "step 8");
+        assertEquals(3, Files.readAllLines(ledger).size());
+
+        // The full-play file changed and committed: neither file ties up with the other any more.
+        Files.write(full, fullPlay("abd").getBytes(StandardCharsets.UTF_8));
+        CustomCounts.git(repo, "commit", "-q", "-am", "a changed full-play registration");
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> CustomCounts.checkOnMain(CustomCounts.read(counts)));
+        assertTrue(e.getMessage().contains("not the blob"), e.getMessage());
+        e = assertThrows(IllegalStateException.class, () -> CustomCounts.checkOnMain(CustomCounts.read(full), true));
+        assertTrue(e.getMessage().contains("does not register it"), e.getMessage());
+    }
+
+    /** A full-play registration of F1 start alone, beside CustomCounts.REGISTERED. */
+    static String fullPlay(String searchCommit) {
+        return "{ \"kind\": \"registered\", \"K\": 10000, \"twin\": \"twin, seed 20261007\", \"searchCommit\": \""
+                + searchCommit + "\", \"registeredWith\": \"" + CustomCounts.REGISTERED + "\", "
+                + "\"cells\": {\"flat\": [\"F1\"], \"same\": [\"F1\"], \"own\": [\"F1\"]}, "
+                + "\"counts\": [ { \"name\": \"F1\", \"family\": \"F1\", \"role\": \"headline\", \"form\": \"true\", "
+                + "\"divisor\": 2500, \"tags\": [-10000, 10000, 10000, 10000, 10000, 10000, 0, 0, 0, -10000] } ] }";
+    }
+
+    /** The registration below, naming its full-play registration by the blob given. */
+    static String naming(String fullBlob) {
+        return registered().replace("\"cells\":", "\"fullPlay\": {\"file\": \"" + CustomCounts.FULL_PLAY
+                + "\", \"blob\": \"" + fullBlob + "\"}, \"cells\":");
     }
 
     /**

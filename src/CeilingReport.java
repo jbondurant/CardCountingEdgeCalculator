@@ -233,6 +233,8 @@ final class CeilingReport {
         List<SystemScorer.Entry> references = new ArrayList<>();
         /** Each custom row playing its own fit, by name: {BC, IC}, as ComparisonReport computes them. */
         java.util.Map<String, double[]> correlations = new java.util.LinkedHashMap<>();
+        /** On the main file, the blobs whose ledger lines are this registration's one look (CustomCounts.registeredBlobs). */
+        java.util.Set<String> registered;
     }
 
     /**
@@ -303,6 +305,9 @@ final class CeilingReport {
         }
     }
 
+    /** What must be left free on disk, beside the save file's directory, before a main-file look is made. */
+    static final long SAVE_MARGIN = 3_000_000_000L;
+
     /**
      * The report from a state file, the stored rows and the counts given: the counts file and the
      * ledger checked on the main file, and a file to save to given there and new, the stored rows
@@ -311,9 +316,30 @@ final class CeilingReport {
      */
     static Ceiling run(Path states, Path results, Path printed, Path countsFile, Path save, int resamples, int threads,
                        String commit, PrintStream out) throws Exception {
+        return run(states, results, printed, countsFile, save, resamples, threads, commit, out, false, SAVE_MARGIN);
+    }
+
+    /**
+     * The same, a look at another registration made only when secondLook (--second-look), and
+     * diskMargin bytes required free where the save file goes. Every refusal comes before the look
+     * is written to the ledger: the registration and the ledger (CustomCounts.checkOnMain), the save
+     * file new and its directory writable with the margin free, the stored rows set beside the
+     * published report, the states read and replayed, R and the reference rows worked out, and the
+     * stored rows checked to the bit against these classes. Only the counts of our own, their
+     * correlations, the save and the print come after.
+     */
+    static Ceiling run(Path states, Path results, Path printed, Path countsFile, Path save, int resamples, int threads,
+                       String commit, PrintStream out, boolean secondLook, long diskMargin) throws Exception {
         CustomCounts.Listing counts = CustomCounts.read(countsFile);
         boolean main = CustomCounts.isMain(states);
-        String blob = main ? CustomCounts.checkOnMain(counts) : null;
+        if (main && counts.registeredWith != null) {
+            throw new IllegalStateException(countsFile + " is the full-play registration, scored with full play by "
+                    + "FullIndexRun (step 8); this report scores " + counts.registeredWith + " (COUNT_DESIGN.md, section 8)");
+        }
+        String blob = main ? CustomCounts.checkOnMain(counts, secondLook) : null;
+        java.util.Set<String> registered = main ? CustomCounts.registeredBlobs(counts, blob) : null;
+        List<String> otherLooks = main ? CustomCounts.otherLooks(CustomCounts.ledgerOf(counts), registered)
+                : new ArrayList<>();
         if (main && save == null) {
             throw new IllegalStateException("a main-file look saves everything it scores, so no figure needs a second "
                     + "look: give --save FILE (COUNT_DESIGN.md, section 5)");
@@ -322,8 +348,8 @@ final class CeilingReport {
             throw new IllegalStateException("on the main file the stored rows are first set beside the published report's "
                     + "printed figures: give --printed REPORT (COUNT_DESIGN.md, section 5)");
         }
-        if (save != null && Files.exists(save)) {
-            throw new IllegalStateException(save + " exists; save the report's figures to a new file");
+        if (save != null) {
+            requireSavable(save, main ? diskMargin : 0);
         }
         Published p = read(results);
         if (printed != null) {
@@ -331,16 +357,22 @@ final class CeilingReport {
         }
         ScoringStates st = FullIndexPilot.load(states, StateStore.shoesDone(states));
         SystemScorer scorer = new SystemScorer(st, new Bootstrap(st.shoes, resamples, Bootstrap.SEED), SystemScorer.M_PLAY);
+        // What does not involve the counts of our own, worked out before the look, so a failure here costs none.
+        AllStates all = AllStates.replay(StateStore.header(states), st.shoes, StateRun.montreal(), BasicStrategy.chart(), st);
+        double bettingR = CountRegression.betting(st).r;
+        List<SystemScorer.Entry> references = scorer.references();
         Ceiling c = check(states, st, scorer, p, counts, threads);
         c.blob = blob;
+        c.registered = registered;
+        c.r = bettingR;
+        c.references = references;
         if (main) {
             CustomCounts.appendLedger(CustomCounts.ledgerOf(counts), commit, blob, "ComparisonReport "
-                    + "--published " + results + ", " + resamples + " resamples, saved to " + save);
+                    + "--published " + results + ", " + resamples + " resamples, saved to " + save
+                    + (otherLooks.isEmpty() ? "" : ", A SECOND LOOK (--second-look): the ledger held " + otherLooks.size()
+                    + " look" + (otherLooks.size() == 1 ? "" : "s") + " at another registration"));
         }
         scoreCustom(c, threads);
-        c.r = CountRegression.betting(st).r;
-        c.references = scorer.references();
-        AllStates all = AllStates.replay(StateStore.header(states), st.shoes, StateRun.montreal(), BasicStrategy.chart(), st);
         for (SystemScorer.Result r : c.custom) {
             for (SystemScorer.Entry e : r.entries) {
                 if (!e.bettingOnly && !e.ownValue) {
@@ -354,6 +386,35 @@ final class CeilingReport {
         }
         print(c, states, out);
         return c;
+    }
+
+    /**
+     * Refuses a save file the report could not write at its end: one that exists, or whose
+     * FILE.tmp, which save writes first, exists; a directory that is missing or where a file cannot
+     * be made (FILE.tmp is made there and deleted); or less than margin bytes free there.
+     */
+    static void requireSavable(Path save, long margin) throws IOException {
+        if (Files.exists(save, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalStateException(save + " exists; save the report's figures to a new file");
+        }
+        Path dir = save.toAbsolutePath().normalize().getParent();
+        if (dir == null || !Files.isDirectory(dir)) {
+            throw new IllegalStateException("the save file's directory " + dir + " does not exist; the report would score "
+                    + "everything and then could not save it");
+        }
+        Path tmp = save.resolveSibling(save.getFileName() + ".tmp");
+        try {
+            Files.createFile(tmp);
+            Files.delete(tmp);
+        } catch (IOException e) {
+            throw new IllegalStateException("cannot write " + tmp + " (" + e + "): the report would score everything and "
+                    + "then could not save it", e);
+        }
+        long free = Files.getFileStore(dir).getUsableSpace();
+        if (free < margin) {
+            throw new IllegalStateException(String.format("%.1f GB is free where %s goes, less than the %.1f GB a look "
+                    + "keeps free to save what it scores", free / 1e9, save, margin / 1e9));
+        }
     }
 
     // ------------------------------------------------------------------ what is saved
@@ -431,6 +492,15 @@ final class CeilingReport {
                     out.add(e);
                 }
             }
+        }
+        return out;
+    }
+
+    /** The headline rows a registration names for a cell, by their row names (row), in its order. */
+    static List<String> rowNames(Ceiling c, String cell) {
+        List<String> out = new ArrayList<>();
+        for (SystemScorer.Result r : claimed(c, cell)) {
+            out.add(row(r).name);
         }
         return out;
     }
@@ -614,9 +684,10 @@ final class CeilingReport {
         out.printf("Scored again with these classes and equal to the stored rows to the bit: %s.%n%n",
                 String.join(", ", c.checked));
         if (c.counts.registered) {
-            out.printf("Registered from the twin %s at commit %s. The counts reported in each cell, at every penetration: "
+            out.printf("Registered from the twin %s at commit %s. The rows reported in each cell, at every penetration, "
+                    + "each a count's headline row (a count with a betting vector reported by its row with that vector): "
                     + "flat %s; the same schedule, every spread, %s; the own ramp %s.%n%n", c.counts.twin,
-                    c.counts.searchCommit, c.counts.cells.get("flat"), c.counts.cells.get("same"), c.counts.cells.get("own"));
+                    c.counts.searchCommit, rowNames(c, "flat"), rowNames(c, "same"), rowNames(c, "own"));
         }
         List<String> over = aboveBound(c);
         out.println("## Bounds");
@@ -776,9 +847,19 @@ final class CeilingReport {
         if (Files.exists(ledger)) {
             out.println("## The ledger");
             out.println();
+            List<String> other = c.registered == null ? new ArrayList<>() : CustomCounts.otherLooks(ledger, c.registered);
+            if (c.registered != null) {
+                out.printf("The one look is every line carrying the registration's blob or its full-play registration's: %s."
+                        + "%n%n", String.join(", ", c.registered));
+                out.println(other.isEmpty() ? "No line is a look at another registration."
+                        : "A SECOND LOOK: " + other.size() + " line" + (other.size() == 1 ? " is a look" : "s are looks")
+                        + " at another registration, marked below. A count changed after a main-file look is a second "
+                        + "look, and its held-out claim needs a fresh file (COUNT_DESIGN.md, section 5).");
+                out.println();
+            }
             out.println("```");
             for (String l : Files.readAllLines(ledger, StandardCharsets.UTF_8)) {
-                out.println(l);
+                out.println(other.contains(l) ? l + "\t<- ANOTHER REGISTRATION: A SECOND LOOK" : l);
             }
             out.println("```");
         }
