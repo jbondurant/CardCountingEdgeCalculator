@@ -91,7 +91,7 @@ public class KeyEdgesTest {
         for (int p = 0; p < SystemScorer.CUTS.length; p++) {
             KeyEdges.Values v = s.col.values("Hi-Lo = Hi-Lo Lite", p);
             int[] keys = KeyEdges.keysOf(v);
-            KeyEdges.Sums[] held = KeyEdges.held(v, keys, s.st, boot);
+            KeyEdges.Sums[] held = KeyEdges.held(v, keys, s.col.facts, boot);
             for (int r = 0; r < boot.resamples; r++) {
                 List<Integer> copies = new ArrayList<>();
                 for (int t = 0; t < v.size(); t++) {
@@ -277,7 +277,7 @@ public class KeyEdgesTest {
             for (SystemScorer.Entry e : res.entries) {
                 for (int p = 0; p < SystemScorer.CUTS.length; p++) {
                     KeyEdges.Edges ed = KeyEdges.edges(e.name, KeyEdges.Layer.FIRST, new KeyEdges.Axis(e.count),
-                            s.col.values(e.name, p), s.st, s.sc.boot, s.col.refitted(e.name, p),
+                            s.col.values(e.name, p), s.col.facts, s.sc.boot, s.col.refitted(e.name, p),
                             e.estimate[p][SystemScorer.FLAT]);
                     assertEquals(new ArrayList<String>(), ed.failures, e.name);
                     for (int r = 0; r < resamples; r++) {
@@ -362,5 +362,51 @@ public class KeyEdgesTest {
         assertEquals(1.5, first.flat.widen, 0);
         assertEquals(2, first.line[0].widen, 0, "the line takes the largest band's");
         assertEquals(1, chart.byShare[0].widen, 0);
+    }
+
+    /**
+     * A collector saved and read back gives the same values and resample sums to the bit, with
+     * its identity, and its file holds each distinct array once.
+     */
+    @Test
+    public void aSavedCollectorReadsBackWhole(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        Scored s = new Scored(107, 3, Arrays.asList(PlayerTreeOrderTest.named("Omega II")));
+        java.nio.file.Path file = dir.resolve("states.ser");
+        s.col.save(file, "a test\nline two");
+        KeyEdges.Collector back = KeyEdges.Collector.read(file);
+        assertEquals("a test\nline two", back.identity);
+        assertEquals(s.col.entries.keySet(), back.entries.keySet());
+        for (String name : s.col.entries.keySet()) {
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                KeyEdges.Values a = s.col.values(name, p);
+                KeyEdges.Values b = back.values(name, p);
+                assertArrayEquals(a.state, b.state);
+                assertArrayEquals(a.fold, b.fold);
+                assertArrayEquals(a.key, b.key);
+                assertArrayEquals(a.weight, b.weight, 0);
+                assertArrayEquals(a.value, b.value, 0);
+                assertArrayEquals(a.insurance, b.insurance, 0);
+                KeyEdges.Refitted ra = s.col.refitted(name, p);
+                KeyEdges.Refitted rb = back.refitted(name, p);
+                assertArrayEquals(ra.key, rb.key);
+                for (int r = 0; r < 3; r++) {
+                    for (int f = 0; f < 2; f++) {
+                        assertArrayEquals(ra.value[r][f], rb.value[r][f], 0);
+                        assertArrayEquals(ra.weight[r][f], rb.weight[r][f], 0);
+                    }
+                }
+            }
+        }
+        assertArrayEquals(s.col.facts.chart, back.facts.chart, 0);
+        assertArrayEquals(s.col.facts.shoe, back.facts.shoe);
+        // Read back, the plain entry and its row betting only share one array of states and one of
+        // insurance values, and the betting variant shares the plain entry's play: each was written once.
+        Object[] plain = back.handed.get("Omega II = Canfield Master")[2][0];
+        Object[] betting = back.handed.get("Omega II = Canfield Master, betting only")[2][0];
+        Object[] variant = back.handed.get("Omega II = Canfield Master + ace side count")[2][0];
+        assertSame(plain[0], betting[0]);
+        assertSame(plain[3], betting[3]);
+        assertSame(plain[2], variant[2]);
+        assertNotSame(plain[4], variant[4]);
     }
 }

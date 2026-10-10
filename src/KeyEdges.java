@@ -136,6 +136,36 @@ final class KeyEdges {
     }
 
     /**
+     * What the figures need of the states beyond the sink's hand-outs, by state index: each one's
+     * shoe (for the bootstrap's multiplicities), depth (for the decks-left bands), and its round
+     * value under the chart and under the best first move, and perfect insurance's part (the
+     * layers fitted on nothing). Kept with the hand-outs, so a report never reads the states file.
+     */
+    static final class Facts implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        final int shoes;
+        final int[] shoe;
+        final int[] depth;
+        final double[] chart;
+        final double[] perfect;
+        final double[] perfectInsurance;
+
+        Facts(ScoringStates st) {
+            this(st.shoes, st.shoe.clone(), st.depth.clone(), st.chart.clone(), st.perfect.clone(),
+                    st.perfectInsurance.clone());
+        }
+
+        Facts(int shoes, int[] shoe, int[] depth, double[] chart, double[] perfect, double[] perfectInsurance) {
+            this.shoes = shoes;
+            this.shoe = shoe;
+            this.depth = depth;
+            this.chart = chart;
+            this.perfect = perfect;
+            this.perfectInsurance = perfectInsurance;
+        }
+    }
+
+    /**
      * Both sinks: keeps what the scorer hands out, by entry name and penetration. A name is
      * unique within one run's entries ("Hi-Lo", "Hi-Lo, betting only", "Hi-Lo, full play"), and
      * a second hand-out under the same name, penetration and fold is refused, so two runs cannot
@@ -143,18 +173,22 @@ final class KeyEdges {
      * only its own resample's slot.
      */
     static final class Collector implements SystemScorer.StateSink, SystemScorer.ResampleSink {
-        final ScoringStates st;
+        final Facts facts;
         final int resamples;
         /** By entry name: the entry, as the scorer listed it. */
         final Map<String, SystemScorer.Entry> entries = new LinkedHashMap<>();
         /** By entry name, [pen][fold]: what the state sink was handed, {state, weight, play, insurance, key}. */
-        private final Map<String, Object[][][]> handed = new LinkedHashMap<>();
+        final Map<String, Object[][][]> handed = new LinkedHashMap<>();
         /** By entry name, [pen]: the resample sums. */
         private final Map<String, Refitted[]> refitted = new LinkedHashMap<>();
 
         /** A collector of states from st; resamples is how many resamples the resample sink may hand (0 for none). */
         Collector(ScoringStates st, int resamples) {
-            this.st = st;
+            this(new Facts(st), resamples);
+        }
+
+        Collector(Facts facts, int resamples) {
+            this.facts = facts;
             this.resamples = resamples;
         }
 
@@ -240,6 +274,73 @@ final class KeyEdges {
             return r[p];
         }
 
+        /**
+         * Writes everything collected to file with an identity (the commit, the states file, what
+         * ran), whole: to a temporary file, forced to disk, then renamed, as FullIndexCheckpoint
+         * writes, so a file that exists is complete. Arrays of equal content are written once: a
+         * betting variant's values are its base's, a row betting only plays the chart and insures
+         * as its count does, and every entry of a penetration has the same states and weights.
+         * The file stays local (PLAN_COMPUTE.md 5.5: per-state arrays, 150 to 200 MB).
+         */
+        synchronized void save(java.nio.file.Path file, String identity) throws java.io.IOException {
+            Map<Object, Object> pool = new java.util.HashMap<>();
+            Map<String, Object[][][]> shared = new LinkedHashMap<>();
+            for (Map.Entry<String, Object[][][]> e : handed.entrySet()) {
+                Object[][][] h = e.getValue();
+                Object[][][] c = new Object[h.length][2][];
+                for (int p = 0; p < h.length; p++) {
+                    for (int f = 0; f < 2; f++) {
+                        if (h[p][f] != null) {
+                            c[p][f] = new Object[h[p][f].length];
+                            for (int a = 0; a < h[p][f].length; a++) {
+                                c[p][f][a] = canonical(pool, h[p][f][a]);
+                            }
+                        }
+                    }
+                }
+                shared.put(e.getKey(), c);
+            }
+            java.nio.file.Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp.toFile());
+                 java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(
+                         new java.io.BufferedOutputStream(fo, 1 << 20))) {
+                out.writeUTF(identity);
+                out.writeObject(facts);
+                out.writeInt(resamples);
+                out.writeObject(new LinkedHashMap<>(entries));
+                out.writeObject(shared);
+                out.writeObject(new LinkedHashMap<>(refitted));
+                out.flush();
+                fo.getFD().sync();
+            }
+            java.nio.file.Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        }
+
+        /** The array of equal content already in the pool, or this one, put there. */
+        private static Object canonical(Map<Object, Object> pool, Object a) {
+            Object key = a instanceof int[] ? new IntKey((int[]) a) : new DoubleKey((double[]) a);
+            return pool.computeIfAbsent(key, k -> a);
+        }
+
+        /** The identity a file was saved with. */
+        String identity;
+
+        /** A collector as save wrote it, its identity in identity. */
+        @SuppressWarnings("unchecked")
+        static Collector read(java.nio.file.Path file) throws java.io.IOException, ClassNotFoundException {
+            try (java.io.ObjectInputStream in = new java.io.ObjectInputStream(new java.io.BufferedInputStream(
+                    java.nio.file.Files.newInputStream(file), 1 << 20))) {
+                String identity = in.readUTF();
+                Collector c = new Collector((Facts) in.readObject(), in.readInt());
+                c.identity = identity;
+                c.entries.putAll((Map<String, SystemScorer.Entry>) in.readObject());
+                c.handed.putAll((Map<String, Object[][][]>) in.readObject());
+                c.refitted.putAll((Map<String, Refitted[]>) in.readObject());
+                return c;
+            }
+        }
+
         /** Forgets every penetration's states but p's, to hold one penetration's at a time. */
         synchronized void keepOnly(int p) {
             for (Object[][][] h : handed.values()) {
@@ -257,7 +358,8 @@ final class KeyEdges {
      * the weight, weight x value and weight x insurance, the keys the entry's bet keys at the
      * penetration (the same on every resample, since a resample moves weights, not cards).
      */
-    static final class Refitted {
+    static final class Refitted implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
         final int[] key;
         final double[][][] weight;
         final double[][][] value;
@@ -453,7 +555,7 @@ final class KeyEdges {
      * state's value stays what the estimate's play gave it; only the weights move. The states
      * are first summed by (shoe, key), which leaves each resample one pass over those cells.
      */
-    static Sums[] held(Values v, int[] keys, ScoringStates st, Bootstrap boot) {
+    static Sums[] held(Values v, int[] keys, Facts st, Bootstrap boot) {
         int n = v.size();
         int[] shoe = new int[n];
         int[] at = new int[n];
@@ -719,7 +821,7 @@ final class KeyEdges {
      * then the positive share. Equal values tie, and a tie is one block whose order inside does not
      * change any of these.
      */
-    static double[][] oracle(Values v, ScoringStates st, Bootstrap boot) {
+    static double[][] oracle(Values v, Facts st, Bootstrap boot) {
         int n = v.size();
         Integer[] order = new Integer[n];
         for (int t = 0; t < n; t++) {
@@ -1046,7 +1148,7 @@ final class KeyEdges {
      * 100% (check 2 of 5.4), and every key that stands is checked for weight on 99.9% of
      * resamples (check 5).
      */
-    static Edges edges(String row, Layer layer, Axis axis, Values v, ScoringStates st, Bootstrap boot, Refitted rf,
+    static Edges edges(String row, Layer layer, Axis axis, Values v, Facts st, Bootstrap boot, Refitted rf,
                        double scorersFlat) {
         Values keyed = axis.rebinned ? v.rekeyed(axis.rebin()) : v;
         Table t = table(keyed);
@@ -1304,5 +1406,43 @@ final class KeyEdges {
             d[r] = a[r] - b[r];
         }
         return d;
+    }
+
+    /** An int array compared by content, for writing equal arrays once. */
+    private static final class IntKey {
+        final int[] a;
+
+        IntKey(int[] a) {
+            this.a = a;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof IntKey && Arrays.equals(a, ((IntKey) o).a);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(a);
+        }
+    }
+
+    /** A double array compared by content, bit for bit, for writing equal arrays once. */
+    private static final class DoubleKey {
+        final double[] a;
+
+        DoubleKey(double[] a) {
+            this.a = a;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof DoubleKey && Arrays.equals(a, ((DoubleKey) o).a);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(a);
+        }
     }
 }
