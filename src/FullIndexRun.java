@@ -160,11 +160,20 @@ public final class FullIndexRun {
                     replay.export = Paths.get(args[++a]);
                     replayOnly = true;
                     break;
+                case "--export-row":
+                    replay.exportRows.add(args[++a]);
+                    replayOnly = true;
+                    break;
+                case "--export-plans":
+                    replay.exportPlans = args[++a].split(",");
+                    replayOnly = true;
+                    break;
                 default:
                     throw new IllegalArgumentException("usage: FullIndexRun --states FILE --out DIR [--shoes N] "
                             + "[--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH] "
                             + "[--counts FILE] [--pens P,P] [--resume] [--second-look], or a replay, --fit-from DIR "
-                            + "[--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR]; not " + args[a]);
+                            + "[--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR [--export-row NAME@P ...] "
+                            + "[--export-plans same-8,...]]; not " + args[a]);
             }
         }
         if (states == null || out == null) {

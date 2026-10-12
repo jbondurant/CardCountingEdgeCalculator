@@ -930,8 +930,19 @@ What `StrategyExport` does beyond the lines above (9 October 2026):
   4 + 4 + 8 + 8 + 24 × 8 = 216 bytes a state with all 24, about 13 MB at 80% on the main file, so the plan's
   estimate of 1 to 3 MB a section holds only for about 2 plans; the exporter prints the bundle's
   measured size.
-- Full-play rows are refused: their later plays and Hit and Split values come from the replay
-  (PLAN_COMPUTE.md 6.1), which is to call the writer's `format` and `writeStates` with them.
+- Full-play rows come from the replay (PLAN_COMPUTE.md 6.1, `FullIndexRun --fit-from ... --export
+  DIR [--export-row NAME@P ...] [--export-plans ...]`), which holds each fold's strategy after its
+  last round. For each fold the play is fitted again from the strategy's Hit and Split values as
+  SystemScorer.score fits the full-play entries (`foldPlay` with those values), the moves ranked
+  from that fit, the later groups and stands from the play the last round walked (`now`). A
+  strategy whose refit ranks any deal otherwise than that play is refused, since a split hand
+  reads the same ranked moves (B2.4). `rvPlay` is that play's round value, Hit and Split valued
+  from the strategy, the other moves from the stored values. Each item's rows are checked while
+  its values are held: the files read back and every state replayed from them on those values,
+  every later line held to the play walked, and the figures against the entry's. The bundle is
+  then written from the replay's records and its round trip holds each full-play section to the
+  one checked, to the bit. `test/FullPlayExportTest.java` does both on a fixture run and requires
+  the two bundles equal byte for byte, and equal again after a replay killed and resumed.
 
 ### B8. lookups.tsv
 

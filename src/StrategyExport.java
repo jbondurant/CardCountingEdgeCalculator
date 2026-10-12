@@ -39,9 +39,14 @@ import java.util.TreeMap;
  * bundle is written into DIR.partial and renamed to DIR only once the round trip has passed, so a
  * directory without that suffix is a bundle that passed.
  *
- * Full-play rows are not written here: their later plays and the Hit and Split values they are
- * scored with come from the replay of PLAN_COMPUTE.md 6.1, which rebuilds them; a full-play entry
- * is refused rather than exported with first-decision play under its name.
+ * Full-play rows come from the replay of PLAN_COMPUTE.md 6.1, which holds each fold's strategy
+ * after its last round with the Hit and Split values it is scored with (ReplayExport, its
+ * --export hook): the play is fitted again from those values as SystemScorer.score fits it
+ * (Refit's full-play constructor), each item's rows are checked on the values while they are
+ * held (checkFull), and the bundle is written from the replay's records, its round trip holding
+ * each full-play section to the one checked. Given the strategies themselves (Wanted with a full
+ * play), export() round-trips every state on the values. A full-play entry given without its
+ * strategies is refused rather than exported with first-decision play under its name.
  *
  * Usage, from the repository's root (one thread; about the memory ComparisonReport needs to hold
  * the state file):
@@ -160,10 +165,22 @@ final class StrategyExport {
         /** [fold][j]: what that fold's insurance adds to state j's round value. */
         final double[][] insurance = new double[2][];
         final PlayerMove[][][][] ranking = new PlayerMove[2][][][];
+        /**
+         * Full play only, null otherwise: the parts the values are indexed by, each fold's Hit and
+         * Split values from the strategy's last round, its later groups and stands[l x CELLS + cell].
+         */
+        final SystemScorer.Parts parts;
+        final SystemScorer.PlayValues[] values;
+        final SystemScorer.Groups[] later;
+        final boolean[][] stands;
 
         Refit(SystemScorer scorer, CountKeys.Count count, int p) {
             this.count = count;
             this.p = p;
+            parts = null;
+            values = null;
+            later = null;
+            stands = null;
             pen = scorer.pen(p);
             SystemScorer.Parts parts = scorer.parts(count, pen);
             SystemScorer.InsuranceParts ip = scorer.insuranceParts(parts, pen);
@@ -174,6 +191,64 @@ final class StrategyExport {
                 insurance[f] = SystemScorer.insuranceValues(ip, plays[f].insuranceGroup, insuranceSum[f]);
                 ranking[f] = FullIndexFit.rankings(scorer.st, scorer.rules(), plays[f].fit);
             }
+        }
+
+        /**
+         * A count's full play at penetration p from its two fold strategies after their last round
+         * (FullIndexFit.Strategy, as the replay of PLAN_COMPUTE.md 6.1 holds them): each fold's
+         * play fitted again from the strategy's Hit and Split values, as SystemScorer.score does
+         * for the full-play entries, with the insurance in the same groups, the moves ranked from
+         * that fit, and the strategy's later groups and the later play its last round walked
+         * (now). A split hand reads the ranked moves too, and the values were worked out with the
+         * ranking of the play the last round walked; a strategy whose refit ranks any deal
+         * otherwise is refused, since one file has one ranking (B2.4).
+         */
+        Refit(SystemScorer scorer, int p, FullIndexFit.Strategy[] two) {
+            if (two.length != 2 || two[0] == null || two[1] == null) {
+                throw new IllegalArgumentException("full play is exported from both fold strategies");
+            }
+            count = two[0].count;
+            this.p = p;
+            pen = scorer.pen(p);
+            SystemScorer.Parts held = two[0].parts != null ? two[0].parts : two[1].parts;
+            parts = held != null ? held : scorer.parts(count, pen);
+            SystemScorer.InsuranceParts ip = scorer.insuranceParts(parts, pen);
+            values = new SystemScorer.PlayValues[2];
+            later = new SystemScorer.Groups[2];
+            stands = new boolean[2][];
+            for (int f = 0; f < 2; f++) {
+                FullIndexFit.Strategy t = two[f];
+                if (t.fold != f || t.pen != p || t.half || t.count != count || t.values == null || t.later == null
+                        || t.now == null || t.now.stands == null) {
+                    throw new IllegalArgumentException(t + " is not fold " + f + "'s finished full-play strategy of " + count
+                            + " at " + SystemScorer.PENETRATIONS[p]);
+                }
+                values[f] = t.values;
+                plays[f] = scorer.foldPlay(parts, pen, ip, pen.train[f], pen.weight, null, null, null, null, values[f]);
+                insuranceSum[f] = SystemScorer.insuranceSums(ip, plays[f].insuranceGroup, plays[f].groups.count(),
+                        pen.train[f], pen.weight);
+                insurance[f] = SystemScorer.insuranceValues(ip, plays[f].insuranceGroup, insuranceSum[f]);
+                ranking[f] = FullIndexFit.rankings(scorer.st, scorer.rules(), plays[f].fit);
+                later[f] = t.later;
+                stands[f] = t.now.stands.clone();
+                if (stands[f].length != later[f].count() * FullIndexFit.CELLS) {
+                    throw new IllegalStateException(t + ": " + stands[f].length + " later cells for " + later[f].count() + " groups");
+                }
+                PlayerMove[][][] walked = t.now.ranking;
+                for (int g = 0; g < ranking[f].length; g++) {
+                    for (int i = 0; i < Deals.COUNT; i++) {
+                        if (!Deals.playerNatural(i) && !Arrays.equals(ranking[f][g][i], walked[g][i])) {
+                            throw new IllegalStateException(t + ": group " + g + ", deal " + i + " is ranked "
+                                    + Arrays.toString(ranking[f][g][i]) + " by the scored fit and "
+                                    + Arrays.toString(walked[g][i]) + " by the play its last round walked");
+                        }
+                    }
+                }
+            }
+        }
+
+        boolean full() {
+            return values != null;
         }
     }
 
@@ -192,9 +267,12 @@ final class StrategyExport {
      * bets, as the estimate scores it.
      */
     static Built build(SystemScorer scorer, Refit rf, SystemScorer.Entry e, String[] labels) {
-        if (e.fullPlay || e.ownValue) {
-            throw new IllegalArgumentException(e.name + ": only first-decision and betting-only rows are exported here; "
-                    + (e.fullPlay ? "full play comes from the replay's export hook" : "a row betting on its own value has no bet keys"));
+        if (e.ownValue) {
+            throw new IllegalArgumentException(e.name + ": a row betting on its own value has no bet keys");
+        }
+        if (e.fullPlay != rf.full()) {
+            throw new IllegalArgumentException(e.name + (e.fullPlay ? " plays full: it is exported from its fold "
+                    + "strategies' values (the replay's export hook)" : " plays first decisions, not the full play given"));
         }
         CountKeys.Count play = rf.count;
         CountKeys.Count bet = e.count;
@@ -223,7 +301,8 @@ final class StrategyExport {
 
             ExportBundle.Strategy s = new ExportBundle.Strategy();
             s.row = e.name;
-            s.scope = e.bettingOnly ? ExportBundle.Scope.BETTING : ExportBundle.Scope.FIRST;
+            s.scope = e.fullPlay ? ExportBundle.Scope.FULL : e.bettingOnly ? ExportBundle.Scope.BETTING
+                    : ExportBundle.Scope.FIRST;
             s.pen = ExportBundle.PENS[rf.p];
             s.cut = pen.cut;
             s.fold = f;
@@ -241,6 +320,14 @@ final class StrategyExport {
             s.lo = fp.groups.lo.clone();
             s.hi = fp.groups.hi.clone();
             s.first = e.bettingOnly ? null : rf.ranking[f];
+            if (e.fullPlay) {
+                s.laterLo = rf.later[f].lo.clone();
+                s.laterHi = rf.later[f].hi.clone();
+                s.stands = new boolean[s.laterLo.length][ExportBundle.CELLS];
+                for (int l = 0; l < s.laterLo.length; l++) {
+                    System.arraycopy(rf.stands[f], l * FullIndexFit.CELLS, s.stands[l], 0, FullIndexFit.CELLS);
+                }
+            }
             int groups = fp.groups.count();
             s.insure = new boolean[groups][ACE_UP];
             for (int g = 0; g < groups; g++) {
@@ -275,7 +362,7 @@ final class StrategyExport {
             }
             out.fold[f] = s;
             out.lookup[f] = new Lookup(s.fileName(), play, pen.cut, fp.groups, e.bettingOnly ? null : fp.fit.move,
-                    rf.insuranceSum[f], null, null);
+                    rf.insuranceSum[f], e.fullPlay ? rf.later[f] : null, e.fullPlay ? rf.stands[f] : null);
         }
         out.section = section(st, pen, rf, e, bk, units, labels);
         return out;
@@ -1052,7 +1139,8 @@ final class StrategyExport {
     // ------------------------------------------------------------------ the round trip
 
     /** What the report gave for one row at one penetration: the figures the bundle must give back. */
-    static final class Expect {
+    static final class Expect implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
         final String row;
         /** 70, 75 or 80. */
         final int pen;
@@ -1167,7 +1255,56 @@ final class StrategyExport {
      */
     static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
                                        ExportBundle.Section bin, Report r) {
+        return replay(st, chart, files, bin, r, null, null);
+    }
+
+    /**
+     * Where a full-play row's Hit and Split values come from in the round trip: the source's two
+     * fold strategies' values (values, with the parts they are indexed by), so every state's round
+     * value is worked out again from the files' moves; or, once those are gone, the section each
+     * item checked so when it held them (verified), which states.bin's must equal to the bit.
+     */
+    static final class FullSource {
+        final Map<String, Refit> values = new TreeMap<>();
+        final Map<String, ExportBundle.Section> verified = new TreeMap<>();
+
+        static String key(String row, int pen) {
+            return row + "\t" + pen;
+        }
+    }
+
+    /**
+     * The same for any scope: a full-play file's first moves are valued from its fold's Hit and
+     * Split values when rf holds them (each part's key held to the engine's part key), and
+     * otherwise its round values are taken from verified, which states.bin's section must equal
+     * to the bit; its insurance and bets are worked out from the file either way.
+     */
+    static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
+                                       ExportBundle.Section bin, Report r, Refit rf, ExportBundle.Section verified) {
         String where = bin.row + " at " + bin.pen + "%";
+        boolean full = files[0].scope == ExportBundle.Scope.FULL;
+        r.require(files[1].scope == files[0].scope, where + ": its two files are of scopes " + files[0].scope + " and "
+                + files[1].scope);
+        r.require(!full || rf != null && rf.full() || verified != null, where + " plays full and neither its values nor "
+                + "a section checked with them is given");
+        if (full && rf == null) {
+            sameSection(bin, verified, where, r);
+        }
+        if (full && rf != null) {
+            // The Hit values were worked out under the later play the last round walked; the files'
+            // later lines must be that play, cell by cell, or the simulator plays another.
+            for (int f = 0; f < 2; f++) {
+                r.equal(files[f].laterLo.length, rf.later[f].count(), where + ", fold " + f + ": later groups");
+                for (int l = 0; l < files[f].laterLo.length; l++) {
+                    r.require(files[f].laterLo[l] == rf.later[f].lo[l] && files[f].laterHi[l] == rf.later[f].hi[l],
+                            where + ", fold " + f + ": later group " + l + "'s bounds");
+                    for (int c = 0; c < FullIndexFit.CELLS; c++) {
+                        r.require(files[f].stands[l][c] == rf.stands[f][l * FullIndexFit.CELLS + c], where + ", fold " + f
+                                + ": later cell " + l + " " + c + " is not the play the strategy's last round walked");
+                    }
+                }
+            }
+        }
         int[][][] classes = new int[2][][];
         boolean[] aware = new boolean[2];
         for (int f = 0; f < 2; f++) {
@@ -1218,15 +1355,32 @@ final class StrategyExport {
             } else {
                 play = st.naturals[s];
             }
+            boolean valued = full && rf != null;
+            if (valued) {
+                r.require(rf.pen.states[e] == s, where + ": entry " + e + " is not state " + rf.pen.states[e]);
+            }
             for (int i = 0; i < Deals.COUNT; i++) {
                 boolean firstMove = file.scope != ExportBundle.Scope.BETTING && !Deals.playerNatural(i);
                 if (p[i] == 0 || !firstMove && i >= ACE_UP) {
                     continue;
                 }
-                for (double[] part : parts(file, classes[f], aware[f], dealt, depth, i)) {
+                double[][] parts = parts(file, classes[f], aware[f], dealt, depth, i);
+                int x0 = valued ? rf.parts.from(e * Deals.COUNT + i) : 0;
+                if (valued) {
+                    r.equal(rf.parts.to(e * Deals.COUNT + i) - x0, parts.length, where + ": state " + s + " deal " + i
+                            + "'s parts");
+                }
+                for (int y = 0; y < parts.length; y++) {
+                    double[] part = parts[y];
                     int g = ExportBundle.groupOf(file.hi, (int) part[0]);
-                    if (firstMove) {
-                        double v = mv[i * MOVES + file.first[g][i][0].ordinal()];
+                    if (firstMove && (!full || valued)) {
+                        int move = file.first[g][i][0].ordinal();
+                        double v = mv[i * MOVES + move];
+                        if (valued) {
+                            r.equal(rf.parts.key[x0 + y], (long) part[0], where + ": state " + s + " deal " + i + " part "
+                                    + y + "'s key");
+                            v = SystemScorer.value(rf.values[f], mv, i, x0 + y, move);
+                        }
                         r.require(!Double.isNaN(v), where + ": state " + s + " deal " + i + " is played "
                                 + file.first[g][i][0] + ", which the deal does not allow");
                         play += part[1] * v;
@@ -1236,7 +1390,7 @@ final class StrategyExport {
                     }
                 }
             }
-            out.rvPlay[e] = play;
+            out.rvPlay[e] = full && !valued ? bin.rvPlay[e] : play;
             out.rvInsurance[e] = insurance;
             for (int l = 0; l < bin.labels.length; l++) {
                 ExportBundle.Plan plan = file.plans.get(l);
@@ -1266,6 +1420,15 @@ final class StrategyExport {
         return out;
     }
 
+    /** A section equal to the one checked when it was made, field by field and to the bit. */
+    static void sameSection(ExportBundle.Section bin, ExportBundle.Section x, String where, Report r) {
+        r.require(x.row.equals(bin.row) && x.pen == bin.pen && x.cut == bin.cut && Arrays.equals(x.labels, bin.labels)
+                && Arrays.equals(x.index, bin.index) && Arrays.equals(x.betKey, bin.betKey)
+                && Arrays.equals(x.rvPlay, bin.rvPlay) && Arrays.equals(x.rvInsurance, bin.rvInsurance)
+                && Arrays.deepEquals(x.bet, bin.bet), where + ": states.bin's section is not the one checked against "
+                + "the strategies' values when it was made");
+    }
+
     /**
      * The round trip over a whole bundle: its manifest and index against the files, chart.tsv
      * against the chart, states.bin's records against the state file's, every strategy file
@@ -1276,6 +1439,12 @@ final class StrategyExport {
      */
     static Report roundTrip(Path dir, ScoringStates st, StateStore.Header h, List<Expect> expected,
                             List<CountKeys.Count> keyCounts) throws IOException {
+        return roundTrip(dir, st, h, expected, keyCounts, new FullSource());
+    }
+
+    /** The same, full-play rows valued from full (FullSource). */
+    static Report roundTrip(Path dir, ScoringStates st, StateStore.Header h, List<Expect> expected,
+                            List<CountKeys.Count> keyCounts, FullSource full) throws IOException {
         Report r = new Report();
         Map<String, String> manifest = ExportBundle.readManifest(dir.resolve("manifest.sha256"));
         Map<String, String[]> index = ExportBundle.readIndex(dir.resolve("index.tsv"));
@@ -1349,7 +1518,7 @@ final class StrategyExport {
             if (x.row.equals(CHART_ROW)) {
                 chartFigures(st, chart, bin, strategies, exact, x, r);
             } else {
-                figures(st, chart, bin, strategies, exact, x, r);
+                figures(st, chart, bin, strategies, exact, x, r, full);
             }
         }
         if (keyCounts != null) {
@@ -1367,13 +1536,14 @@ final class StrategyExport {
      */
     static void figures(ScoringStates st, PlayerMove[] chart, ExportBundle.States bin,
                         Map<String, ExportBundle.Strategy[]> strategies, Map<String, List<ExportBundle.Exact>> exact,
-                        Expect x, Report r) {
+                        Expect x, Report r, FullSource full) {
         String where = x.row + " at " + x.pen + "%";
         ExportBundle.Section sec = bin.section(x.row, x.pen);
         r.require(sec != null, where + " has no section in states.bin");
         ExportBundle.Strategy[] files = strategies.get(x.row + "\t" + x.pen);
         r.require(files != null && files[0] != null && files[1] != null, where + " lacks a fold's strategy file");
-        ExportBundle.Section again = replay(st, chart, files, sec, r);
+        String key = FullSource.key(x.row, x.pen);
+        ExportBundle.Section again = replay(st, chart, files, sec, r, full.values.get(key), full.verified.get(key));
         List<String> figures = figures(sec.labels);
         double[] pooledA = new double[figures.size()];
         double[] pooledB = new double[figures.size()];
@@ -1428,8 +1598,11 @@ final class StrategyExport {
             }
             shoes = st.shoes + " per-shoe sums equal Entry.shoeSums";
         }
-        r.lines.add(where + ": " + sec.index.length + " states replayed from the strategy files equal states.bin; "
-                + checked + " figures pooled from exact.tsv equal Entry.estimate; " + shoes);
+        String how = files[0].scope != ExportBundle.Scope.FULL ? "" : full.values.containsKey(key)
+                ? " (full play, on its strategies' Hit and Split values)"
+                : " (full play: round values as checked on its strategies' values when made)";
+        r.lines.add(where + ": " + sec.index.length + " states replayed from the strategy files equal states.bin" + how
+                + "; " + checked + " figures pooled from exact.tsv equal Entry.estimate; " + shoes);
     }
 
     /**
@@ -1840,13 +2013,27 @@ final class StrategyExport {
         final SystemScorer.Result result;
         final SystemScorer.Entry entry;
         final int[] pens;
+        /** A full-play row's play at each penetration (index 0 to 2), from its fold strategies; null for a first-decision row. */
+        final Refit[] full;
 
         Wanted(SystemScorer.Result result, SystemScorer.Entry entry, int... pens) {
-            if (!result.entries.contains(entry)) {
-                throw new IllegalArgumentException(entry.name + " is not a first-decision entry of " + result.count.name);
+            this(result, entry, null, pens);
+        }
+
+        Wanted(SystemScorer.Result result, SystemScorer.Entry entry, Refit[] full, int... pens) {
+            if (!(full == null ? result.entries : result.fullEntries).contains(entry)) {
+                throw new IllegalArgumentException(entry.name + " is not a " + (full == null ? "first-decision" : "full-play")
+                        + " entry of " + result.count.name);
+            }
+            for (int p : pens) {
+                if (full != null && (full[p] == null || !full[p].full() || full[p].count != result.count)) {
+                    throw new IllegalArgumentException(entry.name + " has no full play of " + result.count.name + " at "
+                            + SystemScorer.PENETRATIONS[p]);
+                }
             }
             this.result = result;
             this.entry = entry;
+            this.full = full;
             this.pens = pens.clone();
         }
     }
@@ -1881,15 +2068,20 @@ final class StrategyExport {
         List<ExportBundle.Section> sections = new ArrayList<>();
         List<Expect> expected = new ArrayList<>();
         List<Lookup> lookups = new ArrayList<>();
+        FullSource full = new FullSource();
         java.util.IdentityHashMap<SystemScorer.Result, Refit[]> refits = new java.util.IdentityHashMap<>();
         for (Wanted w : rows) {
             Refit[] byPen = refits.computeIfAbsent(w.result, k -> new Refit[SystemScorer.CUTS.length]);
             for (int p : w.pens) {
                 long t0 = System.nanoTime();
-                if (byPen[p] == null) {
+                if (w.full == null && byPen[p] == null) {
                     byPen[p] = new Refit(scorer, w.result.count, p);
                 }
-                Built b = build(scorer, byPen[p], w.entry, labels);
+                Refit rf = w.full != null ? w.full[p] : byPen[p];
+                if (w.full != null) {
+                    full.values.put(FullSource.key(w.entry.name, ExportBundle.PENS[p]), rf);
+                }
+                Built b = build(scorer, rf, w.entry, labels);
                 for (ExportBundle.Strategy s : b.fold) {
                     if (Files.exists(partial.resolve(s.fileName()))) {
                         throw new IllegalArgumentException(s.row + " at " + s.pen + "%, fold " + s.fold + ": "
@@ -1912,25 +2104,225 @@ final class StrategyExport {
                 expected.add(Expect.of(chartRow.entry, p));
             }
         }
-        writeStates(partial.resolve("states.bin"), h, st, sections);
-        writeKeysSample(partial.resolve("keys-sample.tsv"), st, keyCounts, sampleSeed);
         List<int[]> sample = sample(st.size, sampleSeed);
         List<int[]> later = laterLines(st, sample);
         List<LookupColumn> columns = new ArrayList<>();
         for (Lookup l : lookups) {
             columns.add(LookupColumn.of(l, st, sample, later));
         }
-        writeLookups(partial.resolve("lookups.tsv"), st, sampleSeed, sample, later, columns);
+        return finishBundle(out, partial, st, h, strategies, sections, expected, columns, keyCounts, sampleSeed, log, full);
+    }
+
+    /**
+     * The rest of a bundle whose chart.tsv and strategy files are in partial already: states.bin,
+     * keys-sample.tsv, lookups.tsv, exact.tsv, the index and manifest; then the round trip, and
+     * partial renamed to out once it has passed.
+     */
+    static Report finishBundle(Path out, Path partial, ScoringStates st, StateStore.Header h,
+                               List<ExportBundle.Strategy> strategies, List<ExportBundle.Section> sections,
+                               List<Expect> expected, List<LookupColumn> columns, List<CountKeys.Count> keyCounts,
+                               long sampleSeed, PrintStream log, FullSource full) throws IOException {
+        List<int[]> sample = sample(st.size, sampleSeed);
+        writeStates(partial.resolve("states.bin"), h, st, sections);
+        writeKeysSample(partial.resolve("keys-sample.tsv"), st, keyCounts, sampleSeed);
+        writeLookups(partial.resolve("lookups.tsv"), st, sampleSeed, sample, laterLines(st, sample), columns);
         writeExact(partial.resolve("exact.tsv"), st, sections);
         long total = writeIndexAndManifest(partial, strategies);
         log.printf("bundle: %d files, %d bytes (%.1f MB)%n", strategies.size() + 7, total, total / 1e6);
-        Report r = roundTrip(partial, st, h, expected, keyCounts);
+        Report r = roundTrip(partial, st, h, expected, keyCounts, full);
         for (String l : r.lines) {
             log.println(l);
         }
         Files.move(partial, out, StandardCopyOption.ATOMIC_MOVE);
         log.println("round trip passed; the bundle is " + out);
         return r;
+    }
+
+    // ------------------------------------------------------------------ full play, from the replay
+
+    /** The chart as chart.tsv holds it (B1), from BasicStrategy, for checking files before any bundle is written. */
+    static PlayerMove[] chartArray() {
+        int[] m = chartMoves(BasicStrategy.chart());
+        PlayerMove[] out = new PlayerMove[m.length];
+        for (int n = 0; n < m.length; n++) {
+            out[n] = PlayerMove.values()[m[n]];
+        }
+        return out;
+    }
+
+    /**
+     * One full-play row at one penetration, checked while its strategies' values are at hand:
+     * both files written and read back, every state replayed from them on those values against
+     * the section (B2.4, PlayValues for Hit and Split), the later lines against the play the last
+     * round walked, and the row's figures summed in the engine's order against its estimate.
+     */
+    static Report checkFull(ScoringStates st, PlayerMove[] chart, Built b, Refit rf, Expect x) {
+        Report r = new Report();
+        ExportBundle.Strategy[] files = new ExportBundle.Strategy[2];
+        for (int f = 0; f < 2; f++) {
+            files[f] = ExportBundle.readStrategyText(format(b.fold[f]));
+        }
+        ExportBundle.Section again = replay(st, chart, files, b.section, r, rf, null);
+        double[] engine = engineOrder(st, again, files);
+        for (int fi = 0; fi < engine.length; fi++) {
+            int m = metric(again.labels, fi);
+            if (m >= 0) {
+                r.same(engine[fi], x.estimate[m], x.row + " at " + x.pen + "%: " + figures(again.labels).get(fi)
+                        + " summed in the engine's order, against the report's estimate");
+            }
+        }
+        return r;
+    }
+
+    /** What the replay's export keeps of one row at one penetration: its files' text, its section, its figures and lookups. */
+    static final class RowExport implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        final String[] text = new String[2];
+        ExportBundle.Section section;
+        Expect expect;
+        final LookupColumn[] columns = new LookupColumn[2];
+    }
+
+    /**
+     * The replay's --export (PLAN_COMPUTE.md 1.2 and 6.1): after each fold item, while its two
+     * strategies hold their last round's values, it builds the item's full-play rows (every
+     * full-play entry not bet on its own value, or those named), checks each against the values
+     * (checkFull) and keeps what the bundle needs; once every item is kept, it writes the bundle
+     * from the records alone, chart.tsv, states.bin, keys-sample.tsv for the run's counts and
+     * their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds each full
+     * section to the one checked on the values.
+     */
+    static final class ReplayExport implements FullIndexReplay.Hook {
+        final Path out;
+        final Path states;
+        /** The replay's --shoes, or -1 for every shoe the state file holds. */
+        final int shoes;
+        /** Rows to export as NAME@P (P 70, 75 or 80); empty for every full-play row of every item replayed. */
+        final List<String> rows;
+        final String[] labels;
+        final long seed;
+        final PrintStream log;
+        private ScoringStates st;
+
+        ReplayExport(Path out, Path states, int shoes, List<String> rows, String[] labels, long seed, PrintStream log) {
+            for (String l : labels) {
+                metrics(l);
+            }
+            this.out = out;
+            this.states = states;
+            this.shoes = shoes;
+            this.rows = new ArrayList<>(rows);
+            this.labels = labels.clone();
+            this.seed = seed;
+            this.log = log;
+        }
+
+        @Override
+        public String name() {
+            return "export";
+        }
+
+        boolean wanted(String row, int p) {
+            return rows.isEmpty() || rows.contains(row + "@" + ExportBundle.PENS[p]);
+        }
+
+        @Override
+        public java.io.Serializable after(FullIndexReplay.Item item, SystemScorer scorer, SystemScorer.Result scored,
+                                          List<FullIndexFit.Strategy> two) {
+            if (item.halves) {
+                return null;
+            }
+            st = scorer.st;
+            ArrayList<RowExport> kept = new ArrayList<>();
+            Refit rf = null;
+            List<int[]> sample = sample(st.size, seed);
+            List<int[]> later = laterLines(st, sample);
+            for (SystemScorer.Entry e : scored.fullEntries) {
+                if (e.ownValue || !wanted(e.name, item.pen)) {
+                    continue;
+                }
+                if (rf == null) {
+                    rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
+                }
+                Built b = build(scorer, rf, e, labels);
+                RowExport x = new RowExport();
+                x.expect = Expect.of(e, item.pen);
+                Report r = checkFull(st, chartArray(), b, rf, x.expect);
+                x.section = b.section;
+                for (int f = 0; f < 2; f++) {
+                    x.text[f] = format(b.fold[f]);
+                    x.columns[f] = LookupColumn.of(b.lookup[f], st, sample, later);
+                }
+                kept.add(x);
+                log.printf("export: %s at %s checked on its values, %d values compared, largest relative difference %s%n",
+                        e.name, SystemScorer.PENETRATIONS[item.pen], r.compared, r.worst);
+            }
+            return kept.isEmpty() ? null : kept;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public void finish(FullIndexReplay.Assembled all) throws Exception {
+            List<RowExport> kept = new ArrayList<>();
+            for (int k = 0; k < all.items.size(); k++) {
+                Object x = all.record(k).kept.get(name());
+                if (x != null) {
+                    kept.addAll((List<RowExport>) x);
+                }
+            }
+            for (String w : rows) {
+                boolean found = false;
+                for (RowExport x : kept) {
+                    found |= (x.expect.row + "@" + x.expect.pen).equals(w);
+                }
+                if (!found) {
+                    throw new IllegalStateException("--export-row " + w + " is not a full-play row of any item replayed");
+                }
+            }
+            if (kept.isEmpty()) {
+                throw new IllegalStateException("--export: no full-play row was replayed");
+            }
+            if (st == null) {
+                // Every item was kept by an earlier start: the states are read here, as the replay read them.
+                st = FullIndexPilot.load(states, shoes < 0 ? StateStore.shoesDone(states) : shoes);
+            }
+            Path partial = out.resolveSibling(out.getFileName() + ".partial");
+            if (Files.exists(out) || Files.exists(partial)) {
+                throw new IllegalStateException(out + " or " + partial + " exists already; a bundle is written once");
+            }
+            Files.createDirectories(partial);
+            writeChart(partial.resolve("chart.tsv"), BasicStrategy.chart());
+            List<ExportBundle.Strategy> strategies = new ArrayList<>();
+            List<ExportBundle.Section> sections = new ArrayList<>();
+            List<Expect> expected = new ArrayList<>();
+            List<LookupColumn> columns = new ArrayList<>();
+            FullSource full = new FullSource();
+            for (RowExport x : kept) {
+                for (int f = 0; f < 2; f++) {
+                    ExportBundle.Strategy s = ExportBundle.readStrategyText(x.text[f]);
+                    Files.write(partial.resolve(s.fileName()), x.text[f].getBytes(StandardCharsets.UTF_8),
+                            java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE);
+                    strategies.add(s);
+                    columns.add(x.columns[f]);
+                }
+                sections.add(x.section);
+                expected.add(x.expect);
+                full.verified.put(FullSource.key(x.expect.row, x.expect.pen), x.section);
+            }
+            List<CountKeys.Count> catalog = new ArrayList<>();
+            List<CountKeys.Count> own = new ArrayList<>();
+            List<String> catalogNames = new ArrayList<>();
+            for (CountKeys.Count c : CountKeys.catalog()) {
+                catalogNames.add(c.name);
+            }
+            for (CountKeys.Count c : all.counts) {
+                if (!c.name.equals(CountKeys.nullCount().name)) {
+                    (catalogNames.contains(c.name) ? catalog : own).add(c);
+                }
+            }
+            finishBundle(out, partial, st, StateStore.header(states), strategies, sections, expected, columns,
+                    keyCounts(catalog, own), seed, log, full);
+        }
     }
 
     /** Reads the arguments and writes the bundle (see the class comment). */

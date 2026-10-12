@@ -672,7 +672,8 @@ final class ExportBundle {
     }
 
     /** One (row, penetration) section of states.bin: an entry per state below the cut, in record order. */
-    static final class Section {
+    static final class Section implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
         String row;
         int pen;
         int cut;
