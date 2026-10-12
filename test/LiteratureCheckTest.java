@@ -715,6 +715,9 @@ public class LiteratureCheckTest {
         n.put(LiteratureClaims.Verdict.NOT_COMPARED, 9);
         assertEquals("Of the 5 published figures I compared with mine, 3 agree, and 2 differ for a reason not yet tested.",
                 LiteratureOutput.sentence(n));
+        n.put(LiteratureClaims.Verdict.UNEXPLAINED, 1);
+        assertEquals("Of the 6 published figures I compared with mine, 3 agree, 2 differ for a reason not yet tested, "
+                + "and 1 differs for no reason found.", LiteratureOutput.sentence(n), "one figure differs");
     }
 
     @Test

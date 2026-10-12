@@ -151,8 +151,11 @@ tag.
    Red Seven's +2 a deck and start of -16, agree with the catalog's tags.
 7. **Vidami et al.:** Table 2 read again; F1 lies 7.0 degrees from their
    ace-reckoned vector and 16.5 from the ace-neutral one (search file).
-8. **Without R and the later components,** 22 claims wait: BC/R, the
-   variance, spreads, wonging, and F1's held-out score.
+8. **Not compared: 22 claims.** Ten wait: six BC/R for R from step 7's save,
+   the variance, spreads and wonging for their components, and the
+   comparison with Vidami et al. for F1's held-out score. Twelve are shown for
+   context: published statements with no size to test, other games, or
+   figures with nothing published to judge them against.
 
 The verdict counts this run gave: of 51 figures compared, 19 agree, 13 agree in
 direction only, 7 differ for a reason tested by code here, 11 differ for a

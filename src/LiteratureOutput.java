@@ -48,11 +48,14 @@ final class LiteratureOutput {
         }
         List<String> parts = new ArrayList<>();
         for (Map.Entry<LiteratureClaims.Verdict, String> e : SENTENCE.entrySet()) {
-            if (n.get(e.getKey()) > 0) {
-                parts.add(n.get(e.getKey()) + " " + e.getValue());
+            int k = n.get(e.getKey());
+            if (k > 0) {
+                // One figure agrees, differs; several agree, differ.
+                parts.add(k + " " + (k == 1 ? e.getValue().replaceFirst("^(agree|differ)", "$1s") : e.getValue()));
             }
         }
-        StringBuilder b = new StringBuilder("Of the " + compared + " published figures I compared with mine, ");
+        StringBuilder b = new StringBuilder("Of the " + compared + " published figure" + (compared == 1 ? "" : "s")
+                + " I compared with mine, ");
         for (int k = 0; k < parts.size(); k++) {
             b.append(k == 0 ? "" : k == parts.size() - 1 ? ", and " : ", ").append(parts.get(k));
         }
