@@ -48,15 +48,11 @@ final class FullIndexPeek {
         Path finished = dir.resolve("results.ser");
         if (Files.exists(finished)) {
             // The run has ended: its results, as it wrote them.
-            try (ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(Files.newInputStream(finished),
-                    1 << 20))) {
-                if (!in.readUTF().equals(identity)) {
-                    throw new IllegalStateException(finished + " was written by another run than " + dir.resolve("run.id"));
-                }
-                @SuppressWarnings("unchecked")
-                List<SystemScorer.Result> results = (List<SystemScorer.Result>) in.readObject();
-                sc.results.addAll(results);
+            Stored stored = read(finished);
+            if (!stored.identity.equals(identity)) {
+                throw new IllegalStateException(finished + " was written by another run than " + dir.resolve("run.id"));
             }
+            sc.results.addAll(stored.results);
             counts.clear();
         }
         for (int k = 0; k < counts.size(); k++) {
@@ -83,6 +79,31 @@ final class FullIndexPeek {
         FullIndexRun.summary(System.out, sc, null, pens[pens.length - 1]);
         System.out.printf("%nNot scored yet: %s.%n", waiting.isEmpty() ? "none" : String.join(", ", waiting));
         ranked(System.out, sc.results, pens[pens.length - 1]);
+    }
+
+    /** A finished run's results.ser: the run's identity and every count's Result. */
+    static final class Stored {
+        final String identity;
+        final List<SystemScorer.Result> results;
+
+        Stored(String identity, List<SystemScorer.Result> results) {
+            this.identity = identity;
+            this.results = results;
+        }
+    }
+
+    /**
+     * Reads the identity and the Results at the head of a results.ser as FullIndexRun writes it,
+     * and nothing after them; it only reads. Run it on the classes the file was written with.
+     * RiskReport reads the engine's win rates through it.
+     */
+    static Stored read(Path file) throws java.io.IOException, ClassNotFoundException {
+        try (ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(Files.newInputStream(file), 1 << 20))) {
+            String identity = in.readUTF();
+            @SuppressWarnings("unchecked")
+            List<SystemScorer.Result> results = (List<SystemScorer.Result>) in.readObject();
+            return new Stored(identity, results);
+        }
     }
 
     /**
