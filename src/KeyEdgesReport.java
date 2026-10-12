@@ -387,8 +387,14 @@ final class KeyEdgesReport {
 
     // ------------------------------------------------------------------------ write
 
+    /**
+     * The report from the runs' files: run A's collector (--a), further rows (--rows), run A''s
+     * (--a-prime), full-play runs (--full), c06c061's results.ser for its perfect array, and
+     * report-final for check 9 (--printed); held resamples of the number given, drawn as every
+     * published interval was (Bootstrap.RESAMPLES and Bootstrap.SEED on the real run).
+     */
     static void write(Path a, List<Path> more, Path aPrime, List<Path> full, Path published, Path printed, Path out,
-                      String commit, PrintStream log) throws Exception {
+                      String commit, int resamples, PrintStream log) throws Exception {
         long t0 = System.nanoTime();
         if (a == null) {
             throw new IllegalArgumentException("the report needs run A's file (--a)");
@@ -404,7 +410,12 @@ final class KeyEdgesReport {
         }
         in.perfect = CeilingReport.read(published).perfect;
         in.printed = printed == null ? null : KeyEdgesPrinted.parse(printed);
-        in.boot = new Bootstrap(in.a.facts.shoes, Bootstrap.RESAMPLES, Bootstrap.SEED);
+        in.boot = new Bootstrap(in.a.facts.shoes, resamples, Bootstrap.SEED);
+        // A refitted interval and the held one it is set beside must come from the same draws.
+        if (in.aPrime != null && in.aPrime.resamples != resamples) {
+            throw new IllegalStateException("run A' was made with " + in.aPrime.resamples + " resamples, the report draws "
+                    + resamples);
+        }
         List<Map<String, Object>> inputs = new ArrayList<>();
         inputs.add(map("file", a.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(a)));
         if (aPrime != null) {

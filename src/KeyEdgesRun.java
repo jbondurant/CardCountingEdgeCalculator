@@ -109,13 +109,14 @@ final class KeyEdgesRun {
         String commit = FullIndexRun.commit();
         switch (mode) {
             case "a":
-                runA(states, published, out, commit, System.out);
+                runA(states, published, out, commit, Bootstrap.RESAMPLES, System.out);
                 break;
             case "a-prime":
-                runAPrime(states, published, out, commit, Math.max(1, threads), System.out);
+                runAPrime(states, published, out, commit, Bootstrap.RESAMPLES, Math.max(1, threads), System.out);
                 break;
             case "report":
-                KeyEdgesReport.write(a, more, aPrime, full, published, printed, out, commit, System.out);
+                KeyEdgesReport.write(a, more, aPrime, full, published, printed, out, commit, Bootstrap.RESAMPLES,
+                        System.out);
                 break;
             default:
                 usage();
@@ -188,11 +189,12 @@ final class KeyEdgesRun {
         return true;
     }
 
-    /** The run's identity: the commit, the states, the stored rows, what ran. */
-    static String identity(String commit, Path states, ScoringStates st, Path published, String what) throws IOException {
+    /** The run's identity: the commit, the states, the stored rows and their resamples, what ran. */
+    static String identity(String commit, Path states, ScoringStates st, Path published, int resamples, String what)
+            throws IOException {
         return "KeyEdgesRun " + what + "\ncommit " + commit + "\n" + FullIndexRun.stateFile(states) + "\nshoes " + st.shoes
                 + ", valued states " + st.size + "\npublished " + published.toAbsolutePath().normalize() + ", sha256 "
-                + sha256(published) + "\nresamples " + Bootstrap.RESAMPLES + ", seed " + Bootstrap.SEED + "\n";
+                + sha256(published) + "\nresamples " + resamples + ", seed " + Bootstrap.SEED + "\n";
     }
 
     static String sha256(Path file) throws IOException {
@@ -317,14 +319,20 @@ final class KeyEdgesRun {
         }
     }
 
-    static void runA(Path states, Path published, Path out, String commit, PrintStream log) throws Exception {
+    /**
+     * Run A from the files: the states, c06c061's results.ser (which must pair with them: the same
+     * file, shoes and valued states, and resamples of the number given, Bootstrap.RESAMPLES on the
+     * real run), kept in out as a-COMMIT.ser only if every check passed.
+     */
+    static void runA(Path states, Path published, Path out, String commit, int resamples, PrintStream log)
+            throws Exception {
         long t0 = System.nanoTime();
         CeilingReport.Published pub = CeilingReport.read(published);
         ScoringStates st = load(states);
-        CeilingReport.requirePaired(pub, states, st, Bootstrap.RESAMPLES);
+        CeilingReport.requirePaired(pub, states, st, resamples);
         log.printf("states read in %.1f s%n", (System.nanoTime() - t0) / 1e9);
         Collected c = scoreA(st, catalogRows(), pub.results);
-        finish(c, identity(commit, states, st, published, "a"), out.resolve("a-" + commit + ".ser"), t0, log);
+        finish(c, identity(commit, states, st, published, resamples, "a"), out.resolve("a-" + commit + ".ser"), t0, log);
     }
 
     /** Writes what a run collected, only if it failed no check, and says so either way. */
@@ -423,15 +431,17 @@ final class KeyEdgesRun {
         return out;
     }
 
-    static void runAPrime(Path states, Path published, Path out, String commit, int threads, PrintStream log)
-            throws Exception {
+    /** Run A' from the files, as runA reads them, kept in out as a-prime-COMMIT.ser only if every check passed. */
+    static void runAPrime(Path states, Path published, Path out, String commit, int resamples, int threads,
+                          PrintStream log) throws Exception {
         long t0 = System.nanoTime();
         CeilingReport.Published pub = CeilingReport.read(published);
         ScoringStates st = load(states);
-        CeilingReport.requirePaired(pub, states, st, Bootstrap.RESAMPLES);
+        CeilingReport.requirePaired(pub, states, st, resamples);
         log.printf("states read in %.1f s%n", (System.nanoTime() - t0) / 1e9);
-        Bootstrap boot = new Bootstrap(st.shoes, Bootstrap.RESAMPLES, Bootstrap.SEED);
+        Bootstrap boot = new Bootstrap(st.shoes, resamples, Bootstrap.SEED);
         Collected c = scoreAPrime(st, boot, refittedCounts(), REFIT_PEN, pub.results, threads);
-        finish(c, identity(commit, states, st, published, "a-prime"), out.resolve("a-prime-" + commit + ".ser"), t0, log);
+        finish(c, identity(commit, states, st, published, resamples, "a-prime"), out.resolve("a-prime-" + commit + ".ser"),
+                t0, log);
     }
 }
