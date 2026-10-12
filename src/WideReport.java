@@ -537,16 +537,16 @@ final class WideReport {
         }
         out.printf("%n### %s, %s, %s%n%n", s.plans[i].label, same ? "same schedule" : "own rule", SystemScorer.PENETRATIONS[p]);
         if (same) {
-            out.println("| Row | EV | SE | 95% | vs Hi-Lo | its 95% | Simultaneous | Average bet | Share played | "
+            out.println("| Row | EV | SE | Bias | 95% | vs Hi-Lo | its 95% | Simultaneous | Average bet | Share played | "
                     + "EV per round played | EV per unit bet | Mean square bet |");
-            out.println("|---|---|---|---|---|---|---|---|---|---|---|---|");
+            out.println("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         } else {
-            out.println("| Row | EV | SE | 95% | Average bet | Share played | EV per round played | EV per unit bet | "
-                    + "Mean square bet |");
-            out.println("|---|---|---|---|---|---|---|---|---|");
+            out.println("| Row | EV | SE | Bias | 95% | Average bet | Share played | EV per round played | "
+                    + "EV per unit bet | Mean square bet |");
+            out.println("|---|---|---|---|---|---|---|---|---|---|");
         }
         for (Figure f : fs) {
-            String se = f.iv == null ? "n/a" : ComparisonReport.abs(f.iv.se);
+            String se = f.iv == null ? "n/a | n/a" : ComparisonReport.abs(f.iv.se) + " | " + pct(f.iv.bias);
             String tail = String.format("%s | %s | %s | %s | %s |", num(f.bet), num(f.share), pct(f.perPlayed()),
                     pct(f.perUnit()), num(f.bet2));
             if (same) {
