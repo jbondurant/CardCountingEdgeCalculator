@@ -119,7 +119,8 @@ public class CeilingParagraphsTest {
         double halves = 0.0036;
     }
 
-    /** Published levels: Zen 0.0036 and Hi-Opt II 0.0034 plain, Hi-Opt II with its ace side count 0.0040. */
+    /** Published levels: Hi-Lo 0.0029, Zen 0.0036 and Hi-Opt II 0.0034 plain, Hi-Opt II with its ace side count 0.0040. */
+    static final double HI_LO = 0.0029;
     static final double ZEN = 0.0036;
     static final double HI_OPT = 0.0034;
     static final double HI_OPT_ACE = 0.0040;
@@ -144,7 +145,11 @@ public class CeilingParagraphsTest {
         hi.entries.add(entry("Hi-Opt II, betting only", hiOpt, true, 0.0019, 0));
         hi.entries.add(entry("Hi-Opt II + ace side count", ace, false, HI_OPT_ACE, 0));
         hi.entries.add(entry("Hi-Opt II + ace side count, betting only", ace, true, 0.0021, 0));
-        c.published.results.addAll(Arrays.asList(none, zen, hi));
+        CountKeys.Count hiLoCount = CountSearch.catalogCount("Hi-Lo");
+        SystemScorer.Result hiLo = new SystemScorer.Result(hiLoCount);
+        hiLo.entries.add(entry(hiLoCount.name, hiLoCount, false, HI_LO, 0));
+        hiLo.entries.add(entry(hiLoCount.name + ", betting only", hiLoCount, true, 0.0018, 0));
+        c.published.results.addAll(Arrays.asList(none, hiLo, zen, hi));
         double[][] own = {{l.f1, l.f1Noise}, {l.f1Flat, l.f1FlatNoise}, {l.f2Play, 0}, {l.halves, 0}, {l.halves, 0}};
         for (int k = 0; k < c.counts.entries.size(); k++) {
             CountKeys.Count x = c.counts.entries.get(k).count;
