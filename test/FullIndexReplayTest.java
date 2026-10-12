@@ -29,6 +29,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * source, a tree store it could write, and registered counts on the main file. Parts and perfect
  * values planted beyond 1e-12 stop it, naming the item or the state; within 1e-12, it reports them
  * and goes on. It is never pointed at runs/full-index/full-c06c061.
+ *
+ * Planted in a scratch copy of the code on 12 October 2026, one at a time, each failed the test
+ * named, which passes without it: the comparison skipping nested arrays of doubles, the replayed
+ * item set beside itself instead of the run's part, an item beyond 1e-12 only logged, and a perfect
+ * value beyond 1e-12 not refused (each plantedDifferences...); the run's perfect values left in
+ * place instead of worked out again (aReplayGivesBack...); a resumed replay scoring every item again,
+ * and the hooks left out of the replay's identity (aReplayKilledAndResumed...); c06c061's
+ * names-only count lines not taken by name (c06c061sRunId...); and in ResultDiffTest, a count
+ * compared field by field, and the timing compared.
  */
 public class FullIndexReplayTest {
 
@@ -466,5 +475,25 @@ public class FullIndexReplayTest {
         assertFalse(Double.isNaN(a.perfectAgain[7]));
         txt = new String(Files.readAllBytes(a.out.resolve("replay.txt")), "UTF-8");
         assertTrue(txt.contains("the source had none for 1 of them"), txt);
+    }
+
+    /**
+     * From the command line, as gate 0 of PLAN_COMPUTE.md 6.1 runs it: one count's fold fits at one
+     * penetration, its trees read only, give back the run's item to the bit. A name that picks no
+     * item is refused.
+     */
+    @Test
+    public void theCommandLineReplaysTheItemsItIsGiven() throws Exception {
+        Path out = root.resolve("gate");
+        FullIndexRun.run(settings("--out", out.toString(), "--fit-from", source.toString(), "--trees-read-only",
+                trees.toString(), "--folds-only", "--only", "F2 start@2"), "gate", QUIET, 0);
+        String txt = new String(Files.readAllBytes(out.resolve("replay.txt")), "UTF-8");
+        assertTrue(txt.contains("items: the fold fits only, only F2 start@2\n"), txt);
+        assertTrue(txt.contains("\npart-1-2-folds (F2 start at 80%, its fold fits): "), txt);
+        assertTrue(txt.contains("Items replayed: 1; the same to the bit as the source: 1;"), txt);
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> FullIndexRun.run(settings("--out",
+                root.resolve("no-item").toString(), "--fit-from", source.toString(), "--trees-read-only",
+                trees.toString(), "--only", "F2 start@0"), "gate", QUIET, 0));
+        assertTrue(e.getMessage().contains("--only F2 start@0 names no item"), e.getMessage());
     }
 }

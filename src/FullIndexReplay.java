@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * The replay of a finished full-index run (PLAN_COMPUTE.md 6.1): its strategies put back from its
@@ -19,11 +18,10 @@ import java.util.Map;
  * edge at each count, the simulator's full-play export), and every item checked against the part
  * the run wrote.
  *
- * Why replay rather than refit: the run c06c061 took about two days, most of it the passes that
- * fit the later plays. Its fit.ckpt holds every strategy as fitted, so the last rounds and the
- * scoring can be made again in hours, and the new figures belong to the very strategies the
- * published ones came from. The published figures keep coming from the run's own results.ser;
- * the replay only adds.
+ * Why replay rather than refit: the new figures must belong to the very strategies the published
+ * ones came from. The run's fit.ckpt holds every strategy as fitted, so the replay skips the passes
+ * that fitted the later plays and makes only the last rounds and the scoring again. The published
+ * figures keep coming from the run's own results.ser; the replay only adds.
  *
  * Why it checks itself against the source: a replay that put back a strategy wrongly, or scored
  * with classes that drifted, would add figures that do not belong to the published rows. So every
