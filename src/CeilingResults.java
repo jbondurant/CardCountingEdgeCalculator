@@ -14,8 +14,15 @@ import java.util.Map;
  * files alone: c06c061's results.ser (the published rows, first decisions and full play, and its
  * perfect array), step 7's save (CeilingReport.save: the registered rows at first decisions and
  * the bound rows), step 8's results.ser (the registered rows at full play) and the two
- * registrations. No state file is read, so nothing here is a look at the main file; every file
- * is named by a path given at run time and recorded with its SHA-256.
+ * registrations. No main state file is read, so nothing here is a look at the main file; every
+ * file is named by a path given at run time and recorded with its SHA-256.
+ *
+ * Three modes (main):
+ * - full writes the full-play report, runs/report-ceiling-full-SHA.md;
+ * - data writes runs/site/ceiling-SHA.json, the one file the site generator reads for these
+ *   figures, and nothing else: no HTML, no SVG;
+ * - optimism scores the registered rows on the twin, the one state file any mode reads
+ *   (Optimism), and writes runs/custom-count/optimism-SHA.properties and .md.
  *
  * What it works out:
  * - the ladder in twelve views (70, 75 and 80% x flat and 1-8 x first decisions and full play):
@@ -33,9 +40,14 @@ import java.util.Map;
  *   difference widened (COUNT_DESIGN.md section 5);
  * - the result paragraph of each cell (CeilingParagraphs).
  * And the checks of 4.6 that need no state: the ladder and claim lines it prints again equal the
- * report's (checkPrinted), c06c061's rows equal its peek as printed (checkPeek), step 8's perfect
- * array and Hi-Lo equal c06c061's (samePerfect, sameResult), the full-play bound is at or above the
- * first move's on every resample (boundOrder), and no full-play row is above B + M (aboveFullBound).
+ * report's (checkPrinted, and checkFullPrinted for the full report), c06c061's rows equal its peek
+ * as printed (checkPeek), step 8's perfect array and Hi-Lo equal c06c061's to 1e-12 (samePerfect,
+ * sameFullPlay), the full-play bound is at or above the first move's on every resample
+ * (boundOrder), and no full-play row is above B + M (aboveFullBound), the rows between B and B + M
+ * named (aboveB). Check 4's state-by-state half (perStateOrder: perfect play of the dealt hand at or
+ * above the perfect first move at every state) needs the main file's first-move values, which no
+ * saved file holds; it is written and tested here but not called, since this class reads no main
+ * state file. Check 6 is the optimism mode's.
  */
 final class CeilingResults {
 
