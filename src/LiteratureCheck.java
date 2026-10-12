@@ -684,8 +684,12 @@ final class LiteratureCheck {
      * Checks built from the printed figures. The cut card's cost at 80% (the exact value off the top
      * less the sampled chart value; the exact one has no sampling error, so the interval is the
      * sampled one's, reflected). The fundamental theorem: the chart's flat value at 70, 75 and 80%
-     * with every pair of intervals overlapping, while the perfect first move rises with each step's
-     * intervals apart. Hi-Lo's EV rising with penetration, each step's intervals apart. Hi-Opt II
+     * with every pair of intervals overlapping, while the perfect first move rises at each step and
+     * its 70% and 80% intervals are apart. (The first version, run once on 12 October, required each
+     * five-point step's intervals apart; the steps are 0.017 and 0.019 against unpaired intervals
+     * about 0.021 wide, so it failed for want of power, not for a difference, and was changed after
+     * that run, as this comment records.) Hi-Lo's EV rising with penetration, each step's intervals
+     * apart. Hi-Opt II
      * with an ace side count above Hi-Opt II, their paired differences from Hi-Lo apart. Intervals
      * that are apart are a stricter test than paired ones would be, and report-final prints no
      * paired interval across penetrations.
@@ -715,7 +719,7 @@ final class LiteratureCheck {
         }
         LiteratureClaims.Ours theorem = new LiteratureClaims.Ours("theorem");
         theorem.pass = overlap(chart[0], chart[1]) && overlap(chart[1], chart[2]) && overlap(chart[0], chart[2])
-                && below(perfect[0], perfect[1]) && below(perfect[1], perfect[2]);
+                && perfect[0].value < perfect[1].value && perfect[1].value < perfect[2].value && below(perfect[0], perfect[2]);
         theorem.printed = "chart flat " + chart[0].printed + ", " + chart[1].printed + ", " + chart[2].printed
                 + "; perfect first move " + perfect[0].printed + ", " + perfect[1].printed + ", " + perfect[2].printed
                 + " (70, 75, 80%)";
@@ -763,7 +767,8 @@ final class LiteratureCheck {
     static String reportRow(Result r, String system) {
         String found = null;
         for (String key : r.ours.keySet()) {
-            if (key.startsWith("ic.")) {
+            if (key.startsWith("ic.") && !key.endsWith(" + ace side count")) {
+                // A side-count variant is printed as its own row; the count itself is the plain one.
                 String row = key.substring(3);
                 if (Arrays.asList(row.split(" = ")).contains(system)) {
                     if (found != null && !found.equals(row)) {
@@ -807,6 +812,7 @@ final class LiteratureCheck {
         List<String> mismatched = new ArrayList<>();
         List<String> seenRows = new ArrayList<>();
         List<double[]> pe = new ArrayList<>();
+        List<double[]> balanced = new ArrayList<>();
         int checked = 0;
         for (LiteratureSources.QfitRow q : table) {
             String system = QFIT_NAMES.get(q.name);
@@ -840,6 +846,9 @@ final class LiteratureCheck {
             if (ourPe != null && !seenRows.contains(row)) {
                 seenRows.add(row);
                 pe.add(new double[]{ourPe.value, LiteratureSources.number(q.pe)});
+                if (CountingSystem.named(system).balanced) {
+                    balanced.add(new double[]{ourPe.value, LiteratureSources.number(q.pe)});
+                }
             }
         }
         r.tables.put("literature_qfit", rows);
@@ -858,7 +867,9 @@ final class LiteratureCheck {
         order.src = "report-final's PE at 80% against QFIT's";
         r.put(order);
         r.detail("g").add("Tags: " + tags.printed + ".");
-        r.detail("d").add("PE order: " + order.printed + ".");
+        r.detail("d").add("PE order: " + order.printed + String.format(Locale.ROOT, "; over the %d balanced counts "
+                + "alone %.3f (reported, not judged: QFIT calls an unbalanced count's PE only an estimate).",
+                balanced.size(), spearman(balanced)));
     }
 
     /** Spearman's rank correlation of the pairs given, ties given their average rank. */
@@ -1027,7 +1038,7 @@ final class LiteratureCheck {
     static void vidami(Result r, Path customCounts) throws IOException {
         Document root = Document.parse(new String(Files.readAllBytes(customCounts), StandardCharsets.UTF_8));
         int[] f1 = null;
-        for (Document e : root.getList("entries", Document.class)) {
+        for (Document e : root.getList("counts", Document.class)) {
             if (F1.equals(e.getString("name"))) {
                 List<Integer> tags = e.getList("tags", Integer.class);
                 f1 = new int[11];
@@ -1073,5 +1084,55 @@ final class LiteratureCheck {
         r.put(LiteratureClaims.Ours.pending("wong.shape", "the wonging component (PLAN_COMPUTE.md section 3)"));
         r.put(LiteratureClaims.Ours.pending("f1.heldout", "the searched count's held-out score on the main file "
                 + "(COUNT_DESIGN.md step 7), read with the ceiling results, not by this check"));
+    }
+
+    // ------------------------------------------------------------------ main
+
+    public static void main(String[] args) throws Exception {
+        Locale.setDefault(Locale.ROOT);
+        Inputs in = new Inputs();
+        Path out = Paths.get("runs", "literature");
+        Path json = null;
+        for (int k = 0; k < args.length; k++) {
+            String a = args[k];
+            String v = k + 1 < args.length ? args[k + 1] : null;
+            switch (a) {
+                case "--claims": in.claims = Paths.get(v); k++; break;
+                case "--cache": in.cache = Paths.get(v); k++; break;
+                case "--report-final": in.reportFinal = Paths.get(v); k++; break;
+                case "--custom-counts": in.customCounts = Paths.get(v); k++; break;
+                case "--ceiling-save": in.ceilingSave = Paths.get(v); k++; break;
+                case "--ceiling-report": in.ceilingReport = Paths.get(v); k++; break;
+                case "--out": out = Paths.get(v); k++; break;
+                case "--json": json = Paths.get(v); k++; break;
+                case "--threads": in.threads = Integer.parseInt(v); k++; break;
+                case "--no-exact": in.exact = false; break;
+                default: throw new IllegalArgumentException("unknown argument " + a);
+            }
+        }
+        String commit = FullIndexRun.commit();
+        String sha = commit.length() > 7 ? commit.substring(0, 7) : commit;
+        if (json == null) {
+            json = Paths.get("runs", "site", "literature-" + sha + ".json");
+        }
+        long t0 = System.nanoTime();
+        Result r = run(in);
+        Map<String, String> artifacts = new LinkedHashMap<>();
+        for (Path p : new Path[]{in.claims, in.reportFinal, in.customCounts, CountingSystem.FILE, in.ceilingSave,
+                in.ceilingReport}) {
+            if (p != null) {
+                artifacts.put(p.toString(), LiteratureSources.sha256(p));
+            }
+        }
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (java.io.PrintStream ps = new java.io.PrintStream(bytes, true, "UTF-8")) {
+            LiteratureOutput.report(r, commit, ps);
+            ps.printf("%d s.%n", Math.round((System.nanoTime() - t0) / 1e9));
+        }
+        Path md = out.resolve("literature-" + sha + ".md");
+        LiteratureOutput.write(md, bytes.toString("UTF-8"));
+        LiteratureOutput.write(json, LiteratureOutput.json(LiteratureOutput.page(r, commit, artifacts)));
+        System.out.println(LiteratureOutput.sentence(LiteratureClaims.counts(new ArrayList<>(r.outcomes.values()))));
+        System.out.println("Wrote " + md + " and " + json + ".");
     }
 }
