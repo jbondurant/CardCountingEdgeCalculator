@@ -465,8 +465,6 @@ final class FullIndexReplay {
         }
         String fitSha = sha256(fitFile);
         String identity = identity(commit, source, fitSha, o, hooks, src.identity);
-        FullIndexCheckpoint own = new FullIndexCheckpoint(out, identity);
-        own.open(o.resume);
         log.printf("FullIndexRun replay %s%s: the run in %s (fit.ckpt SHA-256 %s), %d items%s; %d shoes, %d valued "
                         + "states of %s, read and never written; %d resamples; %d threads; max heap %.0f MB; trees %s; "
                         + "hooks %s; records in %s.%n", commit, o.resume ? ", resumed" : "", source, fitSha, items.size(),
@@ -476,10 +474,14 @@ final class FullIndexReplay {
         log.flush();
         TreeStore store = o.noTrees ? null
                 : TreeStore.readOnly(st, o.trees, FullIndexRun.stateFile(o.states) + "\nstates " + st.size);
+        FullIndexCheckpoint own = new FullIndexCheckpoint(out, identity);
         double[] perfectSource;
         try {
-            perfectSource = replay(o, scorer, counts, items, src, own, store != null ? store : FullIndexFit.built(st),
-                    hooks, log);
+            // The fit put back and found finished before the replay's directory is opened, so a
+            // refusal writes nothing anywhere.
+            Restored back = restore(o, scorer, counts, src, store != null ? store : FullIndexFit.built(st), log);
+            own.open(o.resume);
+            perfectSource = replay(o, scorer, counts, items, src, own, back, hooks, log);
         } finally {
             if (store != null) {
                 store.close();
@@ -503,6 +505,47 @@ final class FullIndexReplay {
         return n.isEmpty() ? "none" : String.join(", ", n);
     }
 
+    /** The source's strategies put back, waiting for their last rounds, and its perfect values set aside. */
+    private static final class Restored {
+        final List<FullIndexFit.Fits> fits;
+        final FullIndexFit fit;
+        final double[] perfectSource;
+
+        Restored(List<FullIndexFit.Fits> fits, FullIndexFit fit, double[] perfectSource) {
+            this.fits = fits;
+            this.fit = fit;
+            this.perfectSource = perfectSource;
+        }
+    }
+
+    /**
+     * Every strategy the run made, the half fits too, made afresh in its order and put back from
+     * its fit.ckpt (FullIndexCheckpoint.readFit), which must be marked fitted; trimmed as the joint
+     * run trims them once fitted. The source's perfect values are set aside, and the fit's made NaN,
+     * so the last rounds work out every state's again as they walk it.
+     */
+    private static Restored restore(Options o, SystemScorer scorer, List<CountKeys.Count> counts, FullIndexCheckpoint src,
+                                    FullIndexFit.Trees trees, PrintStream log) throws Exception {
+        List<FullIndexFit.Fits> fits = FullIndexFit.plan(scorer, counts, o.pens, true, true);
+        List<FullIndexFit.Strategy> all = new ArrayList<>();
+        for (FullIndexFit.Fits f : fits) {
+            all.addAll(f.all());
+        }
+        FullIndexFit fit = new FullIndexFit(scorer.st, scorer.rules(), trees, o.threads, true, true);
+        fit.log = log;
+        Boolean fitted = src.readFit(fit, all);
+        if (fitted == null || !fitted) {
+            throw new IllegalStateException(src.dir.resolve("fit.ckpt") + " is not marked fitted: its passes had not "
+                    + "finished, so its strategies are not the ones its parts were scored with");
+        }
+        for (FullIndexFit.Strategy t : all) {
+            t.trim();
+        }
+        double[] perfectSource = fit.perfect.clone();
+        Arrays.fill(fit.perfect, Double.NaN);
+        return new Restored(fits, fit, perfectSource);
+    }
+
     /** The bytes a state's split values kept are allowed beside a batch, as FullIndexFit.JointRun.splitAllowance. */
     static final double SPLIT_ALLOWANCE = 32_000;
 
@@ -513,28 +556,12 @@ final class FullIndexReplay {
      * so a batch's last round walks each state once for all its items.
      */
     private static double[] replay(Options o, SystemScorer scorer, List<CountKeys.Count> counts, List<Item> items,
-                                   FullIndexCheckpoint src, FullIndexCheckpoint own, FullIndexFit.Trees trees,
+                                   FullIndexCheckpoint src, FullIndexCheckpoint own, Restored back,
                                    List<Hook> hooks, PrintStream log) throws Exception {
         ScoringStates st = scorer.st;
-        // Every strategy the run made, halves too, in its order: fit.ckpt holds each in that order.
-        List<FullIndexFit.Fits> fits = FullIndexFit.plan(scorer, counts, o.pens, true, true);
-        List<FullIndexFit.Strategy> all = new ArrayList<>();
-        for (FullIndexFit.Fits f : fits) {
-            all.addAll(f.all());
-        }
-        FullIndexFit fit = new FullIndexFit(st, scorer.rules(), trees, o.threads, true, true);
-        fit.log = log;
-        Boolean fitted = src.readFit(fit, all);
-        if (fitted == null || !fitted) {
-            throw new IllegalStateException(src.dir.resolve("fit.ckpt") + " is not marked fitted: its passes had not "
-                    + "finished, so its strategies are not the ones its parts were scored with");
-        }
-        for (FullIndexFit.Strategy t : all) {
-            t.trim();
-        }
-        // The source's perfect values set aside, and every state's worked out again as the last rounds walk it.
-        double[] perfectSource = fit.perfect.clone();
-        Arrays.fill(fit.perfect, Double.NaN);
+        List<FullIndexFit.Fits> fits = back.fits;
+        FullIndexFit fit = back.fit;
+        double[] perfectSource = back.perfectSource;
 
         List<Item> todo = new ArrayList<>();
         int replayed = 0;
@@ -574,7 +601,6 @@ final class FullIndexReplay {
                 }
             }
         }
-        all.clear();
 
         double room = room(o, fits, todo, fit, st.size, log);
         int next = 0;
@@ -641,7 +667,11 @@ final class FullIndexReplay {
         }
         SystemScorer.Result r = scorer.score(f.count, CountKeys.bettingVariant(f.count), f, new int[]{it.pen},
                 o.threads, it.halves ? SystemScorer.Part.HALVES : SystemScorer.Part.FOLDS);
-        ResultDiff d = ResultDiff.of(src.readPart(it.key()), r);
+        SystemScorer.Result was = src.readPart(it.key());
+        if (was == null) {
+            throw new IllegalStateException(src.dir + " holds no " + it.key() + ".ckpt to set " + it + " beside");
+        }
+        ResultDiff d = ResultDiff.of(was, r);
         if (!d.passes()) {
             throw new IllegalStateException(it + " differs from the source's " + it.key() + ".ckpt beyond "
                     + ResultDiff.RELATIVE + " relative, so the replay stops and keeps nothing of it: " + d.describe());
