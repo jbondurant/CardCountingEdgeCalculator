@@ -1342,7 +1342,7 @@ public final class ComparisonReport {
         out.printf("| Mean per count | %.1f |%n%n", total / sc.results.size());
     }
 
-    private static void keyTables(Scored sc, PrintStream out) {
+    static void keyTables(Scored sc, PrintStream out) {
         out.println("## Per key, from the test folds");
         out.println();
         out.println("For each bet key: its share of rounds, the mean round value there under the count's fitted play "

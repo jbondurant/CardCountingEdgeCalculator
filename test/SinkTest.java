@@ -348,6 +348,7 @@ public class SinkTest {
                     assertEquals(Double.doubleToLongBits(e.keys[p][k][1]), Double.doubleToLongBits(t.share(k)), e.name);
                     assertEquals(Double.doubleToLongBits(e.keys[p][k][2]), Double.doubleToLongBits(t.edge(k)), e.name);
                 }
+                assertNotNull(col.refitted(e.name, p), e.name + ": the resample sink was handed its full-play resamples");
                 KeyEdges.Sums[] refit = KeyEdges.refitted(col.refitted(e.name, p), t.sums.key);
                 for (int r = 0; r < refit.length; r++) {
                     double w = 0;

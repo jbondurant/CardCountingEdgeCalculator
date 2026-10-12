@@ -259,6 +259,7 @@ public class KeyEdgesRunTest {
         KeyEdgesReport.report(in, new ArrayList<>(), "test", json, dir.resolve("k.csv"), System.out);
         Document d2 = Document.parse(new String(Files.readAllBytes(json), StandardCharsets.UTF_8));
         Document bad = layer(list(d2, "rows").get(0), "80%", "full play");
+        assertNotNull(bad.get("failures"), "first decisions other than run A's fail check 1: " + bad.toJson());
         assertTrue(bad.get("failures").toString().contains("not run A's"), bad.toJson());
     }
 }

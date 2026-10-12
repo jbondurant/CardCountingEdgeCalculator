@@ -233,6 +233,8 @@ final class KeyEdgesReport {
         /** c06c061's perfect full-play values by state; NaN where its fit did not value a state. */
         double[] perfect;
         Bootstrap boot;
+        /** report-final's per-key tables as printed, for check 9 of 5.4 (reported, not pass/fail); null to skip it. */
+        Map<String, List<KeyEdgesPrinted.Line>> printed;
     }
 
     /** Check 6 of 5.4: whether the perfect array has a value at every state of penetration p. */
@@ -385,8 +387,8 @@ final class KeyEdgesReport {
 
     // ------------------------------------------------------------------------ write
 
-    static void write(Path a, List<Path> more, Path aPrime, List<Path> full, Path published, Path out, String commit,
-                      PrintStream log) throws Exception {
+    static void write(Path a, List<Path> more, Path aPrime, List<Path> full, Path published, Path printed, Path out,
+                      String commit, PrintStream log) throws Exception {
         long t0 = System.nanoTime();
         if (a == null) {
             throw new IllegalArgumentException("the report needs run A's file (--a)");
@@ -401,6 +403,7 @@ final class KeyEdgesReport {
             in.more.add(KeyEdges.Collector.read(f));
         }
         in.perfect = CeilingReport.read(published).perfect;
+        in.printed = printed == null ? null : KeyEdgesPrinted.parse(printed);
         in.boot = new Bootstrap(in.a.facts.shoes, Bootstrap.RESAMPLES, Bootstrap.SEED);
         List<Map<String, Object>> inputs = new ArrayList<>();
         inputs.add(map("file", a.toAbsolutePath().normalize().toString(), "sha256", KeyEdgesRun.sha256(a)));
@@ -415,6 +418,10 @@ final class KeyEdgesReport {
         }
         inputs.add(map("file", published.toAbsolutePath().normalize().toString(), "sha256",
                 KeyEdgesRun.sha256(published)));
+        if (printed != null) {
+            inputs.add(map("file", printed.toAbsolutePath().normalize().toString(), "sha256",
+                    KeyEdgesRun.sha256(printed)));
+        }
         Path json = out.resolve("key-edges-" + commit + ".json");
         Path csv = out.resolve("key-edges-" + commit + ".csv");
         report(in, inputs, commit, json, csv, log);
@@ -492,7 +499,17 @@ final class KeyEdgesReport {
             }
             jw.write("],");
             StringBuilder tail = new StringBuilder();
-            json(map("simultaneous", simultaneous(simultaneous), "oracle", oracles(in), "depth", depth(in, hl, w)), tail);
+            Map<String, Object> last = map("simultaneous", simultaneous(simultaneous), "oracle", oracles(in),
+                    "depth", depth(in, hl, w));
+            if (in.printed != null) {
+                List<KeyEdges.Collector> ours = new ArrayList<>();
+                ours.add(in.a);
+                ours.addAll(in.more);
+                KeyEdgesPrinted.Comparison c = KeyEdgesPrinted.compare(in.printed, ours);
+                log.println(c.summary());
+                last.put("printedTables", c.json());
+            }
+            json(last, tail);
             jw.write(tail.substring(1));
         }
         java.nio.file.Files.move(jtmp, json, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
