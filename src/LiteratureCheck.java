@@ -936,8 +936,9 @@ final class LiteratureCheck {
             }
             CeilingReport.Saved s = CeilingReport.readSaved(in.ceilingSave);
             rr = ceilingR(s.identity, s.r, LiteraturePrinted.lines(in.ceilingReport), states80);
-            r.detail("d").add(String.format(Locale.ROOT, "R = %.5f, from %s, over the %d valued states behind report-final's "
-                    + "BC.", rr, in.ceilingSave, states80));
+            r.detail("d").add(rr == null ? "Step 7's save holds no R, so every BC/R waits and the page shows BC alone."
+                    : String.format(Locale.ROOT, "R = %.5f, from %s, over the %d valued states behind report-final's BC.",
+                    rr, in.ceilingSave, states80));
         } else {
             r.detail("d").add("R was not read (no --ceiling-save): every BC/R waits for step 7's save.");
         }
@@ -949,8 +950,8 @@ final class LiteratureCheck {
             LiteratureClaims.Ours bc = r.ours.get(key);
             LiteratureClaims.Ours o;
             if (rr == null) {
-                o = LiteratureClaims.Ours.pending("bcr." + row, "R, the betting ceiling on the main file, from step 7's save "
-                        + "(CeilingReport.readSaved)");
+                o = LiteratureClaims.Ours.pending("bcr." + row, in.ceilingSave == null ? "R, the betting ceiling on the "
+                        + "main file, from step 7's save (CeilingReport.readSaved)" : "R, which step 7's save does not hold");
             } else {
                 o = new LiteratureClaims.Ours("bcr." + row);
                 o.value = bc.value / rr;
@@ -963,14 +964,15 @@ final class LiteratureCheck {
 
     /**
      * R from step 7's save, once the save and its report agree that it was taken on the main file
-     * over the states given. identity is the save's own record of its run.
+     * over the states given; null when the save holds no R (LITERATURE.md 1(d): the page then shows
+     * BC without BC/R). identity is the save's own record of its run.
      */
-    static double ceilingR(String identity, double r, List<String> report, int states) {
+    static Double ceilingR(String identity, double r, List<String> report, int states) {
         if (!identity.contains("montreal-80.states") || identity.contains("twin-80.states")) {
             throw new IllegalArgumentException("the ceiling save is not of the main state file: " + identity);
         }
         if (Double.isNaN(r)) {
-            throw new IllegalArgumentException("the ceiling save holds no R");
+            return null;
         }
         for (String line : report) {
             java.util.regex.Matcher m = R_LINE.matcher(line);

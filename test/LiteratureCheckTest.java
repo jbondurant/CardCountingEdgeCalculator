@@ -39,8 +39,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  *
  * Planted bugs, run once each on 12 October 2026 in scratch copies of src/ that were not kept
- * (a script applied each edit, compiled, ran this class alone, and recorded what failed). All 16
- * failed at least one test on that first run. The test of a claim no code can read again was
+ * (a script applied each edit, compiled, ran this class alone, and recorded what failed). All 18
+ * failed at least one test on their first run (17 and 18 were added with the code they guard). The test of a claim no code can read again was
  * written while the list was drawn up, before any plant ran, when the plan for P3 showed no test
  * covered it.
  * <ol>
@@ -59,7 +59,9 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>a figure the cache cannot confirm still compared: aVerdictComesFromTheRuleTheConditionsAndWhatCodeTested;</li>
  *   <li>the page sentence keeping a kind with no claims: thePageSentenceDropsAKindWithNoClaims;</li>
  *   <li>a secondary source stated as published: aVerdictComesFromTheRuleTheConditionsAndWhatCodeTested;</li>
- *   <li>a hand given twice in appendix 9 overwriting the first: appendix9RefusesAMissingOrDoubledHand.</li>
+ *   <li>a hand given twice in appendix 9 overwriting the first: appendix9RefusesAMissingOrDoubledHand;</li>
+ *   <li>a source that has a snapshot listed for a new one: everySourceReadWithoutASnapshotIsListedForThePushList;</li>
+ *   <li>a save without R stopping the check instead of leaving BC alone: rIsTakenOnlyFromASaveOfTheMainFileOverReportFinalsStates.</li>
  * </ol>
  */
 public class LiteratureCheckTest {
@@ -588,13 +590,13 @@ public class LiteratureCheckTest {
     @Test
     public void rIsTakenOnlyFromASaveOfTheMainFileOverReportFinalsStates() {
         assertEquals(0.98761, LiteratureCheck.ceilingR(MAIN, 0.98761, REPORT, 60743), 0);
+        assertNull(LiteratureCheck.ceilingR(MAIN, Double.NaN, REPORT, 60743), "a save with no R: BC is shown without BC/R");
         assertThrows(IllegalArgumentException.class, () -> LiteratureCheck.ceilingR(MAIN.replace("montreal-80", "twin-80"),
                 0.98761, REPORT, 60743), "the twin file's R is never used for BC/R");
         assertThrows(IllegalArgumentException.class, () -> LiteratureCheck.ceilingR(MAIN, 0.98761, REPORT, 60764),
                 "R over other states than the BC's");
         assertThrows(IllegalArgumentException.class, () -> LiteratureCheck.ceilingR(MAIN, 0.98857, REPORT, 60743),
                 "a save and a report that disagree on R");
-        assertThrows(IllegalArgumentException.class, () -> LiteratureCheck.ceilingR(MAIN, Double.NaN, REPORT, 60743));
         assertThrows(IllegalArgumentException.class, () -> LiteratureCheck.ceilingR(MAIN, 0.98761,
                 Arrays.asList("no R here"), 60743));
     }
@@ -718,6 +720,21 @@ public class LiteratureCheckTest {
         n.put(LiteratureClaims.Verdict.UNEXPLAINED, 1);
         assertEquals("Of the 6 published figures I compared with mine, 3 agree, 2 differ for a reason not yet tested, "
                 + "and 1 differs for no reason found.", LiteratureOutput.sentence(n), "one figure differs");
+    }
+
+    /** LITERATURE.md section 1, "Snapshots": every web source read without a snapshot is listed for the push list. */
+    @Test
+    public void everySourceReadWithoutASnapshotIsListedForThePushList() {
+        String json = "{\"sources\": [{\"id\": \"a\", \"title\": \"T\", \"url\": \"https://example.invalid/a\", "
+                + "\"cache\": {\"file\": \"a.html\", \"sha256\": \"00\", \"fetched\": \"2026-10-12\"}, \"status\": \"READ\", "
+                + "\"status_date\": \"2026-10-12\", \"checked_by\": \"AI agent (Claude Code), 2026-10-12\", \"read_by_justin\": false}, "
+                + "{\"id\": \"b\", \"title\": \"U\", \"url\": \"https://example.invalid/b\", \"snapshot\": \"https://web.archive.org/b\", "
+                + "\"status\": \"CHECKED\", \"status_date\": \"2026-10-12\", \"checked_by\": \"AI agent (Claude Code), 2026-10-12\", "
+                + "\"read_by_justin\": false}, {\"id\": \"c\", \"title\": \"V\", \"status\": \"NOT READ\", "
+                + "\"read_by_justin\": false}], \"claims\": []}";
+        List<LiteratureClaims.Source> needed = LiteratureOutput.snapshotsNeeded(LiteratureClaims.parse(json, "fixture"));
+        assertEquals(1, needed.size());
+        assertEquals("a", needed.get(0).id, "read with no snapshot; b has one, and c was not read");
     }
 
     @Test

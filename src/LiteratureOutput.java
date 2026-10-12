@@ -123,6 +123,16 @@ final class LiteratureOutput {
             }
             out.println();
         }
+        out.println("## Snapshots that would need a request");
+        out.println();
+        out.println("Every source checked or read on the web that has no Internet Archive snapshot yet. Asking the Archive to "
+                + "make one (Save Page Now) sends a request to a third party, so this list goes on the push list "
+                + "(PLAN_PAGE.md section 5, SiteManifest --push-list) and waits for Justin's yes. None has been requested.");
+        out.println();
+        for (LiteratureClaims.Source s : snapshotsNeeded(l)) {
+            out.printf("- %s: %s%n", s.id, s.url);
+        }
+        out.println();
         out.println("## The cached copies");
         out.println();
         out.println("Each source's copy, checked against the SHA-256 claims.json records. A figure read again from a page "
@@ -142,6 +152,17 @@ final class LiteratureOutput {
             }
         }
         out.println();
+    }
+
+    /** The sources checked or read at a web address that have no archive snapshot: the push list's snapshot requests. */
+    static List<LiteratureClaims.Source> snapshotsNeeded(LiteratureClaims l) {
+        List<LiteratureClaims.Source> out = new ArrayList<>();
+        for (LiteratureClaims.Source s : l.sources) {
+            if (s.read() && s.url != null && s.snapshot == null) {
+                out.add(s);
+            }
+        }
+        return out;
     }
 
     static String justin(LiteratureClaims l) {
@@ -218,6 +239,14 @@ final class LiteratureOutput {
         Map<String, Object> tables = new LinkedHashMap<>();
         tables.put("literature_claims", claims(r));
         tables.put("literature_sources", sources(r.register));
+        List<Object> snapshots = new ArrayList<>();
+        for (LiteratureClaims.Source s : snapshotsNeeded(r.register)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", s.id);
+            m.put("url", s.url);
+            snapshots.add(m);
+        }
+        tables.put("literature_snapshots_needed", snapshots);
         tables.putAll(r.tables);
         root.put("tables", tables);
         return root;
