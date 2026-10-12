@@ -235,6 +235,7 @@ public class WideReportTest {
         assertEquals(rs.wide[2][at] - hiLo.wide[2][at], (Double) obj(f, "diff").get("est"), 0.0);
         assertEquals(rs.wide[2][at + 1], (Double) f.get("bet"), 0.0);
         assertEquals(rs.wide[2][at] / rs.wide[2][at + 1], (Double) f.get("evPerUnit"), 0.0);
+        keysInTheDataFile(doc, rows);
         assertEquals(1.0, (Double) f.get("widen"), 0.0);
 
         // Hi-Lo with full play: P16 measured, but not for Hi-Lo, so the plan's largest; S16 not measured at all.
@@ -253,6 +254,17 @@ public class WideReportTest {
         Map<String, Object> s16 = figure(doc, full, "80%", "S16", "same");
         assertEquals(1.60, (Double) s16.get("widen"), 1e-12);
         assertEquals(WideReport.Basis.BORROWED.words, s16.get("widenBasis"));
+        // A full-play row's difference is from Hi-Lo with full play, paired resample by resample, widened.
+        String nullFull = FullIndexFitTest.NULL.name + ", full play";
+        WideReport.Row nf = row(rows, nullFull);
+        double[] d = new double[hf.wideBoot[2][k16].length];
+        for (int r = 0; r < d.length; r++) {
+            d[r] = nf.wideBoot[2][k16][r] - hf.wideBoot[2][k16][r];
+        }
+        Map<String, Object> nd = obj(figure(doc, nullFull, "80%", "P16", "same"), "diff");
+        assertEquals(nf.wide[2][at] - hf.wide[2][at], (Double) nd.get("est"), 0.0);
+        double dHeld = Bootstrap.interval(nf.wide[2][at] - hf.wide[2][at], d).se;
+        assertEquals(1.30 * dHeld, (Double) nd.get("se"), 1e-12 * dHeld);
         String report = text(md);
         assertTrue(report.contains("### P16, same schedule, 80%"), "the P16 table");
         assertTrue(report.contains("| " + full + " | "), "the full-play row");
@@ -274,6 +286,58 @@ public class WideReportTest {
         assertNull(figure(none, full, "80%", "P16", "same").get("diff"));
         assertEquals(obj(f, "ev").get("se"), obj(figure(none, red, "80%", "P16", "same"), "ev").get("se"));
         assertTrue(text(dir.resolve("none.md")).contains("not widened: no pilot"));
+    }
+
+    /**
+     * The data file's keys: every count row's thresholds as the lowest key whose pooled fitted
+     * advantage reaches each, found here by a walk of its own; Hi-Lo's key table under every plan,
+     * the row's own key table and wide key table value for value; no other count's table.
+     */
+    @SuppressWarnings("unchecked")
+    static void keysInTheDataFile(Object doc, List<WideReport.Row> rows) {
+        SystemScorer.Plan[] plans = SystemScorer.WIDE_PLANS;
+        List<Object> columns = (List<Object>) ((Map<String, Object>) doc).get("keyColumns");
+        assertEquals(3 + SystemScorer.KEY_COLS * plans.length, columns.size());
+        assertEquals("B0,8 samePlay", columns.get(3 + SystemScorer.KEY_COLS * SystemScorer.planIndex(plans, "B0,8")
+                + SystemScorer.K_SAME_PLAY));
+        double[] taus = {-0.01, -0.005, 0, 0.005, 0.01};
+        int tables = 0;
+        for (WideReport.Row r : rows) {
+            Map<String, Object> j = rowJson(doc, r.name);
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                String pen = SystemScorer.PENETRATIONS[p];
+                if (r.keys[p] == null || r.keys[p].length == 0) {
+                    assertNull(obj(j, "thresholdKeys").get(pen), r.name);
+                    continue;
+                }
+                Map<String, Object> th = (Map<String, Object>) obj(j, "thresholdKeys").get(pen);
+                assertEquals(taus.length, th.size(), r.name);
+                for (double t : taus) {
+                    Double want = null;
+                    for (int k = r.keys[p].length - 1; k >= 0; k--) {
+                        want = r.keys[p][k][2] >= t ? (Double) r.keys[p][k][0] : want;
+                    }
+                    assertEquals(want, th.get(Double.toString(t)), r.name + " at " + pen + ", threshold " + t);
+                }
+                if (!r.hiLo || r.wideKeys == null || r.wideKeys[p] == null) {
+                    assertTrue(j.get("keys") == null || obj(j, "keys").get(pen) == null, r.name);
+                    continue;
+                }
+                List<Object> table = (List<Object>) obj(j, "keys").get(pen);
+                assertEquals(r.keys[p].length, table.size(), r.name);
+                for (int k = 0; k < table.size(); k++) {
+                    List<Object> line = (List<Object>) table.get(k);
+                    assertEquals(columns.size(), line.size());
+                    for (int c = 0; c < columns.size(); c++) {
+                        double want = c < 3 ? r.keys[p][k][c] : r.wideKeys[p][k][c - 3];
+                        assertEquals(Double.isNaN(want) ? null : (Object) want, line.get(c), r.name + " key row " + k
+                                + ", " + columns.get(c));
+                    }
+                }
+                tables++;
+            }
+        }
+        assertTrue(tables >= 6, "Hi-Lo's key tables at first decisions and full play, at each penetration: " + tables);
     }
 
     /**

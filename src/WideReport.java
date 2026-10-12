@@ -457,12 +457,50 @@ final class WideReport {
         if (keys == null) {
             return "n/a";
         }
+        double k = thresholdKey(keys, tau);
+        return Double.isNaN(k) ? "none" : String.valueOf((long) k);
+    }
+
+    /**
+     * The same as a number, NaN when no key's pooled advantage reaches tau. It tells a reader where
+     * a threshold falls; the figures themselves take each fold's own fitted advantage.
+     */
+    static double thresholdKey(double[][] keys, double tau) {
         for (double[] k : keys) {
             if (k[2] >= tau) {
-                return String.valueOf((long) k[0]);
+                return k[0];
             }
         }
-        return "none";
+        return Double.NaN;
+    }
+
+    /** The entry and exit thresholds of the plans given, each once, in increasing order. */
+    static double[] thresholds(SystemScorer.Plan[] plans) {
+        java.util.TreeSet<Double> out = new java.util.TreeSet<>();
+        for (SystemScorer.Plan p : plans) {
+            for (double t : new double[]{p.enter, p.exit}) {
+                if (t != Double.NEGATIVE_INFINITY) {
+                    out.add(t);
+                }
+            }
+        }
+        return out.stream().mapToDouble(Double::doubleValue).toArray();
+    }
+
+    /**
+     * The columns of a row of a key table in the data file: the key, its share of rounds, its
+     * fitted advantage pooled over the folds, then for each plan its same-schedule expected bet and
+     * share played at the key and its own-rule bet (SystemScorer.KEY_COLS), each pooled over the
+     * folds by test weight as the existing key tables are.
+     */
+    static List<String> keyColumns(SystemScorer.Plan[] plans) {
+        List<String> out = new ArrayList<>(java.util.Arrays.asList("key", "share", "fittedAdvantage"));
+        for (SystemScorer.Plan p : plans) {
+            out.add(p.label + " sameBet");
+            out.add(p.label + " samePlay");
+            out.add(p.label + " ownBet");
+        }
+        return out;
     }
 
     static void print(Saved s, Widening wd, String commit, Map<String, String> inputs, PrintStream out) {
@@ -596,8 +634,9 @@ final class WideReport {
      * runs/site/spreads-SHA.json (PLAN_COMPUTE.md 3.6): the commit and the inputs' SHA-256, the plans,
      * and per row, penetration, plan and rule the EV with its interval, the difference from Hi-Lo with
      * its interval and simultaneous interval, the average bet, share played, EV per round played and
-     * per unit bet, the mean square bet, and the widening of a full-play row. Every EV is a fraction
-     * of a unit, not a percentage; a figure the row does not have is null.
+     * per unit bet, the mean square bet, and the widening of a full-play row; each count row's
+     * thresholds as keys, and Hi-Lo's key tables (keyTables). Every EV is a fraction of a unit, not
+     * a percentage; a figure the row does not have is null.
      */
     static void json(Saved s, Widening wd, String commit, Map<String, String> inputs, PrintStream out) {
         out.print("{\"commit\":" + str(commit) + ",\"identity\":" + str(s.identity) + ",\"inputs\":{");
@@ -613,6 +652,11 @@ final class WideReport {
             out.print((i > 0 ? "," : "") + "{\"label\":" + str(p.label) + ",\"unit\":" + n(p.unit) + ",\"cap\":" + p.cap
                     + ",\"enter\":" + n(p.enter) + ",\"exit\":" + n(p.exit) + ",\"sameSchedule\":" + p.sameSchedule()
                     + ",\"wonging\":" + p.wonging() + "}");
+        }
+        out.print("],\"keyColumns\":[");
+        List<String> columns = keyColumns(s.plans);
+        for (int c = 0; c < columns.size(); c++) {
+            out.print((c > 0 ? "," : "") + str(columns.get(c)));
         }
         out.print("],\"rows\":[");
         Map<String, List<Figure>> cache = new java.util.HashMap<>();
@@ -647,9 +691,65 @@ final class WideReport {
                 }
                 out.print("}");
             }
-            out.print("}}");
+            out.print("}");
+            keyTables(s, row, out);
+            out.print("}");
         }
         out.println("]}");
+    }
+
+    /**
+     * A row's keys in the data file, for a row with a key table: "thresholdKeys", at each
+     * penetration the lowest key whose pooled fitted advantage reaches each plan threshold (null
+     * when none does), so the page can say a threshold as a true count; and for a Hi-Lo row only,
+     * "keys", its key table under every plan in keyColumns' order (figure W5, Hi-Lo's bet by true
+     * count). Every count's tables would make the file several megabytes for one figure that shows
+     * Hi-Lo; they stay in wide.ser.
+     */
+    static void keyTables(Saved s, Row row, PrintStream out) {
+        double[] taus = thresholds(s.plans);
+        out.print(",\"thresholdKeys\":{");
+        boolean first = true;
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            if (row.keys[p] == null || row.keys[p].length == 0) {
+                continue;
+            }
+            out.print((first ? "" : ",") + str(SystemScorer.PENETRATIONS[p]) + ":{");
+            first = false;
+            for (int t = 0; t < taus.length; t++) {
+                out.print((t > 0 ? "," : "") + str(n(taus[t])) + ":" + n(thresholdKey(row.keys[p], taus[t])));
+            }
+            out.print("}");
+        }
+        out.print("}");
+        if (!row.hiLo) {
+            return;
+        }
+        out.print(",\"keys\":{");
+        first = true;
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            if (row.keys[p] == null || row.keys[p].length == 0 || row.wideKeys == null || row.wideKeys[p] == null) {
+                continue;
+            }
+            if (row.wideKeys[p].length != row.keys[p].length) {
+                throw new IllegalStateException(row.name + " at " + SystemScorer.PENETRATIONS[p] + ": "
+                        + row.wideKeys[p].length + " wide key rows, " + row.keys[p].length + " key rows");
+            }
+            out.print((first ? "" : ",") + str(SystemScorer.PENETRATIONS[p]) + ":[");
+            first = false;
+            for (int k = 0; k < row.keys[p].length; k++) {
+                StringBuilder b = new StringBuilder(k > 0 ? ",[" : "[");
+                for (double x : row.keys[p][k]) {
+                    b.append(n(x)).append(',');
+                }
+                for (int c = 0; c < row.wideKeys[p][k].length; c++) {
+                    b.append(c > 0 ? "," : "").append(n(row.wideKeys[p][k][c]));
+                }
+                out.print(b.append(']'));
+            }
+            out.print("]");
+        }
+        out.print("}");
     }
 
     /** The figure of one row from figures(), worked out once per penetration, plan and rule into cache. */
