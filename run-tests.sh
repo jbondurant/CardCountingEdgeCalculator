@@ -11,8 +11,8 @@ MONGO_JAR=lib/mongo-java-driver-3.12.14.jar
 JUNIT_JAR=lib/junit-platform-console-standalone-1.10.2.jar
 # Compiled output is wiped first: javac only rebuilds the sources present, so class
 # files left over from another branch would otherwise still be picked up by the runner.
-rm -rf build/classes build/test-classes
-mkdir -p lib build/classes build/test-classes
+rm -rf build/classes build/test-classes build/sim-classes build/sim-test-classes
+mkdir -p lib build/classes build/test-classes build/sim-classes build/sim-test-classes
 
 [ -f "$MONGO_JAR" ] || curl -sSL -o "$MONGO_JAR" \
   https://repo1.maven.org/maven2/org/mongodb/mongo-java-driver/3.12.14/mongo-java-driver-3.12.14.jar
@@ -21,6 +21,15 @@ mkdir -p lib build/classes build/test-classes
 
 javac -nowarn -d build/classes -cp "$MONGO_JAR" src/*.java
 javac -nowarn -d build/test-classes -cp "build/classes:$MONGO_JAR:$JUNIT_JAR" test/*.java
+# The clean-room simulator (package sim) compiles alone, with no class of the engine on its
+# class path, and its tests run in a JVM of their own for the same reason.
+javac -nowarn -d build/sim-classes sim/*.java
+javac -nowarn -d build/sim-test-classes -cp "build/sim-classes:$JUNIT_JAR" sim/test/*.java
+status=0
 java -jar "$JUNIT_JAR" \
   --class-path "build/classes:build/test-classes:$MONGO_JAR" \
-  --scan-class-path --details=summary --disable-ansi-colors
+  --scan-class-path --details=summary --disable-ansi-colors || status=$?
+java -jar "$JUNIT_JAR" \
+  --class-path "build/sim-classes:build/sim-test-classes" \
+  --scan-class-path --details=summary --disable-ansi-colors || status=$?
+exit $status
