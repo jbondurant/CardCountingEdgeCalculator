@@ -15,14 +15,23 @@ import java.util.Arrays;
  * file's header names and holds each state it values to the file's next record, card for card
  * and in q to the bit; for the main file, also the round starts to A8.
  * <li>{@code p3 --bundle DIR --out DIR --sim-commit SHA [--chunks N] [--chunk-size S] [--threads T]
- * [--plant a,b] [--moving]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and
- * the chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
- * {@code OUT/summary-p3.json} and {@code OUT/p3-depth.tsv}. With {@code --moving}, the variant
- * whose count moves through split hands, under {@code p3-moving}.
- * <li>{@code p2 --bundle DIR --out DIR --sim-commit SHA [--k K] [--threads T] [--plant a,b]}: checks
- * D1 and D4 on the bundle's states.bin, then check P2 at K re-deals a state (seed 20261009), in
- * chunks of 1,000 states under {@code OUT/p2/}, then {@code OUT/summary-p2.json}. It stops before
- * P2 if D1 or D4 fails.
+ * [--plant a,b] [--moving] [--registry SIM_CHECK.md] [--fan-paths 20] [--fan-rounds 100000]
+ * [--ruin-paths 20000]}: check P3 on fresh shoes of seed 20261008, every row of the bundle and the
+ * chart's own walk, in chunks under {@code OUT/p3/} (a rerun resumes them), then
+ * {@code OUT/summary-p3.json} (with every figure's paired difference from Hi-Lo's),
+ * {@code depth.tsv}, {@code ev-by-key.tsv}, {@code swings.tsv}, and for each figure with paths
+ * {@code records-FIG.tsv} (the first two chunks' shoes), {@code fan-FIG.tsv} and
+ * {@code ruin-FIG.tsv}. With {@code --moving}, the whole run with the count moving through split
+ * hands, under {@code p3-moving} (its summary and depth file only).
+ * <li>{@code p2 --bundle DIR --out DIR --sim-commit SHA [--k K] [--threads T] [--plant a,b]
+ * [--catalog counting-systems.json] [--registry SIM_CHECK.md]}: checks D1 and D4 on the bundle's
+ * states.bin, D2 on keys-sample.tsv and D5 on lookups.tsv (OUT/checks.txt), then check P2 at K
+ * re-deals a state (seed 20261009), in chunks of 1,000 states under {@code OUT/p2/}, then
+ * {@code OUT/summary-p2.json} with P2's paired differences, and P2's z values into swings.tsv. It
+ * stops before P2 if an exact check fails, unless a plant is on.
+ * <li>{@code variants --bundle DIR --out DIR --sim-commit SHA [--chunks 4] [--chunk-size S]
+ * [--threads T]}: mode B and the moving count beside mode A on P3's first chunks, for F26 to F29:
+ * {@code OUT/variants.tsv} and {@code OUT/summary-variants.json}.
  * </ul>
  *
  * <p>Tests: {@code javac -d out-test -cp out:lib/junit-platform-console-standalone-1.10.2.jar
@@ -109,6 +118,7 @@ public final class Sim {
         int threads = Integer.parseInt(option(args, "--threads", "1"));
         int fanPaths = Integer.parseInt(option(args, "--fan-paths", "20"));
         int fanRounds = Integer.parseInt(option(args, "--fan-rounds", "100000"));
+        int ruinPaths = Integer.parseInt(option(args, "--ruin-paths", "20000"));
         Registry registry = registry(args);
         java.util.List<Row> rows = bundle.rows(true);
         long t0 = System.nanoTime();
@@ -133,6 +143,12 @@ public final class Sim {
                     double[][] fan = P3.fan(P3.SEED, rows.get(r), rows.get(r).figures.indexOf(fig.figure()), bundle.chart,
                             plants, fanPaths, fanRounds, 100);
                     Outputs.write(out.resolve("fan-" + fig.id() + ".tsv"), Outputs.fan(fan));
+                    Ruin ruin = Ruin.read(out.resolve("records-" + fig.id() + ".tsv"));
+                    if (ruin.mu > 0) {
+                        Outputs.write(out.resolve("ruin-" + fig.id() + ".tsv"), ruin.lines(fig.id(), ruin.run(ruinPaths)));
+                    } else {
+                        System.out.println(fig.id() + ": the records' mean result is " + ruin.mu + ", so no ruin paths");
+                    }
                 }
             }
         }
@@ -148,6 +164,7 @@ public final class Sim {
         facts.put("chunks", chunks + " of " + size + " shoes");
         facts.put("records", "shoes 0 to " + (recordShoes - 1));
         facts.put("fan", fanPaths + " paths of " + fanRounds + " rounds, the win every 100");
+        facts.put("ruin", ruinPaths + " paths a bankroll, seed " + Ruin.SEED);
         facts.put("threads", Integer.toString(threads));
         facts.put("wallSeconds", String.format("%.1f", seconds));
         facts.put("loadAverage", Double.toString(java.lang.management.ManagementFactory.getOperatingSystemMXBean()
