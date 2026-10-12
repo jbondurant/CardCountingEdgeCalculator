@@ -15,8 +15,8 @@ Part A was written on 9 October 2026 from `src/ShoeRun.java` and what it calls
 `test/ShoeSpecTest.java`: the test reads the two data blocks below, compiles the two Java
 blocks exactly as they are written here, and compares them with the engine on every round start
 of all 60,000 shoes. If this file and the engine ever disagree, the engine is what made
-`runs/montreal-80.states`, so this file is the one corrected. Part B describes code that does
-not exist yet; StrategyExport's own tests will hold it to Part B.
+`runs/montreal-80.states`, so this file is the one corrected. Part B is the format
+`StrategyExport` writes, and its own tests hold it to Part B (end of this file).
 
 Words used throughout: a **kind** is one of the 26 card kinds of A1; a **rank** is the
 contract's rank, 1 to 10 (ROUND_CONTRACT.md); the **dealt order** is a shoe's 416 cards in the
@@ -513,7 +513,7 @@ valuation stream one `nextLong` per round start.
 
 PLAN_COMPUTE.md 1.2 names the files; this part fixes their format, so that the simulator's author
 can write the reader before the exporter exists and the exporter's author writes exactly this.
-Nothing here is built yet. Where the plan left a detail open, B6 lists the choice made here.
+Where the plan left a detail open, B6 lists the choice made here.
 
 ### B0. The bundle
 
@@ -785,9 +785,9 @@ play	0	0	0	0	1	1	1	0	0	…
 - Line 1 is the comment above; line 2 is `# sample seed ` and the seed the exporter drew the
   sample with. Line 3 is the header: eight fixed columns, then one column per count, named
   exactly as the report names the row. The counts are every catalog entry (duplicates made one,
-  in catalog order), then the null count, then every betting variant (ace side-count variants,
-  then the registered counts' own betting variants, if any). The header is the only place the
-  list of counts is given, and the reader takes it from there.
+  in catalog order), then the null count, then the registered counts, if any, then every betting
+  variant (ace side-count variants, then the registered counts' own betting variants, if any).
+  The header is the only place the list of counts is given, and the reader takes it from there.
 - `state` is the record's place in states.bin, so the tallies and depth come from there; `shoe`,
   `round` and `depth` repeat them for reading.
 - A `bet` line holds each count's bet key at the state (B2.2), `-` in `p1`, `p2` and `up`.
@@ -802,6 +802,13 @@ play	0	0	0	0	1	1	1	0	0	…
   in record order, a `bet` line, then `play` lines for 10 deals drawn with the same generator
   from the 550, in deal order (up-card, then p1, then p2). The first 20 records also have `play`
   lines for all 550 deals, whether drawn or not, so every deal is covered. About 31,000 lines.
+- The draw, exactly (`StrategyExport.sample`): one `java.util.SplittableRandom(seed)`. The states
+  are the first 2,000 places of a Fisher–Yates shuffle of 0 to n − 1 run from the bottom up (for
+  t from 0, swap place t with place `t + nextInt(n − t)`), sorted; all n when n is 2,000 or
+  fewer. Then, for each state drawn, in record order, 10 deals the same way from 0 to 549, sorted.
+  Each of the first 20 records has its `bet` line, drawn or not, and lists all 550 deals in place
+  of the 10 drawn for it. The reader need not repeat the draw: the lines say which states and
+  deals they are.
 
 D2 requires every key to be equal and every chance to agree within 1e-12 relative.
 
@@ -888,6 +895,26 @@ clean-ups):
 The round trip of PLAN_COMPUTE.md 1.2 is what shows these choices right: the bundle read back
 and scored must give `Entry.estimate` and `Entry.shoeSums` within 1e-12 relative.
 
+What `StrategyExport` does beyond the lines above (9 October 2026):
+
+- It writes into `DIR.partial` and renames it to `DIR` only once the round trip has passed, so a
+  bundle directory without that suffix is one that passed.
+- The round trip reads the bundle with `ExportBundle`, written from this part's words, never
+  with the writer. Every state of every section is played again from its fold's strategy file
+  alone: the bet key from the file's bet tags by B2.2, the round value from the file's first
+  moves (or chart.tsv's, betting only) in the groups its play-key parts fall in, on the engine's
+  stored move values, the insurance from the `insure` lines, the bet from the `bet` lines. Each
+  must equal states.bin's. Each figure is then compared with `Entry.estimate` twice: summed as
+  `SystemScorer.scoreOnce` sums it (fold, then bet key), and pooled from exact.tsv, whose order
+  differs and which is held to the mean size of the figure's terms rather than to the figure.
+  exact.tsv's sums are worked out again from B5's words, apart from the code that wrote them.
+- It exports the report's 24 plans unless told fewer (`--plans`). A section of states.bin takes
+  4 + 4 + 8 + 8 + 24 × 8 = 216 bytes a state with all 24, about 13 MB at 80% on the main file, so the plan's
+  estimate of 1 to 3 MB a section holds only for about 2 plans; the exporter prints the bundle's
+  measured size.
+- Full-play rows are refused: their later plays and Hit and Split values come from the replay
+  (PLAN_COMPUTE.md 6.1), which is to call the writer's `format` and `writeStates` with them.
+
 ## How this file is held to the engine
 
 `test/ShoeSpecTest.java` (run it alone: `java -Xmx1g -jar lib/junit-platform-console-standalone-1.10.2.jar
@@ -944,5 +971,10 @@ Three more, planted the same way in the engine against Part B's checks, with 17 
 | a decision's true count over the cards left at the round's start, the seen cards not taken out | `CountKeys.keyAfter` | 1 | Hi-Opt II at depth 0 with 5 cards seen |
 | a split hand plays the first listed move even when it is not legal | `SplitPlay` | 1 | a split hand on hard 9 against a 2, where Split is not legal, is played Split |
 
-Part B's files themselves are not tested here, since no code writes them yet. StrategyExport's
-tests will read them back with a reader written from Part B, and its round trip will score them.
+Part B's files themselves are not tested here. `src/StrategyExport.java` writes them and
+`src/ExportBundle.java` reads them back from this file's words; `test/StrategyExportTest.java`
+(run it alone, as above, about a minute) writes a bundle from a state file of 60 real shoes made
+in a temporary directory, never the run's, and requires the round trip to give back
+SystemScorer's figures for 16 rows of six counts (a true count, one with an ace side count, a
+running count, a colour count, the null count, and a count of our own with a divisor and a
+betting vector), and to refuse a bundle with any of twelve bugs written into it.
