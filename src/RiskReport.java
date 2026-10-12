@@ -45,7 +45,9 @@ import java.util.TreeMap;
  * - every result in the simulator's histogram is inside RiskMath.twiceResultRange of the house
  *   rules, every bet is finite and at least 0;
  * - the histogram and the shoe sums describe the same rounds: its count equals the rounds dealt,
- *   and its total of b X equals the shoes' total within 1e-9 relative;
+ *   and its win a round equals the shoes' within 1e-9 of a round's root mean square (the two
+ *   are the same sum in two orders, so only rounding may part them);
+ * - every figure carries its P3 test's z, and at 80% its P2 test's too;
  * - the risk data file is at most 60 KB (PLAN_COMPUTE.md section 0).
  * A figure whose simulator test failed (|z| at least 3.5, SIM_CHECK.md section 7) is held back,
  * listed with its z, as SIM_CHECK.md section 13 says: its swings rest on rounds the check says
