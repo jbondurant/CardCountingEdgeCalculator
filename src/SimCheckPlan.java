@@ -198,6 +198,39 @@ final class SimCheckPlan {
             }
         }
 
+        /**
+         * The figure's name in the bundle's exact.tsv and in the simulator's summaries (SHOE_SPEC.md
+         * B5): flat, or ev: and the plan's label as a strategy file names it (B2.5).
+         */
+        String exportFigure() {
+            switch (bets) {
+                case "flat":
+                    return "flat";
+                case "1-2":
+                    return "ev:same-2";
+                case "1-4":
+                    return "ev:same-4";
+                case "1-8":
+                    return "ev:same-8";
+                case "own 1-8":
+                    return "ev:own-8";
+                case "P16":
+                    return "ev:P16";
+                case "B0,8":
+                    return "ev:B0,8";
+                case "X-1,8":
+                    return "ev:X-1.0,8";
+                default:
+                    throw new IllegalStateException(bets);
+            }
+        }
+
+        /** Whether the fan and the per-shoe records are kept for it (section 11): full play, 1-8, 80%, Hi-Lo and Victor APC + ace. */
+        boolean paths() {
+            return play == Play.FULL && pen == 80 && bets.equals("1-8")
+                    && (count.equals("Hi-Lo") || count.equals("Victor APC + ace"));
+        }
+
         /** Whether the pilot's SD of this figure is held against an assumed one (SD_RATIO_STOP). */
         double assumedSd() {
             if (pen != 80) {
@@ -214,8 +247,10 @@ final class SimCheckPlan {
     static List<Figure> figures() {
         List<Figure> out = new ArrayList<>();
         String[] firstBets = {"flat", "1-2", "1-4", "1-8", "own 1-8"};
+        // The chart's row is a reference row, fitted on nothing: c06c061's results.ser holds only the
+        // counts' Results, so its figure is step 7's, scored on the same states and resamples.
         for (int pen : PENS) {
-            add(out, 1, "chart", Play.CHART, pen, "flat", 1, "c06c061");
+            add(out, 1, "chart", Play.CHART, pen, "flat", 1, "step 7");
         }
         add(out, 2, "null count", Play.FIRST, 80, "flat", 1, "c06c061");
         for (int pen : PENS) {
@@ -653,7 +688,7 @@ final class SimCheckPlan {
     // ---- The blocks SIM_CHECK.md holds between markers, printed here.
 
     /** The names of the blocks, in the order SIM_CHECK.md holds them. */
-    static final String[] BLOCKS = {"counts", "figures", "strategies", "totals", "sizes", "pass", "implied"};
+    static final String[] BLOCKS = {"counts", "figures", "registry", "strategies", "totals", "sizes", "pass", "implied"};
 
     static String block(String name) {
         switch (name) {
@@ -661,6 +696,8 @@ final class SimCheckPlan {
                 return counts();
             case "figures":
                 return figureTable();
+            case "registry":
+                return registry();
             case "strategies":
                 return strategyTable();
             case "totals":
@@ -715,6 +752,23 @@ final class SimCheckPlan {
                     Integer.toString(f.part), f.p2() ? "P3, P2" : "P3", f.source + ": " + f.metric()));
         }
         return b.toString();
+    }
+
+    /**
+     * The figures as the simulator's files name them (SHOE_SPEC.md Part C), one tab-separated line
+     * each in a fenced block the simulator may read: the id its swings, records and fan files are
+     * keyed by, the part, the row and penetration of the bundle, the exact.tsv figure, the tests,
+     * the engine file, and what else is kept for it.
+     */
+    private static String registry() {
+        StringBuilder b = new StringBuilder("```sim-registry\n");
+        b.append("fig\tpart\trow\tpen\tfigure\ttests\tengine\tswings\tpaths\n");
+        for (Figure f : figures()) {
+            b.append(String.join("\t", f.id, Integer.toString(f.part), f.entry(), Integer.toString(f.pen),
+                    f.exportFigure(), f.p2() ? "P3,P2" : "P3", f.source, swings(f) ? "1" : "0", f.paths() ? "1" : "0"))
+                    .append('\n');
+        }
+        return b.append("```\n").toString();
     }
 
     private static String strategyTable() {

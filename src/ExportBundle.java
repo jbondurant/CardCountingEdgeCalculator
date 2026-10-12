@@ -1065,6 +1065,78 @@ final class ExportBundle {
         return out;
     }
 
+    // ------------------------------------------------------------------ B8: lookups.tsv
+
+    static final String LOOKUPS_FIRST = "# lookups.tsv: SHOE_SPEC.md B8, format 1";
+    static final String LOOKUPS_FIXED = "line\tstate\tp1\tp2\tup\thit";
+
+    /** lookups.tsv: its sample seed, the strategy files its header names, and its lines as written. */
+    static final class Lookups {
+        long seed;
+        String[] files;
+        final List<LookupLine> lines = new ArrayList<>();
+    }
+
+    /** One line: first (hit 0) or later, its state and deal, and one cell a file, as text. */
+    static final class LookupLine {
+        boolean later;
+        int state;
+        int p1;
+        int p2;
+        int up;
+        int hit;
+        String[] cells;
+    }
+
+    /** B8's lines read and their fields checked for form; the cells are compared as text by the caller. */
+    static Lookups readLookups(Path file) throws IOException {
+        List<String> lines = lines(file);
+        String source = file.getFileName().toString();
+        if (lines.size() < 3 || !lines.get(0).equals(LOOKUPS_FIRST) || !lines.get(1).startsWith("# sample seed ")
+                || !lines.get(2).startsWith(LOOKUPS_FIXED + "\t")) {
+            throw new IllegalArgumentException(source + ": B8's three first lines are due");
+        }
+        Lookups out = new Lookups();
+        Cursor c = new Cursor(lines.subList(2, lines.size()), source);
+        out.seed = c.longInteger(lines.get(1).substring("# sample seed ".length()));
+        String[] header = lines.get(2).split("\t", -1);
+        out.files = Arrays.copyOfRange(header, 6, header.length);
+        c.at = 1;
+        boolean later = false;
+        while (!c.done()) {
+            String[] f = c.fields.get(c.at);
+            c.last = c.number.get(c.at) + 2;
+            c.at++;
+            if (f.length != header.length || !f[0].equals("first") && !f[0].equals("later")) {
+                throw c.fail("a first or later line of " + header.length + " fields is due");
+            }
+            LookupLine l = new LookupLine();
+            l.later = f[0].equals("later");
+            if (later && !l.later) {
+                throw c.fail("first lines come before every later line");
+            }
+            later = l.later;
+            l.state = c.integer(f[1]);
+            l.p1 = c.integer(f[2]);
+            l.p2 = c.integer(f[3]);
+            l.up = c.integer(f[4]);
+            if (l.p1 < 1 || l.p1 > l.p2 || l.p2 > 10 || l.up < 1 || l.up > 10) {
+                throw c.fail("no deal " + l.p1 + " " + l.p2 + " " + l.up);
+            }
+            if (l.later) {
+                l.hit = c.integer(f[5]);
+                if (l.hit < 1 || l.hit > 10) {
+                    throw c.fail("no hit card of rank " + l.hit);
+                }
+            } else if (!f[5].equals("-")) {
+                throw c.fail("a first line has - for hit");
+            }
+            l.cells = Arrays.copyOfRange(f, 6, f.length);
+            out.lines.add(l);
+        }
+        return out;
+    }
+
     // ------------------------------------------------------------------ B0: index.tsv and manifest.sha256
 
     static final String INDEX_HEADER = "path\tbytes\trow\tpen\tfold\tscope";

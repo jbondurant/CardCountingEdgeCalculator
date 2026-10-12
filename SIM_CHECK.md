@@ -100,9 +100,9 @@ plan runs it at 80% only, where every valued state is in play.
 <!-- SimCheckPlan figures -->
 | Figure | Row | Count | Play | Pen. | Bets | Part | Tests | Engine's figure |
 |---|---|---|---|---|---|---|---|---|
-| F01 | 1 | chart | chart | 70% | flat | 1 | P3 | c06c061: FLAT |
-| F02 | 1 | chart | chart | 75% | flat | 1 | P3 | c06c061: FLAT |
-| F03 | 1 | chart | chart | 80% | flat | 1 | P3, P2 | c06c061: FLAT |
+| F01 | 1 | chart | chart | 70% | flat | 1 | P3 | step 7: FLAT |
+| F02 | 1 | chart | chart | 75% | flat | 1 | P3 | step 7: FLAT |
+| F03 | 1 | chart | chart | 80% | flat | 1 | P3, P2 | step 7: FLAT |
 | F04 | 2 | null count | first decision | 80% | flat | 1 | P3, P2 | c06c061: FLAT |
 | F05 | 3 | Hi-Lo | first decision | 70% | flat | 1 | P3 | c06c061: FLAT |
 | F06 | 3 | Hi-Lo | first decision | 70% | 1-2 | 1 | P3 | c06c061: same(2) |
@@ -153,6 +153,75 @@ plan runs it at 80% only, where every valued state is in play.
 | F51 | 10 | F2 | first decision | 80% | 1-8 | 2 | P3, P2 | step 7: same(8) |
 | F52 | 10 | F2 | full play | 80% | 1-8 | 2 | P3, P2 | step 8: same(8) |
 <!-- /SimCheckPlan figures -->
+
+The chart's three figures are read from step 7's file: c06c061's results.ser holds only the
+counts' Results, and the chart's flat row is a reference row (SystemScorer.references) that the
+ceiling report of step 7 scored on the same states and resamples. This was "c06c061" until 12
+October 2026, before any pilot; RiskReport already read F03 from step 7.
+
+The same list as the simulator's files name it (SHOE_SPEC.md Part C): the id that keys
+swings.tsv, records-FIG.tsv and fan-FIG.tsv, the part, the row and penetration as the bundle
+names them, the figure as exact.tsv names it (B5), the tests, the engine file, and whether swings
+(section 9) and the fan and per-shoe records (section 11) are kept for it. It is a fenced block
+the simulator may read as it stands.
+
+<!-- SimCheckPlan registry -->
+```sim-registry
+fig	part	row	pen	figure	tests	engine	swings	paths
+F01	1	Chart, no count, flat	70	flat	P3	step 7	0	0
+F02	1	Chart, no count, flat	75	flat	P3	step 7	0	0
+F03	1	Chart, no count, flat	80	flat	P3,P2	step 7	1	0
+F04	1	Null count (no count)	80	flat	P3,P2	c06c061	0	0
+F05	1	Hi-Lo = Hi-Lo Lite	70	flat	P3	c06c061	0	0
+F06	1	Hi-Lo = Hi-Lo Lite	70	ev:same-2	P3	c06c061	0	0
+F07	1	Hi-Lo = Hi-Lo Lite	70	ev:same-4	P3	c06c061	0	0
+F08	1	Hi-Lo = Hi-Lo Lite	70	ev:same-8	P3	c06c061	0	0
+F09	1	Hi-Lo = Hi-Lo Lite	70	ev:own-8	P3	c06c061	0	0
+F10	1	Hi-Lo = Hi-Lo Lite	75	flat	P3	c06c061	0	0
+F11	1	Hi-Lo = Hi-Lo Lite	75	ev:same-2	P3	c06c061	0	0
+F12	1	Hi-Lo = Hi-Lo Lite	75	ev:same-4	P3	c06c061	0	0
+F13	1	Hi-Lo = Hi-Lo Lite	75	ev:same-8	P3	c06c061	0	0
+F14	1	Hi-Lo = Hi-Lo Lite	75	ev:own-8	P3	c06c061	0	0
+F15	1	Hi-Lo = Hi-Lo Lite	80	flat	P3,P2	c06c061	0	0
+F16	1	Hi-Lo = Hi-Lo Lite	80	ev:same-2	P3,P2	c06c061	0	0
+F17	1	Hi-Lo = Hi-Lo Lite	80	ev:same-4	P3,P2	c06c061	0	0
+F18	1	Hi-Lo = Hi-Lo Lite	80	ev:same-8	P3,P2	c06c061	1	0
+F19	1	Hi-Lo = Hi-Lo Lite	80	ev:own-8	P3,P2	c06c061	0	0
+F20	1	Hi-Lo = Hi-Lo Lite, betting only	80	ev:same-8	P3,P2	c06c061	0	0
+F21	1	KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out)	80	ev:same-8	P3,P2	c06c061	0	0
+F22	1	Red Seven (Red 7)	80	ev:same-8	P3,P2	c06c061	0	0
+F23	1	Hi-Opt II + ace side count	80	ev:same-8	P3,P2	c06c061	0	0
+F24	1	Victor Advanced Point Count (Victor APC) + ace side count	80	flat	P3,P2	c06c061	0	0
+F25	1	Victor Advanced Point Count (Victor APC) + ace side count	80	ev:same-8	P3,P2	c06c061	0	0
+F26	2	Hi-Lo = Hi-Lo Lite, full play	80	flat	P3,P2	c06c061	0	0
+F27	2	Hi-Lo = Hi-Lo Lite, full play	80	ev:same-8	P3,P2	c06c061	1	1
+F28	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	80	flat	P3,P2	c06c061	0	0
+F29	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	80	ev:same-8	P3,P2	c06c061	1	1
+F30	2	Hi-Lo = Hi-Lo Lite, full play	70	ev:same-8	P3	c06c061	1	0
+F31	2	KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out), full play	70	ev:same-8	P3	c06c061	1	0
+F32	2	Zen Count, full play	70	ev:same-8	P3	c06c061	1	0
+F33	2	Hi-Opt II + ace side count, full play	70	ev:same-8	P3	c06c061	1	0
+F34	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	70	ev:same-8	P3	c06c061	1	0
+F35	2	Hi-Lo = Hi-Lo Lite, full play	75	ev:same-8	P3	c06c061	1	0
+F36	2	KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out), full play	75	ev:same-8	P3	c06c061	1	0
+F37	2	Zen Count, full play	75	ev:same-8	P3	c06c061	1	0
+F38	2	Hi-Opt II + ace side count, full play	75	ev:same-8	P3	c06c061	1	0
+F39	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	75	ev:same-8	P3	c06c061	1	0
+F40	2	KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out), full play	80	ev:same-8	P3,P2	c06c061	1	0
+F41	2	Zen Count, full play	80	ev:same-8	P3,P2	c06c061	1	0
+F42	2	Hi-Opt II + ace side count, full play	80	ev:same-8	P3,P2	c06c061	1	0
+F43	2	Hi-Lo = Hi-Lo Lite, full play	80	ev:P16	P3,P2	replay	1	0
+F44	2	Hi-Lo = Hi-Lo Lite, full play	80	ev:B0,8	P3,P2	replay	1	0
+F45	2	Hi-Lo = Hi-Lo Lite, full play	80	ev:X-1.0,8	P3,P2	replay	1	0
+F46	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	80	ev:P16	P3,P2	replay	1	0
+F47	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	80	ev:B0,8	P3,P2	replay	1	0
+F48	2	Victor Advanced Point Count (Victor APC) + ace side count, full play	80	ev:X-1.0,8	P3,P2	replay	1	0
+F49	2	F1 at 1-8 (f1-8-vidami-ar)	80	ev:same-8	P3,P2	step 7	0	0
+F50	2	F1 at 1-8 (f1-8-vidami-ar), full play	80	ev:same-8	P3,P2	step 8	1	0
+F51	2	F2 at 1-8, play vector (f2-pub-victor-apc) + betting vector	80	ev:same-8	P3,P2	step 7	0	0
+F52	2	F2 at 1-8, play vector (f2-pub-victor-apc) + betting vector, full play	80	ev:same-8	P3,P2	step 8	1	0
+```
+<!-- /SimCheckPlan registry -->
 
 F1 and F2 are the registered counts at 1-8 (custom-counts.json, custom-counts-fullplay.json),
 F2 scored as registered, with its betting vector. Their strategies reach the simulator only
@@ -535,7 +604,9 @@ are not in the pass family.
 
 `runs/sim/run-<simsha>/` holds what PLAN_COMPUTE.md 1.8 lists (`summary.json`, `checks.txt`,
 `depth.tsv`, `ev-by-key.tsv`, `variants.tsv`), plus, for every test, the sums section 6 defines,
-the paths and records of section 11, and the pilot's `sim-pilot-partN.tsv`. The engine-side reader
+the paths and records of section 11, and the pilot's `sim-pilot-partN.tsv`. The formats of the
+files the engine side reads beyond the summary, `swings.tsv`, `records-FIG.tsv`, `fan-FIG.tsv` and
+`ev-by-key.tsv`, are SHOE_SPEC.md Part C's, keyed by the ids of the registry block in section 2. The engine-side reader
 that turns them into `runs/site/sim-<simsha>.json` refuses a run whose summary:
 
 - lacks any D check, or any registered test of the parts it covers, or holds a test that is not
@@ -573,6 +644,8 @@ shows the failed run beside it. There is no rerun without a fix: a fail is never
 8. The lookups (D5) are defined, which adds `lookups.tsv` to the bundle the exporter writes.
 9. The exact side's SE is written out (section 6): the ratio estimator over the main file's shoes,
    with the fit held fixed, as exact.tsv's per-shoe sums allow.
+10. The chart's figures F01 to F03 are read from step 7's file, not c06c061's, which holds no
+    reference row (section 2; changed 12 October 2026, before any pilot).
 
 ## 15. The code
 

@@ -529,6 +529,7 @@ commit, abbreviated to 7 hexadecimal digits:
 | `states.bin` | every valued state of the main file, and the engine's bet key, round value and bets per row and penetration (B3) |
 | `keys-sample.tsv` | the engine's bet and play keys for a sample of states and deals (B4) |
 | `exact.tsv` | the test folds' sums and per-shoe moments of every exported figure (B5) |
+| `lookups.tsv` | the engine's own answers at the sample's states and deals: each strategy file's group, first move and insurance, and for full play the later play after one hit card (B8) |
 
 **Conventions for every text file.** UTF-8, lines ending in a single `\n`, the last line too;
 fields separated by one tab (in this file's examples and in the keyword table of B2.1, the gap
@@ -541,7 +542,9 @@ are `0` or `1`.
 
 `index.tsv` begins with the line `path	bytes	row	pen	fold	scope` and has one line per file
 of the bundle other than itself and `manifest.sha256`, sorted by path; the last four fields are
-`-` for files that are not strategy files. The exporter refuses to write a bundle whose total
+`-` for files that are not strategy files. The chart's row (B1, `Chart, no count, flat`) has no
+strategy file: it is the chart's own walk, fitted on nothing, and appears only as a section of
+states.bin (B3) and as lines of exact.tsv (B5). The exporter refuses to write a bundle whose total
 size it has not measured, and prints the total in its log (PLAN_COMPUTE.md 1.8).
 
 A **row** is one line of the report: a count with its play and its bets (`SystemScorer.Entry`),
@@ -760,7 +763,12 @@ the value exactly), and `str` an `i32` byte count followed by that many bytes of
   the fold's file; for a plan with an exit, 0 once the shoe's lowest bet key so far has fallen
   below it.
 - The sections are sorted by row name, then penetration. A row of the report with no strategy
-  file in the bundle has no section.
+  file in the bundle has no section, except the chart's.
+- **The chart's row**, `Chart, no count, flat`, when exported, has a section at each penetration
+  exported (70, 75 and 80% for part 1 of the check): every state below the cut, `betKey` 0 (it has
+  no count), `rvPlay` the chart's round value (A4's play, every first decision from chart.tsv),
+  `rvInsurance` 0 (the chart's flat row takes no insurance) and no plan (`plans` 0). It has no
+  strategy file, so no fold plays it differently: the same chart plays every state.
 
 So a P2 estimate for a row, penetration and plan is `Σ (1/q) · bet · payoff / Σ (1/q)` over the
 section's states, against the engine's `Σ (1/q) · bet · (rvPlay + rvInsurance) / Σ (1/q)`; with
@@ -834,6 +842,10 @@ row	pen	fold	figure	metric	shoes	sumA	sumB	sumAA	sumAB	sumBB
   `shoes` is the number of shoes in the fold (30,000, those with no state in this penetration
   included), `sumA = Σ a_i`, `sumB = Σ b_i`, `sumAA = Σ a_i²`, `sumAB = Σ a_i·b_i` and
   `sumBB = Σ b_i²`.
+
+The chart's row has lines like any row's, `flat`, `play` and `insurance` (metrics 0, 1, 2) for fold
+0 and fold 1, from its section: a fold here is only the shoes of that parity, since the chart is
+fitted on nothing; pooled as below they give the reference row's figure, and `insurance` is 0.
 
 The fold's estimate is `sumA / sumB`. Pooled over the two folds, `R = (sumA₀ + sumA₁) /
 (sumB₀ + sumB₁)` is the report's figure (`Entry.estimate[pen][metric]`, within 1e-12
@@ -914,6 +926,109 @@ What `StrategyExport` does beyond the lines above (9 October 2026):
   measured size.
 - Full-play rows are refused: their later plays and Hit and Split values come from the replay
   (PLAN_COMPUTE.md 6.1), which is to call the writer's `format` and `writeStates` with them.
+
+### B8. lookups.tsv
+
+The engine's own answers, for check D5 (SIM_CHECK.md section 5): at the states and deals of
+keys-sample.tsv, what each strategy file's fit decides, worked out by the engine's scoring code
+(`CountKeys`, `Groups.of`, the fit's moves, the insurance sums, the later play kept), never read
+from the file. The exporter's round trip holds every cell to what the file it names says by B2.2
+to B2.4, so a simulator that answers each cell from the file alone agrees with the engine there.
+
+```
+# lookups.tsv: SHOE_SPEC.md B8, format 1
+# sample seed 20261009
+line	state	p1	p2	up	hit	<strategy file 1>	<strategy file 2>	…
+first	0	1	1	1	-	-1:2:P:0	…
+later	0	1	1	1	5	0:1:-:H	…
+```
+
+- Line 1 is the comment above; line 2 is `# sample seed ` and keys-sample.tsv's seed. Line 3 is the
+  header: six fixed columns, then one column for each strategy file of the bundle, named by its
+  file name, in path order (index.tsv's order). The chart's row has no column.
+- **`first` lines**, one for each `play` line of keys-sample.tsv, in the same order: the same
+  `state` (the record's place in states.bin) and deal, `hit` `-`. A cell is `-` when the file's
+  penetration does not hold the state (its depth is at or past the file's cut). Otherwise it lists
+  the deal's play-key parts, as keys-sample.tsv's cell for the file's `playcount` lists them (one
+  for a count that tags every rank alike; for a colour or face count every key the deal can have,
+  in the same order, `-` when the cards left cannot make the deal), separated by `;`, each part
+  `KEY:G:M:I`:
+  - `KEY` the deal's play key (B2.2), `G` its group (B2.3, `group` lines);
+  - `M` the dealt hand's first move as B2.4 plays it, one letter of B1: the first move of
+    `first G p1 p2 up` for scope `first` and `full`, chart.tsv's for scope `betting`, `-` for the
+    player's natural (no decision);
+  - `I` for an ace up-card, `1` if `insure G p1 p2` is listed and `0` if not (the natural
+    included, B2.4); `-` for any other up-card.
+- **`later` lines**, only when the bundle holds a file of scope `full`, after every `first` line:
+  for the first 200 states of the sample (the first 200 `bet` lines of keys-sample.tsv, in record
+  order), the deal of that state's first `play` line, and a hit card of each rank 1 to 10 of which
+  at least one card is left once the deal's three cards are taken from the state's cards left, in
+  rank order (a state whose cards left cannot make its first deal has no later line). The dealt
+  hand is then the player's two cards and the hit card. Every column of a file whose scope is not
+  `full`, or whose penetration does not hold the state, or whose play count tags some rank by
+  colour or face, is `-`. Otherwise the cell is `KEY:L:C:M`:
+  - `KEY` the key at that decision, B2.2's with `s` = 4 (the deal's three cards and the hit card
+    seen, the hole card not), `L` its later group (B2.3 over `lgroup` lines);
+  - `C` the hand's contested cell, its place 0 to 109 in B2.1's order of `later` lines within a
+    group (up-card, then hard before soft, then total), or `-` when the spot is not contested;
+  - `M` the move: at a contested spot, `later L total soft up`'s `S` or `H`; at another spot with a
+    total under 21, chart.tsv's answer to (up, total, soft, pair 0, fromSplit 0, first 0, legal 1:
+    Hit only); `S` at 21; `-` over 21 (the hand has busted). C and M are `-` together only then.
+- About 31,000 `first` lines; the `later` lines are at most 2,000.
+
+D5 holds the simulator's own answer from the files to every cell, as text.
+
+### B9. counting-systems.json, for check D2
+
+Check D2 has the simulator read the catalog with its own parser and compute every key of
+keys-sample.tsv from it (SIM_CHECK.md section 5). This is what the engine reads from the file
+(`CountingSystem`, `CountKeys.of`, `distinct`, `catalog`, `bettingVariant`), and
+`test/ShoeSpecTest.java` holds these words to it.
+
+- The file is one JSON object. Its `systems` member is an array of objects, in catalog order; the
+  `_about` and `excluded` members, and every field of a system not named here, are text and are
+  not read.
+- A system's `name` is a string, its `count` is `"true"` or `"running"` (the key's mode, B2.2:
+  `true` or `running`; nothing else is allowed), and its `tags` an object of numbers keyed `A`,
+  `2` to `9` and `T`: the tag of every card of that rank, `T` for every ten-valued card. Its
+  optional `cardTags` object overrides some cards: a key is a rank (`A`, `2` to `9`, or `10`,
+  `J`, `Q`, `K` for the ten-valued cards one by one) with an optional suffix `red` or `black`; it
+  sets the tag of the kinds (A1) of that rank, of that colour when a suffix is given and of both
+  colours otherwise. Numbers may be fractions (Wong Halves: 0.5).
+- **Tags by kind.** Kind `k`'s tag is its rank's `tags` value, replaced by any `cardTags` entry
+  that names it. The **scale** is the least whole number `S` from 1 to 100 such that every
+  kind's tag times `S` is within 1e-9 of a whole number; the whole-number tags are those
+  products rounded to the nearest whole number. These are B2.1's `tags` and `scale`.
+- **Entries.** Systems whose whole-number tags are equal kind for kind and whose `count` is the
+  same are one entry: its name is their names joined by ` = ` in catalog order, and its scale and
+  tags are the first system's. So `Hi-Lo = Hi-Lo Lite`, and `Revere Point Count (RPC) = FELT
+  (Fairly Easy Level Two) = C-R (Chambliss-Roginski)` (C-R's tags at its scale of 2 are RPC's at 1).
+  The catalog's 35 systems make 30 entries. Each has divisor 1 and bets on its own tags with no
+  ace side count (`ace` 0, `bettags` = `tags`).
+- **The null count**, `Null count (no count)`: every tag 0, scale 1, mode `running`, divisor 1.
+- **Ace side-count variants.** An entry one of whose systems is named in the block below gets a
+  betting variant named its name and ` + ace side count`: the same play, tags, scale, mode
+  (`true`) and divisor, bet tags equal to the tags, and ace weight `M` (B2.2) the absolute value of
+  its whole-number tag of a ten-valued card. Every listed system is a balanced, ace-neutral true
+  count. The list is the engine's (`CountKeys.SIDE_COUNTED`), not the file's: a system's
+  `aceSideCount` field is text. Eight variants result.
+
+```shoe-spec-side-counted
+Hi-Opt I
+Hi-Opt II
+Omega II
+Canfield Expert
+Revere Advanced Plus-Minus
+Revere 14 Count (1973 Advanced Point Count)
+Uston Advanced Point Count (Uston APC)
+Victor Advanced Point Count (Victor APC)
+```
+
+So keys-sample.tsv made from the catalog has 39 count columns: the 30 entries, the null count
+and the 8 variants. A column naming a registered count (`F1 ...`, `F2 ...`) or its betting
+variant takes its parameters from the strategy file whose `playcount` or `betcount` names it,
+not from this file: the registered counts are in custom-counts.json, which the simulator need not
+read.
 
 ## How this file is held to the engine
 

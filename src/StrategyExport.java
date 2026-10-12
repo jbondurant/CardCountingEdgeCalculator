@@ -180,6 +180,8 @@ final class StrategyExport {
     /** One exported row at one penetration: its two fold files, its states.bin section and the figures it must give. */
     static final class Built {
         final ExportBundle.Strategy[] fold = new ExportBundle.Strategy[2];
+        /** Each fold file's answers as the engine's fit gives them, for lookups.tsv (B8). */
+        final Lookup[] lookup = new Lookup[2];
         ExportBundle.Section section;
     }
 
@@ -272,6 +274,8 @@ final class StrategyExport {
                 s.plans.add(new ExportBundle.Plan(labels[l], rule(labels[l]), null, key, u, chance));
             }
             out.fold[f] = s;
+            out.lookup[f] = new Lookup(s.fileName(), play, pen.cut, fp.groups, e.bettingOnly ? null : fp.fit.move,
+                    rf.insuranceSum[f], null, null);
         }
         out.section = section(st, pen, rf, e, bk, units, labels);
         return out;
@@ -327,6 +331,43 @@ final class StrategyExport {
                 sec.bet[j][l] = u * 1.0;
             }
         }
+        return sec;
+    }
+
+    /** The chart's reference row, as SystemScorer.references names it: the walk's own play, no count (B3, B5). */
+    static final String CHART_ROW = "Chart, no count, flat";
+
+    /** The chart's row to export: its Entry, SystemScorer.references' first, and the penetrations (0, 1, 2). */
+    static final class ChartRow {
+        final SystemScorer.Entry entry;
+        final int[] pens;
+
+        ChartRow(SystemScorer.Entry entry, int... pens) {
+            if (!entry.name.equals(CHART_ROW) || entry.count != null) {
+                throw new IllegalArgumentException(entry.name + " is not the chart's reference row");
+            }
+            this.entry = entry;
+            this.pens = pens.clone();
+        }
+    }
+
+    /**
+     * The chart's section of states.bin at a penetration (B3): every state of it, bet key 0 (no
+     * count), the chart's round value, no insurance (the chart's flat row has none) and no plan.
+     * It has no strategy file: the simulator plays the chart's walk itself (B1).
+     */
+    static ExportBundle.Section chartSection(SystemScorer.Pen pen, int p) {
+        ExportBundle.Section sec = new ExportBundle.Section();
+        int m = pen.states.length;
+        sec.row = CHART_ROW;
+        sec.pen = ExportBundle.PENS[p];
+        sec.cut = pen.cut;
+        sec.labels = new String[0];
+        sec.index = pen.states.clone();
+        sec.betKey = new int[m];
+        sec.rvPlay = pen.chart.clone();
+        sec.rvInsurance = new double[m];
+        sec.bet = new double[m][0];
         return sec;
     }
 
@@ -687,6 +728,208 @@ final class StrategyExport {
             }
         }
         Files.write(file, b.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    // ------------------------------------------------------------------ B8: lookups.tsv
+
+    /** B8: the states that get later lines, the first this many of the sample, in record order. */
+    static final int LATER_STATES = 200;
+    /** B8: the later lines' decision, on the deal's three cards and one hit card. */
+    static final int LATER_SEEN = 4;
+
+    /**
+     * One strategy file's answers as the engine gives them (B8), from the fit the estimate scored
+     * with, never from the file: the play key's parts from CountKeys, the group from Groups.of, the
+     * dealt hand's first move from the fit's moves (the chart's for a betting row), insurance from
+     * the insurance sums, and for full play the later group and the stand-or-hit of the later
+     * play kept. lookups.tsv holds these, and the round trip holds them to what the file says.
+     */
+    static final class Lookup {
+        final String file;
+        final CountKeys.Count play;
+        final int cut;
+        final SystemScorer.Groups groups;
+        /** fit.move, [g][deal]; null for a betting row, which plays the chart's first move. */
+        final int[][] move;
+        /** [g x 55 + ace-up deal]: the deal is insured in group g where this is positive. */
+        final double[] insuranceSum;
+        /** Full play only: the later groups, and stands[l x CELLS + cell]; null otherwise. */
+        final SystemScorer.Groups later;
+        final boolean[] stands;
+
+        Lookup(String file, CountKeys.Count play, int cut, SystemScorer.Groups groups, int[][] move, double[] insuranceSum,
+               SystemScorer.Groups later, boolean[] stands) {
+            this.file = file;
+            this.play = play;
+            this.cut = cut;
+            this.groups = groups;
+            this.move = move;
+            this.insuranceSum = insuranceSum;
+            this.later = later;
+            this.stands = stands;
+        }
+
+        /** B8's first cell at state s and a deal: KEY:G:M:I for every part of the play key, '-' where none. */
+        String first(ScoringStates st, int s, int deal) {
+            if (st.depth[s] >= cut) {
+                return "-";
+            }
+            int rc = play.runningCount(st.dealt[s]);
+            int[] keys;
+            if (!play.kindAware) {
+                keys = new int[]{play.playKey(rc, st.depth[s],
+                        play.rankTag(Deals.P1[deal]) + play.rankTag(Deals.P2[deal]) + play.rankTag(Deals.UP[deal]))};
+            } else {
+                double[][] sums = play.tagSums(st.dealt[s], deal);
+                if (sums.length == 0) {
+                    return "-";
+                }
+                keys = new int[sums.length];
+                for (int k = 0; k < sums.length; k++) {
+                    keys[k] = play.playKey(rc, st.depth[s], (int) sums[k][0]);
+                }
+            }
+            StringBuilder b = new StringBuilder();
+            for (int key : keys) {
+                int g = groups.of(key);
+                String m = Deals.playerNatural(deal) ? "-" : String.valueOf(ExportBundle.letter(
+                        StateValuer.MOVES[move == null ? st.chartMove[deal] : move[g][deal]]));
+                String ins = deal < ACE_UP ? (insuranceSum[g * ACE_UP + deal] > 0 ? "1" : "0") : "-";
+                b.append(b.length() > 0 ? ";" : "").append(key).append(':').append(g).append(':').append(m).append(':')
+                        .append(ins);
+            }
+            return b.toString();
+        }
+
+        /** B8's later cell: KEY:L:C:M after the deal and one hit card of rank hit; '-' unless full play on ranks. */
+        String later(ScoringStates st, int s, int deal, int hit) {
+            if (later == null || st.depth[s] >= cut || play.kindAware) {
+                return "-";
+            }
+            int p1 = Deals.P1[deal];
+            int p2 = Deals.P2[deal];
+            int up = Deals.UP[deal];
+            int t = play.rankTag(p1) + play.rankTag(p2) + play.rankTag(up) + play.rankTag(hit);
+            int key = play.keyAfter(play.runningCount(st.dealt[s]), st.depth[s], t, LATER_SEEN);
+            int l = later.of(key);
+            int hard = p1 + p2 + hit;
+            boolean soft = (p1 == 1 || p2 == 1 || hit == 1) && hard <= 11;
+            int total = soft ? hard + 10 : hard;
+            if (total > 21) {
+                return key + ":" + l + ":-:-";
+            }
+            int c = FullIndexFit.cellOf(PlayerTree.spot(total, soft, up));
+            String m = c >= 0 ? (stands[l * FullIndexFit.CELLS + c] ? "S" : "H")
+                    : total == 21 || PlayerTree.CHART.stands(total, soft, up, key) ? "S" : "H";
+            return key + ":" + l + ":" + (c < 0 ? "-" : Integer.toString(c)) + ":" + m;
+        }
+    }
+
+    /**
+     * B8's later lines, each {state, deal, hit}: for the first LATER_STATES states of the sample,
+     * the first deal listed for it, and each rank of which a card is left once the deal's three
+     * cards are taken from the state's cards left; none for a state whose cards left cannot make
+     * that deal.
+     */
+    static List<int[]> laterLines(ScoringStates st, List<int[]> sample) {
+        List<int[]> out = new ArrayList<>();
+        for (int k = 0; k < Math.min(LATER_STATES, sample.size()); k++) {
+            int s = sample.get(k)[0];
+            int deal = sample.get(k)[1];
+            int[] left = ShoeRun.ranksLeft(st.dealt[s]);
+            left[Deals.P1[deal]]--;
+            left[Deals.P2[deal]]--;
+            left[Deals.UP[deal]]--;
+            if (left[Deals.P1[deal]] < 0 || left[Deals.P2[deal]] < 0 || left[Deals.UP[deal]] < 0) {
+                continue;
+            }
+            for (int r = 1; r <= 10; r++) {
+                if (left[r] > 0) {
+                    out.add(new int[]{s, deal, r});
+                }
+            }
+        }
+        return out;
+    }
+
+    /** One column of lookups.tsv: a strategy file's name and its cells, line by line. */
+    static final class LookupColumn implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+        final String file;
+        final String[] first;
+        /** Null for a file with no later play: every later cell '-'. */
+        final String[] later;
+
+        LookupColumn(String file, String[] first, String[] later) {
+            this.file = file;
+            this.first = first;
+            this.later = later;
+        }
+
+        static LookupColumn of(Lookup l, ScoringStates st, List<int[]> sample, List<int[]> later) {
+            List<String> first = new ArrayList<>();
+            for (int[] line : sample) {
+                for (int k = 1; k < line.length; k++) {
+                    first.add(l.first(st, line[0], line[k]));
+                }
+            }
+            String[] lt = null;
+            if (l.later != null) {
+                lt = new String[later.size()];
+                for (int k = 0; k < lt.length; k++) {
+                    int[] x = later.get(k);
+                    lt[k] = l.later(st, x[0], x[1], x[2]);
+                }
+            }
+            return new LookupColumn(l.file, first.toArray(new String[0]), lt);
+        }
+    }
+
+    /** lookups.tsv (B8): a first line for each play line of keys-sample.tsv, then the later lines if any file plays full. */
+    static void writeLookups(Path file, ScoringStates st, long seed, List<int[]> sample, List<int[]> later,
+                             List<LookupColumn> columns) throws IOException {
+        List<LookupColumn> cols = new ArrayList<>(columns);
+        cols.sort(Comparator.comparing((LookupColumn c) -> c.file));
+        boolean full = false;
+        List<Object> header = new ArrayList<>(Arrays.asList((Object[]) ExportBundle.LOOKUPS_FIXED.split("\t")));
+        for (LookupColumn c : cols) {
+            header.add(c.file);
+            full |= c.later != null;
+        }
+        StringBuilder b = new StringBuilder();
+        b.append(ExportBundle.LOOKUPS_FIRST).append('\n');
+        b.append("# sample seed ").append(seed).append('\n');
+        line(b, header.toArray());
+        Object[] f = new Object[6 + cols.size()];
+        int n = 0;
+        for (int[] l : sample) {
+            for (int k = 1; k < l.length; k++, n++) {
+                int i = l[k];
+                fixed(f, "first", l[0], i, "-");
+                for (int c = 0; c < cols.size(); c++) {
+                    f[6 + c] = cols.get(c).first[n];
+                }
+                line(b, f);
+            }
+        }
+        for (int k = 0; full && k < later.size(); k++) {
+            int[] x = later.get(k);
+            fixed(f, "later", x[0], x[1], x[2]);
+            for (int c = 0; c < cols.size(); c++) {
+                f[6 + c] = cols.get(c).later == null ? "-" : cols.get(c).later[k];
+            }
+            line(b, f);
+        }
+        Files.write(file, b.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void fixed(Object[] f, String word, int state, int deal, Object hit) {
+        f[0] = word;
+        f[1] = state;
+        f[2] = Deals.P1[deal];
+        f[3] = Deals.P2[deal];
+        f[4] = Deals.UP[deal];
+        f[5] = hit;
     }
 
     // ------------------------------------------------------------------ B5: exact.tsv
@@ -1078,6 +1321,7 @@ final class StrategyExport {
         r.lines.add("states.bin: " + st.size + " records equal to the state file's, q to the bit");
 
         Map<String, ExportBundle.Strategy[]> strategies = new TreeMap<>();
+        Map<String, ExportBundle.Strategy> byFile = new TreeMap<>();
         for (String f : files) {
             String[] x = index.get(f);
             if (x[1].equals("-")) {
@@ -1088,20 +1332,30 @@ final class StrategyExport {
                     && x[3].equals(Integer.toString(s.fold)) && x[4].equals(s.scope.word()),
                     f + " is not what index.tsv says it is");
             strategies.computeIfAbsent(s.row + "\t" + s.pen, k -> new ExportBundle.Strategy[2])[s.fold] = s;
+            byFile.put(f, s);
         }
         Map<String, List<ExportBundle.Exact>> exact = new TreeMap<>();
         for (ExportBundle.Exact e : ExportBundle.readExact(dir.resolve("exact.tsv"))) {
             exact.computeIfAbsent(e.row + "\t" + e.pen + "\t" + e.fold, k -> new ArrayList<>()).add(e);
         }
         r.equal(bin.sections.size(), expected.size(), "the sections of states.bin, against the rows expected,");
-        r.equal(strategies.size(), expected.size(), "the rows with strategy files, against the rows expected,");
+        int chartRows = 0;
+        for (Expect x : expected) {
+            chartRows += x.row.equals(CHART_ROW) ? 1 : 0;
+        }
+        r.equal(strategies.size(), expected.size() - chartRows, "the rows with strategy files, against the rows expected,");
         r.equal(exact.size(), 2L * expected.size(), "the files exact.tsv has lines for, against the rows expected,");
         for (Expect x : expected) {
-            figures(st, chart, bin, strategies, exact, x, r);
+            if (x.row.equals(CHART_ROW)) {
+                chartFigures(st, chart, bin, strategies, exact, x, r);
+            } else {
+                figures(st, chart, bin, strategies, exact, x, r);
+            }
         }
         if (keyCounts != null) {
             keys(dir.resolve("keys-sample.tsv"), st, keyCounts, r);
         }
+        lookups(dir.resolve("lookups.tsv"), st, chart, byFile, r);
         r.lines.add("the round trip compared " + r.compared + " values; largest relative difference " + r.worst);
         return r;
     }
@@ -1176,6 +1430,86 @@ final class StrategyExport {
         }
         r.lines.add(where + ": " + sec.index.length + " states replayed from the strategy files equal states.bin; "
                 + checked + " figures pooled from exact.tsv equal Entry.estimate; " + shoes);
+    }
+
+    /**
+     * The chart's row at one penetration (B3, B5): no strategy file; its section's every state
+     * valued again from chart.tsv's first moves on the engine's stored values, bet key 0 and no
+     * insurance; exact.tsv's three figures (flat, play, insurance) for both folds against the
+     * section; and the pooled flat figure against the reference row's estimate, summed as
+     * SystemScorer.references sums it (every state in record order) and pooled from exact.tsv.
+     */
+    static void chartFigures(ScoringStates st, PlayerMove[] chart, ExportBundle.States bin,
+                             Map<String, ExportBundle.Strategy[]> strategies, Map<String, List<ExportBundle.Exact>> exact,
+                             Expect x, Report r) {
+        String where = x.row + " at " + x.pen + "%";
+        ExportBundle.Section sec = bin.section(x.row, x.pen);
+        r.require(sec != null, where + " has no section in states.bin");
+        r.require(!strategies.containsKey(x.row + "\t" + x.pen), where + " has a strategy file; the chart's row has none");
+        r.require(sec.labels.length == 0, where + " has plans; the chart's row has none");
+        r.equal(sec.index.length, st.size == 0 ? 0 : countBelow(st, sec.cut), where + ": the states below the cut");
+        double num = 0;
+        double den = 0;
+        for (int e = 0; e < sec.index.length; e++) {
+            int s = sec.index[e];
+            r.require(st.depth[s] < sec.cut && (e == 0 || s > sec.index[e - 1]), where + ": entry " + e + " is not the next state below the cut");
+            double[] p = st.chance[s];
+            double[] mv = st.move[s];
+            // Summed as ScoringStates sums the chart's value: the deals in order, then the naturals.
+            double v = 0;
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (p[i] != 0 && !Deals.playerNatural(i)) {
+                    v += mv[i * MOVES + chartFirst(chart, i)];
+                }
+            }
+            v += st.naturals[s];
+            r.equal(sec.betKey[e], 0, where + ": state " + s + "'s bet key");
+            r.require(sec.rvInsurance[e] == 0, where + ": state " + s + " has insurance; the chart's row has none");
+            r.same(sec.rvPlay[e], v, where + ": state " + s + "'s round value under chart.tsv");
+            num += st.weight[s] * sec.rvPlay[e];
+            den += st.weight[s];
+        }
+        List<String> figures = figures(new String[0]);
+        double[] pooledA = new double[figures.size()];
+        double[] pooledB = new double[figures.size()];
+        for (int f = 0; f < 2; f++) {
+            double[][] sums = b5Sums(st, sec, f);
+            List<ExportBundle.Exact> lines = exact.get(x.row + "\t" + x.pen + "\t" + f);
+            r.require(lines != null && lines.size() == figures.size(), where + ", fold " + f + ": exact.tsv has "
+                    + (lines == null ? 0 : lines.size()) + " lines, not " + figures.size());
+            for (int fi = 0; fi < figures.size(); fi++) {
+                ExportBundle.Exact e = lines.get(fi);
+                String what = where + ", fold " + f + ", " + figures.get(fi);
+                r.require(e.figure.equals(figures.get(fi)) && e.metric == fi, what + ": exact.tsv's line is " + e.figure);
+                r.equal(e.shoes, st.shoesIn(f), what + ": exact.tsv's shoes");
+                r.same(e.sumA, sums[fi][0], what + ": sumA");
+                r.same(e.sumB, sums[fi][1], what + ": sumB");
+                r.same(e.sumAA, sums[fi][2], what + ": sumAA");
+                r.same(e.sumAB, sums[fi][3], what + ": sumAB");
+                r.same(e.sumBB, sums[fi][4], what + ": sumBB");
+                pooledA[fi] += e.sumA;
+                pooledB[fi] += e.sumB;
+            }
+        }
+        double[] scale = termScale(st, sec);
+        r.same(num / den, x.estimate[SystemScorer.FLAT], where + ": flat summed as the reference rows sum it");
+        r.same(num / den, x.estimate[SystemScorer.PLAY], where + ": play summed as the reference rows sum it");
+        r.require(x.estimate[SystemScorer.INSURANCE] == 0 && pooledA[2] == 0, where + ": insurance is not 0");
+        for (int fi = 0; fi < 2; fi++) {
+            r.same(pooledA[fi] / pooledB[fi], x.estimate[fi], scale[fi], where + ": " + figures.get(fi)
+                    + " pooled over the folds from exact.tsv, against the reference row");
+        }
+        r.lines.add(where + ": " + sec.index.length + " states valued from chart.tsv equal states.bin; flat and play "
+                + "pooled from exact.tsv equal the reference row's estimate");
+    }
+
+    /** The valued states dealt below a cut. */
+    static int countBelow(ScoringStates st, int cut) {
+        int n = 0;
+        for (int s = 0; s < st.size; s++) {
+            n += st.depth[s] < cut ? 1 : 0;
+        }
+        return n;
     }
 
     /**
@@ -1380,6 +1714,125 @@ final class StrategyExport {
                 + " counts equal to B2.2 worked out from each count's tags");
     }
 
+    /** B8's first cell as a strategy file answers it by B2.2 to B2.4: what the simulator must find. */
+    static String fileFirst(ExportBundle.Strategy f, int[][] classes, boolean aware, PlayerMove[] chart, ScoringStates st,
+                            int s, int deal) {
+        if (st.depth[s] >= f.cut) {
+            return "-";
+        }
+        double[][] parts = parts(f, classes, aware, st.dealt[s], st.depth[s], deal);
+        if (parts.length == 0) {
+            return "-";
+        }
+        StringBuilder b = new StringBuilder();
+        for (double[] part : parts) {
+            int key = (int) part[0];
+            int g = f.group(key);
+            char m = Deals.playerNatural(deal) ? '-' : f.scope == ExportBundle.Scope.BETTING
+                    ? ExportBundle.MOVE_LETTERS.charAt(chartFirst(chart, deal)) : ExportBundle.letter(f.first[g][deal][0]);
+            String ins = deal < ACE_UP ? (f.insure[g][deal] ? "1" : "0") : "-";
+            b.append(b.length() > 0 ? ";" : "").append(key).append(':').append(g).append(':').append(m).append(':').append(ins);
+        }
+        return b.toString();
+    }
+
+    /** B8's later cell as a strategy file answers it: the key after four cards seen, its later group, the spot's cell and move. */
+    static String fileLater(ExportBundle.Strategy f, int[][] classes, boolean aware, PlayerMove[] chart, ScoringStates st,
+                            int s, int deal, int hit, Map<String, Integer> cellAt) {
+        if (f.scope != ExportBundle.Scope.FULL || st.depth[s] >= f.cut || aware) {
+            return "-";
+        }
+        int p1 = Deals.P1[deal];
+        int p2 = Deals.P2[deal];
+        int up = Deals.UP[deal];
+        int t = classes[p1][0] + classes[p2][0] + classes[up][0] + classes[hit][0];
+        int key = ExportBundle.keyAt(f, ExportBundle.tally(f.tags, st.dealt[s]), st.depth[s], t, LATER_SEEN);
+        int l = f.laterGroup(key);
+        int hard = p1 + p2 + hit;
+        boolean soft = (p1 == 1 || p2 == 1 || hit == 1) && hard + 10 <= 21;
+        int total = soft ? hard + 10 : hard;
+        if (total > 21) {
+            return key + ":" + l + ":-:-";
+        }
+        Integer c = cellAt.get(up + " " + total + " " + (soft ? 1 : 0));
+        char m = c != null ? (f.stands[l][c] ? 'S' : 'H')
+                : ExportBundle.MOVE_LETTERS.charAt(chart[chartIndex(up, total, soft ? 1 : 0, 0, 0, 0, 1)].ordinal());
+        return key + ":" + l + ":" + (c == null ? "-" : c.toString()) + ":" + m;
+    }
+
+    /**
+     * lookups.tsv against the strategy files (B8): its columns every strategy file in path order,
+     * its first lines keys-sample.tsv's play lines in order, its later lines the first states'
+     * first deals and hit ranks worked out here from B8's words, and every cell what the file it
+     * names answers there. lookups.tsv is written from the engine's own fit (Lookup), so this ties
+     * the files the simulator plays to the answers the engine scored with, decision by decision.
+     */
+    static void lookups(Path file, ScoringStates st, PlayerMove[] chart, Map<String, ExportBundle.Strategy> byFile,
+                        Report r) throws IOException {
+        ExportBundle.Lookups lk = ExportBundle.readLookups(file);
+        r.require(Arrays.asList(lk.files).equals(new ArrayList<>(byFile.keySet())), "lookups.tsv's columns are "
+                + Arrays.toString(lk.files) + ", the strategy files " + byFile.keySet());
+        ExportBundle.Strategy[] f = byFile.values().toArray(new ExportBundle.Strategy[0]);
+        int[][][] classes = new int[f.length][][];
+        boolean[] aware = new boolean[f.length];
+        boolean full = false;
+        for (int c = 0; c < f.length; c++) {
+            classes[c] = ExportBundle.classes(f[c].tags);
+            aware[c] = ExportBundle.kindAware(f[c].tags);
+            full |= f[c].scope == ExportBundle.Scope.FULL;
+        }
+        Map<String, Integer> cellAt = new java.util.HashMap<>();
+        int[][] cells = ExportBundle.cells();
+        for (int c = 0; c < cells.length; c++) {
+            cellAt.put(cells[c][0] + " " + cells[c][1] + " " + cells[c][2], c);
+        }
+        List<int[]> want = new ArrayList<>();
+        List<int[]> sample = sample(st.size, lk.seed);
+        for (int[] l : sample) {
+            for (int k = 1; k < l.length; k++) {
+                want.add(new int[]{l[0], l[k], 0});
+            }
+        }
+        // B8's later lines from its words: the first 200 states of the sample, each one's first deal, every rank left.
+        for (int k = 0; full && k < Math.min(LATER_STATES, sample.size()); k++) {
+            int s = sample.get(k)[0];
+            int i = sample.get(k)[1];
+            int[] left = ShoeRun.ranksLeft(st.dealt[s]);
+            int[] three = {Deals.P1[i], Deals.P2[i], Deals.UP[i]};
+            boolean made = true;
+            for (int x : three) {
+                made &= --left[x] >= 0;
+            }
+            for (int h = 1; made && h <= 10; h++) {
+                if (left[h] > 0) {
+                    want.add(new int[]{s, i, h});
+                }
+            }
+        }
+        r.equal(lk.lines.size(), want.size(), "lookups.tsv's lines");
+        long compared = 0;
+        int laterLines = 0;
+        for (int n = 0; n < want.size(); n++) {
+            ExportBundle.LookupLine l = lk.lines.get(n);
+            int[] w = want.get(n);
+            int i = w[1];
+            String where = "lookups.tsv line " + (n + 4) + " (state " + w[0] + ", deal " + Deals.P1[i] + " " + Deals.P2[i]
+                    + " " + Deals.UP[i] + (w[2] > 0 ? ", hit " + w[2] : "") + ")";
+            r.require(l.state == w[0] && l.p1 == Deals.P1[i] && l.p2 == Deals.P2[i] && l.up == Deals.UP[i]
+                    && l.later == (w[2] > 0) && l.hit == w[2], where + " is due");
+            laterLines += w[2] > 0 ? 1 : 0;
+            for (int c = 0; c < f.length; c++) {
+                String expect = w[2] == 0 ? fileFirst(f[c], classes[c], aware[c], chart, st, w[0], i)
+                        : fileLater(f[c], classes[c], aware[c], chart, st, w[0], i, w[2], cellAt);
+                r.require(expect.equals(l.cells[c]), where + ", " + lk.files[c] + ": the engine's answer is "
+                        + l.cells[c] + ", the file's " + expect);
+                compared++;
+            }
+        }
+        r.lines.add("lookups.tsv: " + (want.size() - laterLines) + " first lines and " + laterLines + " later lines, "
+                + compared + " cells, each the engine's answer equal to its strategy file's");
+    }
+
     // ------------------------------------------------------------------ the export
 
     /** A row to export: an entry of a scored count, at the penetrations given (0, 1, 2 for 70, 75, 80%). */
@@ -1407,6 +1860,13 @@ final class StrategyExport {
      */
     static Report export(Path out, SystemScorer scorer, StateStore.Header h, List<Wanted> rows, String[] labels,
                          List<CountKeys.Count> keyCounts, long sampleSeed, PrintStream log) throws IOException {
+        return export(out, scorer, h, rows, null, labels, keyCounts, sampleSeed, log);
+    }
+
+    /** The same, with the chart's reference row at the penetrations it names when chartRow is given (B3, B5). */
+    static Report export(Path out, SystemScorer scorer, StateStore.Header h, List<Wanted> rows, ChartRow chartRow,
+                         String[] labels, List<CountKeys.Count> keyCounts, long sampleSeed, PrintStream log)
+            throws IOException {
         Path partial = out.resolveSibling(out.getFileName() + ".partial");
         if (Files.exists(out) || Files.exists(partial)) {
             throw new IllegalStateException(out + " or " + partial + " exists already; a bundle is written once");
@@ -1420,6 +1880,7 @@ final class StrategyExport {
         List<ExportBundle.Strategy> strategies = new ArrayList<>();
         List<ExportBundle.Section> sections = new ArrayList<>();
         List<Expect> expected = new ArrayList<>();
+        List<Lookup> lookups = new ArrayList<>();
         java.util.IdentityHashMap<SystemScorer.Result, Refit[]> refits = new java.util.IdentityHashMap<>();
         for (Wanted w : rows) {
             Refit[] byPen = refits.computeIfAbsent(w.result, k -> new Refit[SystemScorer.CUTS.length]);
@@ -1438,17 +1899,31 @@ final class StrategyExport {
                             java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE);
                     strategies.add(s);
                 }
+                lookups.addAll(Arrays.asList(b.lookup));
                 sections.add(b.section);
                 expected.add(Expect.of(w.entry, p));
                 log.printf("%s at %s: %d states, %.1f s%n", w.entry.name, SystemScorer.PENETRATIONS[p],
                         b.section.index.length, (System.nanoTime() - t0) / 1e9);
             }
         }
+        if (chartRow != null) {
+            for (int p : chartRow.pens) {
+                sections.add(chartSection(scorer.pen(p), p));
+                expected.add(Expect.of(chartRow.entry, p));
+            }
+        }
         writeStates(partial.resolve("states.bin"), h, st, sections);
         writeKeysSample(partial.resolve("keys-sample.tsv"), st, keyCounts, sampleSeed);
+        List<int[]> sample = sample(st.size, sampleSeed);
+        List<int[]> later = laterLines(st, sample);
+        List<LookupColumn> columns = new ArrayList<>();
+        for (Lookup l : lookups) {
+            columns.add(LookupColumn.of(l, st, sample, later));
+        }
+        writeLookups(partial.resolve("lookups.tsv"), st, sampleSeed, sample, later, columns);
         writeExact(partial.resolve("exact.tsv"), st, sections);
         long total = writeIndexAndManifest(partial, strategies);
-        log.printf("bundle: %d files, %d bytes (%.1f MB)%n", strategies.size() + 6, total, total / 1e6);
+        log.printf("bundle: %d files, %d bytes (%.1f MB)%n", strategies.size() + 7, total, total / 1e6);
         Report r = roundTrip(partial, st, h, expected, keyCounts);
         for (String l : r.lines) {
             log.println(l);
