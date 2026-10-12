@@ -2557,8 +2557,11 @@ final class FullIndexFit {
             }
         }
 
-        /** An item's name in the checkpoint: its count's place, penetration and part. */
-        private String key(int[] it) {
+        /**
+         * An item's name in the checkpoint: its count's place, penetration and part. A replay
+         * (FullIndexReplay) reads another run's parts by these names.
+         */
+        static String key(int[] it) {
             return "part-" + it[0] + "-" + it[1] + "-" + (it[2] == 0 ? "folds" : "halves");
         }
 

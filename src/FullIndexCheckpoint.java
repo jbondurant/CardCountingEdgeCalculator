@@ -31,11 +31,34 @@ final class FullIndexCheckpoint {
 
     final Path dir;
     final String identity;
+    /**
+     * Whether this is another run's directory, read and never written: the source of a replay
+     * (FullIndexReplay), whose fit.ckpt and part checkpoints are read under its own run.id and
+     * nothing else. Every write refuses, so no slip in the replay can change the run it reads.
+     */
+    final boolean readOnly;
     private boolean opened;
 
     FullIndexCheckpoint(Path dir, String identity) {
+        this(dir, identity, false);
+    }
+
+    private FullIndexCheckpoint(Path dir, String identity, boolean readOnly) {
         this.dir = dir;
         this.identity = identity;
+        this.readOnly = readOnly;
+    }
+
+    /**
+     * Another run's checkpoint directory, read only, under the identity its run.id holds: every
+     * file read must carry that identity, and nothing is ever written there.
+     */
+    static FullIndexCheckpoint source(Path dir) throws IOException {
+        Path id = dir.resolve("run.id");
+        if (!Files.isRegularFile(id)) {
+            throw new IllegalStateException(dir + " holds no run.id: it is not a run's checkpoint directory");
+        }
+        return new FullIndexCheckpoint(dir, new String(Files.readAllBytes(id), StandardCharsets.UTF_8), true);
     }
 
     /**
@@ -43,6 +66,7 @@ final class FullIndexCheckpoint {
      * written; for a resumed run, one holding a run of this identity. Once is enough.
      */
     void open(boolean resume) throws IOException {
+        refuseIfReadOnly();
         if (opened) {
             return;
         }
@@ -128,7 +152,29 @@ final class FullIndexCheckpoint {
         return (SystemScorer.Result) readObject(dir.resolve(key + ".ckpt"));
     }
 
+    /** Whether an item's file, key.ckpt, is there; nothing is read. */
+    boolean hasPart(String key) {
+        return Files.isRegularFile(dir.resolve(key + ".ckpt"));
+    }
+
+    /** Anything kept under key (key.ckpt), whole, as a part is: a replay keeps each item's record this way. */
+    void writeRecord(String key, java.io.Serializable o) throws IOException {
+        writeObject(dir.resolve(key + ".ckpt"), o);
+    }
+
+    /** What writeRecord kept under key, or null if nothing was. */
+    Object readRecord(String key) throws IOException, ClassNotFoundException {
+        return readObject(dir.resolve(key + ".ckpt"));
+    }
+
+    private void refuseIfReadOnly() {
+        if (readOnly) {
+            throw new IllegalStateException(dir + " is another run's checkpoint directory, read and never written");
+        }
+    }
+
     private void writeObject(Path file, Object o) throws IOException {
+        refuseIfReadOnly();
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try (FileOutputStream fo = new FileOutputStream(tmp.toFile());
              ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(fo, 1 << 20))) {
