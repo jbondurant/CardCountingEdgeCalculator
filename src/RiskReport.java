@@ -49,7 +49,8 @@ import java.util.TreeMap;
  * - the risk data file is at most 60 KB (PLAN_COMPUTE.md section 0).
  * A figure whose simulator test failed (|z| at least 3.5, SIM_CHECK.md section 7) is held back,
  * listed with its z, as SIM_CHECK.md section 13 says: its swings rest on rounds the check says
- * the simulator may not play as the engine does.
+ * the simulator may not play as the engine does. Nor are its fan or its records used; the report
+ * notes each thing left out.
  *
  * Reported, not gates: the bets' moments beside the scorer's (D4 of SIM_CHECK.md holds the bets
  * equal at every state already); sigma_eff / sigma; the split rounds' share of rounds and of
@@ -760,6 +761,8 @@ final class RiskReport {
         final List<String> failures = new ArrayList<>();
         /** What was checked and passed, a line each, for the report. */
         final List<String> passed = new ArrayList<>();
+        /** What was left out and why, a line each: a fan or a ruin check whose row is not computed. */
+        final List<String> notes = new ArrayList<>();
         final List<RuinCheck> ruin = new ArrayList<>();
         int[] range;
         String fanFigure;
@@ -834,7 +837,13 @@ final class RiskReport {
         }
         spreads(o);
         for (Map.Entry<String, RiskMath.Records> r : records.entrySet()) {
-            spec(r.getKey());
+            Row row = row(o, r.getKey());
+            // A held-back row's swings rest on rounds the simulator may not play as the engine
+            // does, so its records are not used either.
+            if (!row.computed()) {
+                o.notes.add("No ruin check for " + r.getKey() + ": the row is " + row.status + ".");
+                continue;
+            }
             o.ruin.add(ruinCheck(r.getKey(), r.getValue()));
         }
         if (fan != null) {
@@ -932,16 +941,22 @@ final class RiskReport {
         return c;
     }
 
-    /** The fan: every FAN_STEP rounds of the 20 paths, and the bands at the row's exact mu and sigma_eff. */
-    private static void fan(Outcome o, String figure, double[][] fan) {
-        Row row = null;
+    /** The row of a figure among the outcome's rows; a figure not among ROWS is refused. */
+    static Row row(Outcome o, String figure) {
+        spec(figure);
         for (Row r : o.rows) {
             if (r.spec.figure.equals(figure)) {
-                row = r;
+                return r;
             }
         }
-        if (row == null || !row.computed()) {
-            o.failures.add("the fan's figure " + figure + " has no computed row to draw its bands from");
+        throw new IllegalStateException(figure);
+    }
+
+    /** The fan: every FAN_STEP rounds of the 20 paths, and the bands at the row's exact mu and sigma_eff. */
+    private static void fan(Outcome o, String figure, double[][] fan) {
+        Row row = row(o, figure);
+        if (!row.computed()) {
+            o.notes.add("No fan: its row, " + figure + ", is " + row.status + ".");
             return;
         }
         int every = FAN_STEP / 100;
@@ -1142,6 +1157,8 @@ final class RiskReport {
             if (c.paths == null) {
                 out.println("The records lose, so no path stops: no ruin paths.");
             } else {
+                out.printf("At B_5%% = %.0f units the exponential gives %.6f and George C.'s form %.6f.%n%n", c.bankrolls[1],
+                        RiskMath.ruin(c.mu, c.sigma, c.bankrolls[1]), RiskMath.ruinGeorgeC(c.mu, c.sigma, c.bankrolls[1]));
                 out.println("| Bankroll | Formula RoR | Simulated | SE | Gap / SE |");
                 out.println("|---|---|---|---|---|");
                 for (int k = 0; k < c.bankrolls.length; k++) {
@@ -1181,6 +1198,9 @@ final class RiskReport {
         }
         for (String f : o.failures) {
             out.println("- FAILED: " + f);
+        }
+        for (String n : o.notes) {
+            out.println("- " + n);
         }
     }
 

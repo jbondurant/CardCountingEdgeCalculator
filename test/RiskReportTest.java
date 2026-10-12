@@ -19,6 +19,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * formulas at the engine's mu and the simulator's sigma_eff, with mu's resamples widened as the
  * pilot says; every check refuses what it must, and then writes nothing; a failed simulator test
  * holds its row back; the rows are SIM_CHECK.md's; the data file keeps to its budget.
+ *
+ * Bugs planted in a scratch copy of RiskReport on 12 October, each run against this class and
+ * each caught: sigma in place of sigma_eff in the figures (N0 fails); full-play resamples not
+ * widened (N0's lower end fails); the rules' range not checked; a failed simulator test not
+ * holding its row back; engine files not checked to pair; the pilot's gain rows read as
+ * difference rows (8 tests fail); the histogram's win a round not held to the shoe sums'; the
+ * SD an hour as sigma_eff r. One was not caught by the run's test alone: the percentiles of mu
+ * taken first and then transformed, which the data file's five digits hide (N0's lower end moved
+ * by 1.1e-7 of itself); everyFigureIsTheFormulaOnEachResampleThenItsPercentiles was added for
+ * it, and catches it.
  */
 public class RiskReportTest {
 
@@ -398,6 +408,23 @@ public class RiskReportTest {
         assertTrue(md.contains("not tested"));
     }
 
+    /** A held-back figure draws no fan and gives no ruin check, and the run says so rather than failing. */
+    @Test
+    void aHeldBackFigureHasNoFanAndNoRuinCheck() throws Exception {
+        Inputs in = new Inputs();
+        Map<String, Double> z = new HashMap<>();
+        z.put("F27", -3.5);
+        in.swings = RiskFixture.swings(computable(), 2000, z);
+        in.run();
+        Document json = Document.parse(new String(Files.readAllBytes(in.json()), StandardCharsets.UTF_8));
+        assertTrue(row(json, "F27").getString("status").startsWith("held back: its P3 test gave z = -3.50"));
+        assertNull(json.get("fan"));
+        assertTrue(json.getList("ruin", Object.class).isEmpty());
+        String md = new String(Files.readAllBytes(in.md()), StandardCharsets.UTF_8);
+        assertTrue(md.contains("No fan: its row, F27, is held back"));
+        assertTrue(md.contains("No ruin check for F27"));
+    }
+
     // ------------------------------------------------------------------ the pilot's ratios
 
     /** Only the Results section's difference tables: not the earlier tables, not the gains. */
@@ -410,5 +437,46 @@ public class RiskReportTest {
         assertEquals(1.06, r.get("flat").get(RiskReport.KO), 0);
         assertFalse(r.get("1-8 same schedule").containsKey(RiskReport.HI_LO), "a gain row was read as a difference");
         assertThrows(IllegalArgumentException.class, () -> RiskReport.levelRatios(List.of("# nothing", "## Results")));
+    }
+
+    // ------------------------------------------------------------------ the figures, unrounded
+
+    /**
+     * Figures of every kind against the formula taken on each resample and then its percentiles,
+     * to 1e-12. The data file's five digits would hide a percentile taken before the transform,
+     * which moves N0's lower end here by about 1e-7 of itself.
+     */
+    @Test
+    void everyFigureIsTheFormulaOnEachResampleThenItsPercentiles() {
+        double est = 0.0036;
+        double[] boot = RiskFixture.boot(est, 0.00018, 5);
+        RiskReport.Mu mu = new RiskReport.Mu(est, boot, 1, "a test", 1.5, 4.6);
+        double se = 4.15;
+        double[][] f = RiskReport.figures(mu, se);
+        List<String> layout = RiskReport.LAYOUT;
+        assertEquals(layout.size(), f.length);
+        exactly(f[layout.indexOf("n0")], boot, est, x -> se * se / (x * x));
+        exactly(f[layout.indexOf("n0.hours.80")], boot, est, x -> se * se / (x * x) / 80);
+        exactly(f[layout.indexOf("bankroll.5%")], boot, est, x -> -Math.log(0.05) * se * se / (2 * x));
+        exactly(f[layout.indexOf("bankroll.1%.usd")], boot, est, x -> 25 * -Math.log(0.01) * se * se / (2 * x));
+        exactly(f[layout.indexOf("ror.1000")], boot, est, x -> Math.exp(-2 * x * 1000 / (se * se)));
+        exactly(f[layout.indexOf("behind.100h.80")], boot, est, x -> RiskMath.cdf(-x * Math.sqrt(8000) / se));
+        exactly(f[layout.indexOf("trip.500.10h.50")], boot, est, x -> RiskMath.tripRuin(x, se, 500, 500));
+        exactly(f[layout.indexOf("ev.hour.100.usd")], boot, est, x -> 25 * 100 * x);
+        double[] sd = f[layout.indexOf("sd.hour.50")];
+        assertEquals(se * Math.sqrt(50), sd[0], 1e-12);
+        assertTrue(Double.isNaN(sd[1]) && Double.isNaN(sd[2]), "an SD with sigma_eff held has no interval here");
+    }
+
+    private static void exactly(double[] fig, double[] boot, double est, java.util.function.DoubleUnaryOperator f) {
+        double[] v = new double[boot.length];
+        for (int r = 0; r < v.length; r++) {
+            v[r] = f.applyAsDouble(boot[r]);
+        }
+        Arrays.sort(v);
+        double[] expected = {f.applyAsDouble(est), Bootstrap.quantile(v, 0.025), Bootstrap.quantile(v, 0.975)};
+        for (int k = 0; k < 3; k++) {
+            assertEquals(expected[k], fig[k], 1e-12 * Math.abs(expected[k]), "part " + k);
+        }
     }
 }

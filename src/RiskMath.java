@@ -16,13 +16,15 @@ import java.util.function.DoubleUnaryOperator;
  * The formulas, and what each assumes.
  * - Risk of ruin, playing for ever with a fixed unit: RoR(B) = exp(-2 mu B / sigma^2). This is the
  *   chance that a Brownian motion with drift mu and variance sigma^2 a round, started at B, ever
- *   reaches 0 (the first-passage result for drifted Brownian motion; Feller, An Introduction to
- *   Probability Theory and Its Applications, vol. 2, and the form Schlesinger's Blackjack Attack
- *   uses). It assumes increments independent with a fixed mean and variance, no end to play,
+ *   reaches 0: the standard first-passage result for Brownian motion with drift, which follows
+ *   from the reflection principle (the trip risk below tends to it as T grows, and RiskMathTest
+ *   holds it to that limit and to simulated play). The blackjack literature's form of it, with
+ *   its page in Blackjack Attack, is for the literature stage to quote; nothing here cites that
+ *   book as checked. It assumes increments independent with a fixed mean and variance, no end to play,
  *   steps small next to B, and the unit never resized. For mu at most 0 ruin is certain.
  * - The bankroll for a risk p: B_p = -ln(p) sigma^2 / (2 mu), the inverse of the above.
- * - George C.'s form, ((1 - mu/sigma) / (1 + mu/sigma))^(B/sigma), the ruin chance of a walk of
- *   steps +sigma and -sigma with mean mu. It agrees with the exponential to many digits when
+ * - George C.'s form, ((1 - mu/sigma) / (1 + mu/sigma))^(B/sigma), the classical gambler's ruin
+ *   (Feller, vol. 1, XIV.2) for a walk of steps +sigma and -sigma with mean mu. It agrees with the exponential to many digits when
  *   mu/sigma is small (here about 0.0015), and is kept only to show that.
  * - Trip risk, losing B within T rounds: P = Phi((-B - mu T)/(sigma sqrt T))
  *   + exp(-2 mu B / sigma^2) Phi((-B + mu T)/(sigma sqrt T)), the first-passage probability of
