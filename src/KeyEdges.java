@@ -1224,6 +1224,10 @@ final class KeyEdges {
         return e;
     }
 
+    /** How a held share of rounds was made, and why it needs no widening. */
+    static final String SHARE_HELD = "held, not widened: a share of rounds moves with the weights alone, which a refit "
+            + "of the plays does not change";
+
     /** How a full-play figure refitted on each resample was made: its later plays are held. */
     static final String FULL_REFITTED = "refitted at first decisions, insurance and bets; later plays held fixed, "
             + "their fitting uncertainty not included";
@@ -1373,8 +1377,13 @@ final class KeyEdges {
                 int band = positionBand(e.axis.hiLoPosition(e.binKey(b)));
                 double r = band < 0 ? largestBand() : band(band);
                 set(e.edge[b], r, source);
-                set(e.share[b], r, source);
                 set(e.insurance[b], r, source);
+                // A share of rounds is not widened: it is the weight of the key's states over all,
+                // and a bet key does not depend on the play, so refitting the plays leaves every
+                // resample's share as it was (KeyEdgesTest checks this on refitted rows).
+                if (e.share[b].refit == null && e.share[b].held != null) {
+                    e.share[b].how = SHARE_HELD;
+                }
             }
             for (int k = 0; k < e.byShare.length; k++) {
                 set(e.byShare[k], byShare[k], source);

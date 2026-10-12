@@ -283,6 +283,12 @@ public class KeyEdgesTest {
                     for (int r = 0; r < resamples; r++) {
                         double want = e.boot[p][SystemScorer.FLAT][r];
                         assertEquals(want, ed.flat.refit[r], 1e-12 * Math.abs(want), e.name + " resample " + r);
+                        // A refit moves no share of rounds: the bet keys do not depend on the play,
+                        // so Widening leaves the held shares as they are.
+                        for (int b = 0; b < ed.share.length; b++) {
+                            double held = ed.share[b].held[r];
+                            assertEquals(held, ed.share[b].refit[r], 1e-12 * held, e.name + " bin " + b + " resample " + r);
+                        }
                     }
                     assertEquals("refitted", ed.flat.how);
                     assertEquals(resamples, ed.flat.held.length);
@@ -293,11 +299,6 @@ public class KeyEdgesTest {
         }
     }
 
-    /**
-     * Widening applies a band's ratio to the bins whose Hi-Lo-equivalent position is in it, never
-     * below 1, and leaves the chart and the perfect layers alone: a bin up to 0 under a ratio of
-     * 0.5 is not narrowed, a bin of +1 to +3 under 2 has its interval twice as wide about its mean.
-     */
     /** Synthetic figures with held resamples drawn at random about their estimates. */
     private static KeyEdges.Figure[] figures(Random rnd, int n, int resamples) {
         KeyEdges.Figure[] out = new KeyEdges.Figure[n];
@@ -327,7 +328,8 @@ public class KeyEdgesTest {
      * Widening applies a band's ratio to the bins whose Hi-Lo-equivalent position is in it, never
      * below 1, and leaves the chart and the perfect layers alone: keys -5 to 0 under a ratio of
      * 0.5 are not narrowed, +1 to +3 under 2 have intervals twice as wide about their mean, +4
-     * under 1.25 a quarter wider; full play says its later plays are held.
+     * under 1.25 a quarter wider; full play says its later plays are held. A share of rounds is
+     * never widened: a refit of the plays does not move it (refittedFiguresAreTheScorersResamples).
      */
     @Test
     public void widenAppliesEachBandsRatioAndNeverNarrows() {
@@ -348,7 +350,9 @@ public class KeyEdgesTest {
         for (int b = 0; b < 10; b++) {
             KeyEdges.Figure f = first.edge[b];
             assertEquals(want[b], f.widen, 0, "bin " + b);
-            assertEquals(want[b], full.share[b].widen, 0, "bin " + b);
+            assertEquals(want[b], full.insurance[b].widen, 0, "bin " + b);
+            assertEquals(1, first.share[b].widen, 0, "a share of rounds is never widened, bin " + b);
+            assertEquals(KeyEdges.SHARE_HELD, full.share[b].how);
             Bootstrap.Interval h = f.heldInterval();
             Bootstrap.Interval x = f.interval();
             assertEquals(f.widen * h.se, x.se, 1e-12, "bin " + b);
