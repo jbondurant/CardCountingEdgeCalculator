@@ -23,7 +23,9 @@ import java.util.List;
  * report (report-final), it also sets the stored rows once beside its printed figures
  * (checkPrinted): its headline section, printed again from the stored rows by ComparisonReport's
  * own code, must read as published, every estimate, SE, bias and interval and each penetration's
- * max-|t| multipliers, to the printed digit. On the main state file both checks are required; the
+ * max-|t| multipliers, to the printed digit. The stored perfect array must hold a value for every
+ * state of every penetration, or the run is refused (requireCompletePerfect), since the full-play
+ * bound row would otherwise be left out without a word. On the main state file both checks are required; the
  * counts must be the registration, committed as it stands, and the ledger clean (CustomCounts),
  * and the look is written to the ledger.
  *
@@ -249,10 +251,53 @@ final class CeilingReport {
         return c;
     }
 
+    /**
+     * Refuses a perfect array that cannot give the full-play bound row at every penetration
+     * (PLAN_COMPUTE.md 4.2): one missing, one of another length than the states, or one holding a
+     * NaN at any state of any penetration. SystemScorer.bounds leaves the full-play bound out,
+     * without a word, at a penetration where the array lacks a state, and FullIndexFit fills the
+     * array only for the states its run visits; until this check the report also dropped the row
+     * when the array was missing or the wrong length. A report without its full-play bound reads as
+     * complete and is not, so each case stops the run here, naming how many states of each
+     * penetration lack a value. The way on is a complete array: the replay of c06c061
+     * (PLAN_COMPUTE.md 6.1) works out every state's value again. source names the array in the
+     * message.
+     */
+    static void requireCompletePerfect(double[] perfect, SystemScorer scorer, String source) {
+        int size = scorer.st.size;
+        if (perfect == null) {
+            throw new IllegalStateException(source + " holds no perfect array, so the full-play bound row cannot be "
+                    + "scored; a report without it is refused (PLAN_COMPUTE.md 4.2)");
+        }
+        if (perfect.length != size) {
+            throw new IllegalStateException(source + "'s perfect array holds " + perfect.length + " values, not one for "
+                    + "each of the " + size + " states (PLAN_COMPUTE.md 4.2)");
+        }
+        List<String> missing = new ArrayList<>();
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            int[] states = scorer.pen(p).states;
+            int nan = 0;
+            for (int s : states) {
+                if (Double.isNaN(perfect[s])) {
+                    nan++;
+                }
+            }
+            if (nan > 0) {
+                missing.add(SystemScorer.PENETRATIONS[p] + ": " + nan + " of " + states.length + " states");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(source + "'s perfect array lacks a value at " + String.join("; ", missing)
+                    + ". The full-play bound row would be left out there without a word, so the run stops; the "
+                    + "replay of c06c061 (PLAN_COMPUTE.md 6.1) works out every state's value again (4.2)");
+        }
+    }
+
     /** The checks that the stored rows pair with this run and this code, which refuse to go on if not. */
     static Ceiling check(Path states, ScoringStates st, SystemScorer scorer, Published p, CustomCounts.Listing counts,
                          int threads) throws Exception {
         requirePaired(p, states, st, scorer.boot.resamples);
+        requireCompletePerfect(p.perfect, scorer, "the stored rows");
         Ceiling c = new Ceiling();
         c.published = p;
         c.st = st;
@@ -292,7 +337,8 @@ final class CeilingReport {
         } finally {
             scorer.ownValueRows = false;
         }
-        c.bounds = scorer.bounds(p.perfect != null && p.perfect.length == st.size ? p.perfect : null);
+        // check has refused an array that lacks any state, so the full-play bound is scored at every penetration.
+        c.bounds = scorer.bounds(p.perfect);
         List<CountKeys.Count> refit = new ArrayList<>();
         for (CustomCounts.Entry e : counts.entries) {
             if ("headline".equals(e.role)) {
