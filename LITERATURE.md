@@ -107,6 +107,9 @@ conditions match.
 ## The third round (12 October): the check run by committed code
 
 An AI agent (Claude Code) fetched every web source again on 12 October 2026,
+with curl, so the cached bytes are the page itself and their hash means
+something (WebFetch returns a model's reading of a page, not its bytes; it was
+used as a second path for two figures),
 read the figures used, recorded each cached copy's SHA-256 in `claims.json`,
 and ran `LiteratureCheck` single-threaded on the cached copies (14 s), without
 R (section 1 (d)): step 7's save was not read, so every BC/R waits. The report
