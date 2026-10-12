@@ -877,9 +877,11 @@ final class CeilingResults {
         int s8 = SystemScorer.same(SystemScorer.SPREADS);
         int f1 = c.counts.indexOf(c.counts.cells.get("same").get(0));
         SystemScorer.Result f1Full = f.run.results.get(f.counts.indexOf(f.counts.cells.get("same").get(0)));
-        Bootstrap.Interval[][] splits = {gapSplit(CeilingReport.row(c.custom.get(f1)), ownValue(c.custom.get(f1)),
-                c.bounds.get(0), p, s8, 1), fullOwnValue(f1Full) == null ? null : gapSplit(fullRow(f1Full),
-                fullOwnValue(f1Full), f.bounds.get(2), p, s8, DIFFERENCE)};
+        SystemScorer.Entry own = ownValue(c.custom.get(f1));
+        SystemScorer.Entry ownFull = fullOwnValue(f1Full);
+        Bootstrap.Interval[][] splits = {own == null ? null : gapSplit(CeilingReport.row(c.custom.get(f1)), own,
+                c.bounds.get(0), p, s8, 1), ownFull == null ? null : gapSplit(fullRow(f1Full), ownFull, f.bounds.get(2),
+                p, s8, DIFFERENCE)};
         for (int k = 0; k < 2; k++) {
             if (splits[k] != null) {
                 out.printf("| %s | %s %s | %s %s | %s %s |%n", k == 0 ? "First decisions" : "Full play",

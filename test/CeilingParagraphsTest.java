@@ -90,18 +90,20 @@ public class CeilingParagraphsTest {
     }
 
     /**
-     * An entry at level v in every cell at 80%, its resamples v plus the shared luck plus its own
+     * An entry at level v in every cell at every penetration, its resamples v plus the shared luck plus its own
      * noise, +a on even resamples and -a on odd: so its difference from a row of no noise has the
      * 95% interval [d - a, d + a] exactly.
      */
     static SystemScorer.Entry entry(String name, CountKeys.Count count, boolean bettingOnly, double v, double a) {
         SystemScorer.Entry e = new SystemScorer.Entry(name, count, bettingOnly);
-        e.estimate[P] = new double[SystemScorer.METRICS];
-        e.boot[P] = new double[SystemScorer.METRICS][R];
-        Arrays.fill(e.estimate[P], v);
-        for (int m = 0; m < SystemScorer.METRICS; m++) {
-            for (int r = 0; r < R; r++) {
-                e.boot[P][m][r] = v + shared(r) + (r % 2 == 0 ? a : -a);
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            e.estimate[p] = new double[SystemScorer.METRICS];
+            e.boot[p] = new double[SystemScorer.METRICS][R];
+            Arrays.fill(e.estimate[p], v);
+            for (int m = 0; m < SystemScorer.METRICS; m++) {
+                for (int r = 0; r < R; r++) {
+                    e.boot[p][m][r] = v + shared(r) + (r % 2 == 0 ? a : -a);
+                }
             }
         }
         return e;

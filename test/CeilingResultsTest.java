@@ -32,7 +32,8 @@ public class CeilingResultsTest {
             + "\"tags\": [-10000, 10000, 10000, 10000, 10000, 10000, 0, 0, 0, -10000] },\n"
             + "{ \"name\": \"F2\", \"family\": \"F2\", \"role\": \"headline\", \"form\": \"true\", \"divisor\": 500, "
             + "\"tags\": [-10000, 10000, 10000, 10000, 10000, 10000, 0, 0, 0, -10000], \"betting\": [-20000, 10000, "
-            + "10000, 20000, 20000, 10000, 10000, 0, 0, -20000] } ] }";
+            + "10000, 20000, 20000, 10000, 10000, 0, 0, -20000] },\n"
+            + "{ \"name\": \"Hi-Lo = Hi-Lo Lite\", \"role\": \"check\", \"catalog\": \"Hi-Lo\" } ] }";
 
     /** Full-play levels: each published row's first-decision level plus this; F1, F2's betting row and F2's play vector. */
     static final double FULL_GAIN = 0.0008;
@@ -50,8 +51,10 @@ public class CeilingResultsTest {
     }
 
     static void copy(SystemScorer.Entry from, SystemScorer.Entry to) {
-        to.estimate[P] = from.estimate[P];
-        to.boot[P] = from.boot[P];
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            to.estimate[p] = from.estimate[p];
+            to.boot[p] = from.boot[p];
+        }
     }
 
     /** The first-decision fixture of CeilingParagraphsTest, each published row given a full-play entry. */
@@ -89,6 +92,10 @@ public class CeilingResultsTest {
         run.results = new ArrayList<>();
         for (CustomCounts.Entry e : counts.entries) {
             CountKeys.Count x = e.count;
+            if (!x.systems.isEmpty()) {
+                run.results.add(c.published.of(x.systems.get(0)));
+                continue;
+            }
             SystemScorer.Result r = new SystemScorer.Result(x);
             r.entries.add(CeilingParagraphsTest.entry(x.name, x, false, 0.0036, 0));
             r.entries.add(CeilingParagraphsTest.entry(x.name + ", betting only", x, true, 0.0020, 0));
@@ -263,7 +270,7 @@ public class CeilingResultsTest {
         rows.add(f.run.results.get(1).fullEntries.get(0));
         List<String> over = CeilingResults.aboveFullBound(rows, f.bounds.get(2), margin);
         assertFalse(over.isEmpty());
-        assertTrue(over.get(0).startsWith("F2, full play at 80%"), over.toString());
+        assertTrue(over.contains("F2, full play at 80%, 1-8"), over.toString());
         assertEquals(over, CeilingResults.aboveB(rows.subList(2, 3), f.bounds.get(2)));
     }
 
@@ -351,5 +358,137 @@ public class CeilingResultsTest {
         IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingResults.checkPeek(c.published,
                 file));
         assertTrue(e.getMessage().contains("Zen Count: printed +0.3600, +0.4401"), e.getMessage());
+    }
+
+    /** A results.ser as FullIndexRun writes one: identity, Results, the perfect array, the rounds. */
+    static Path published(Path file, CeilingReport.Published p) throws Exception {
+        try (java.io.ObjectOutputStream o = new java.io.ObjectOutputStream(Files.newOutputStream(file))) {
+            o.writeUTF(p.identity);
+            o.writeObject(new ArrayList<>(p.results));
+            o.writeObject(p.perfect);
+            o.writeObject(new ArrayList<>());
+        }
+        return file;
+    }
+
+    /** A save as CeilingReport.save writes one, of the fixture's first-decision context, beside stored rows of c06c061. */
+    static Path saved(Path file, CeilingReport.Ceiling c) throws Exception {
+        try (java.io.ObjectOutputStream o = new java.io.ObjectOutputStream(Files.newOutputStream(file))) {
+            o.writeUTF("CeilingReport\ncommit test\nstates /x.states\ncounts " + c.counts.file + "\nresamples 40, seed "
+                    + Bootstrap.SEED + "\nstored rows of c06c061");
+            o.writeObject(new ArrayList<>(c.custom));
+            o.writeObject(new ArrayList<>(c.bounds));
+            o.writeObject(new ArrayList<SystemScorer.Entry>());
+            o.writeObject(new ArrayList<>(Arrays.asList("Hi-Lo")));
+            o.writeDouble(0.9886);
+            o.writeObject(new ArrayList<SystemScorer.Entry>());
+            java.util.LinkedHashMap<String, double[]> corr = new java.util.LinkedHashMap<>();
+            corr.put("F1", new double[]{0.981, 0.88});
+            o.writeObject(corr);
+        }
+        return file;
+    }
+
+    /**
+     * The modes end to end on fixture files: full writes the full-play report; data, given that
+     * report, checks it, and writes the data file with every source's SHA-256, the twelve views, the
+     * claims at both scopes, and each cell's paragraph picked and filled, or pending where the
+     * optimism run's figure is missing. A full report changed by one figure is refused, as is an
+     * output file that exists.
+     */
+    @Test
+    public void fullAndDataEndToEnd(@TempDir Path dir) throws Exception {
+        CeilingReport.Ceiling c = withFullPlay(dir);
+        CeilingResults.Full f = fullContext(dir, c);
+        // F2's play vector alone under B here, so no row stops the report (check 5 is tested above).
+        SystemScorer.Result f2 = f.run.results.get(1);
+        f2.fullEntries.set(0, full("F2, full play", f2.count, 0.0046, 0));
+        c.published.perfect = new double[]{0.1, -0.2, 0.3};
+        f.run.perfect = c.published.perfect.clone();
+        Path stored = published(dir.resolve("stored.ser"), c.published);
+        Path run = published(dir.resolve("run.ser"), f.run);
+        Path save = saved(dir.resolve("ceiling.ser"), c);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream ps = new PrintStream(bytes, true, "UTF-8");
+        CeilingReport.printLadder(c, ps);
+        CeilingReport.printClaims(c, ps);
+        Path report = Files.write(dir.resolve("report.md"), bytes.toByteArray());
+        StringBuilder peek = new StringBuilder("| Count | First decisions | Full play | Gain | its held SE |\n|---|\n");
+        for (SystemScorer.Result r : c.published.results) {
+            peek.append(String.format(java.util.Locale.ROOT, "| %s | %+.4f | %+.4f | 0 | 0 |%n", r.count.systems.isEmpty()
+                    ? "Null count (no count)" : r.count.name, 100 * r.entries.get(0).estimate[P][S8],
+                    100 * r.fullEntries.get(0).estimate[P][S8]));
+        }
+        Path peekFile = Files.write(dir.resolve("peek.txt"), peek.toString().getBytes(StandardCharsets.UTF_8));
+        Path split = dir.resolve("split.tsv");
+        SplitMargin.writeOut(split, "fixture", SplitMarginTest.rows(30, 1));
+        Path paragraphs = Files.write(dir.resolve(CeilingParagraphs.FILE), CeilingParagraphsTest.committed());
+        String[] common = {"--stored", stored.toString(), "--saved", save.toString(), "--report", report.toString(),
+                "--counts", c.counts.file.toString(), "--fullplay-run", run.toString(), "--fullplay-counts",
+                f.counts.file.toString(), "--peek", peekFile.toString(), "--split-margin", split.toString()};
+        PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        Path full = dir.resolve("full.md");
+        CeilingResults.run(with(common, "full", "--out", full.toString()), "test", nowhere);
+        String text = new String(Files.readAllBytes(full), StandardCharsets.UTF_8);
+        for (String s : new String[]{"## The ladder at full play, 1-8 same schedule", "## Headline claims at full play",
+                "- F2 + betting vector, full play at 80%, 1-8: gain", "B + M: ", "## Where F1's gap to the bound goes",
+                "(applies to first-decision play only)", "No full-play row is above B + S x mean(delta)"}) {
+            assertTrue(text.contains(s), s + "\n" + text);
+        }
+        Path data = dir.resolve("ceiling.json");
+        CeilingResults.run(with(common, "data", "--paragraphs", paragraphs.toString(), "--full-report", full.toString(),
+                "--out", data.toString()), "test", nowhere);
+        assertTrue(Files.size(data) < 60_000, Files.size(data) + " bytes, over the page's budget");
+        org.bson.Document d = org.bson.Document.parse(new String(Files.readAllBytes(data), StandardCharsets.UTF_8));
+        assertEquals("test", d.getString("commit"));
+        org.bson.Document sources = (org.bson.Document) d.get("sources");
+        assertEquals(CeilingResults.sha256(save), ((org.bson.Document) sources.get("saved")).getString("sha256"));
+        assertTrue(sources.containsKey("full-report") && sources.containsKey("paragraphs"));
+        org.bson.Document ladder = (org.bson.Document) d.get("ladder");
+        assertEquals(12, ladder.size());
+        List<?> fd80 = (List<?>) ladder.get("fd.80.s8");
+        assertEquals("bound-first", ((org.bson.Document) fd80.get(fd80.size() - 1)).getString("role"));
+        org.bson.Document claims = (org.bson.Document) d.get("claims");
+        assertTrue(claims.containsKey("fd.80.same.F2") && claims.containsKey("full.80.same.F2")
+                && claims.containsKey("fd.80.flat.F1 flat") && claims.containsKey("full.70.flat.F1"), claims.keySet()
+                .toString());
+        assertEquals(CeilingResults.fullClaim(f, 1, P, S8).gain, ((org.bson.Document) claims.get("full.80.same.F2"))
+                .getDouble("gain"), 0);
+        org.bson.Document same = (org.bson.Document) ((org.bson.Document) d.get("paragraphs")).get("same");
+        assertEquals(String.valueOf(CeilingParagraphs.choose(c, "same", P).paragraph), same.getString("letter"));
+        assertEquals("C", same.getString("letter"), "F1 ties Zen and F2 is under Hi-Opt II with its ace side count");
+        assertNull(same.getString("text"), "C needs the optimism run's twin gain");
+        assertTrue(same.getString("pending").contains("TWIN_GAIN"), same.getString("pending"));
+        Path optimism = Files.write(dir.resolve("optimism.properties"), "twinGain.F2.80.s8=0.0001\n".getBytes(
+                StandardCharsets.UTF_8));
+        Path data2 = dir.resolve("ceiling-2.json");
+        CeilingResults.run(with(common, "data", "--paragraphs", paragraphs.toString(), "--optimism",
+                optimism.toString(), "--out", data2.toString()), "test", nowhere);
+        org.bson.Document filled = (org.bson.Document) ((org.bson.Document) org.bson.Document.parse(new String(
+                Files.readAllBytes(data2), StandardCharsets.UTF_8)).get("paragraphs")).get("same");
+        assertTrue(filled.getString("text").contains("its best, F2, scores +0.390% a round against +0.400% for Hi-Opt "
+                + "II + ace side count. The gain it found on the shoes it was tuned on, +0.010%,"), filled.getString("text"));
+        org.bson.Document flat = (org.bson.Document) ((org.bson.Document) d.get("paragraphs")).get("flat");
+        assertEquals("C", flat.getString("letter"));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingResults.run(with(common, "data",
+                "--paragraphs", paragraphs.toString(), "--full-report", full.toString(), "--out", data.toString()),
+                "test", nowhere));
+        assertTrue(e.getMessage().contains("exists"), e.getMessage());
+        String line = text.lines().filter(l -> l.startsWith("- F1, full play at 80%, 1-8: gain")).findFirst().orElse("");
+        Path changed = Files.write(dir.resolve("full-changed.md"), text.replace(line, line.replace("gain ", "gain +"))
+                .getBytes(StandardCharsets.UTF_8));
+        e = assertThrows(IllegalStateException.class, () -> CeilingResults.run(with(common, "data", "--paragraphs",
+                paragraphs.toString(), "--full-report", changed.toString(), "--out", dir.resolve("d2.json").toString()),
+                "test", nowhere));
+        assertTrue(e.getMessage().contains("full-play ladder and claims"), e.getMessage());
+    }
+
+    private static String[] with(String[] common, String mode, String... more) {
+        List<String> out = new ArrayList<>();
+        out.add(mode);
+        out.addAll(Arrays.asList(common));
+        out.addAll(Arrays.asList(more));
+        return out.toArray(new String[0]);
     }
 }
