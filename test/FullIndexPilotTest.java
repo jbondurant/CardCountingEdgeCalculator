@@ -104,4 +104,66 @@ public class FullIndexPilotTest {
             }
         }
     }
+
+    /**
+     * With --wide the pilot measures, at P16, S16, B0,8 and X-1.0,8, what the full run's bootstrap
+     * scores (PLAN_COMPUTE.md 3.4): its first-decision and held figures are the wide figures
+     * SystemScorer.score gives, estimate and resamples, within 1e-12; its P8 passed the check
+     * against the 1-8 same schedule on every scoring; and the ratios it prints are the ones
+     * readRatios reads back, for the wide plans as for the 1-8 schedule and flat.
+     */
+    @Test
+    public void withTheWidePlansThePilotMeasuresWhatTheFullRunScores() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        SystemScorer sc = new SystemScorer(fx.st, new Bootstrap(fx.st.shoes, RESAMPLES, 1), 1);
+        sc.wide = FullIndexPilot.widePlans();
+        sc.roundStarts = WidePlansTest.valuedOnly(fx.st);
+        List<CountKeys.Count> counts = Arrays.asList(FullIndexFitTest.HI_LO, FullIndexFitTest.RED_SEVEN);
+        FullIndexPilot pilot = new FullIndexPilot(sc, counts, fx.trees, true, THREADS, RESAMPLES);
+        pilot.refitOn(fx.trees);
+        for (int r = 0; r < RESAMPLES; r++) {
+            pilot.resample(r);
+        }
+        assertEquals(FullIndexPilot.METRICS.length + FullIndexPilot.WIDE_MEASURED.length, pilot.metrics.length);
+        for (int c = 0; c < counts.size(); c++) {
+            SystemScorer.Result res = sc.score(counts.get(c), null, pilot.estimate.get(c));
+            for (int k = 0; k < FullIndexPilot.WIDE_MEASURED.length; k++) {
+                String plan = FullIndexPilot.WIDE_MEASURED[k][0];
+                int m = FullIndexPilot.WIDE_MEASURED[k][1].equals("same") ? SystemScorer.W_SAME : SystemScorer.W_OWN;
+                int slot = FullIndexPilot.METRICS.length + k;
+                SystemScorer.Entry full = res.fullEntries.get(0);
+                SystemScorer.Entry first = res.entries.get(0);
+                assertEquals(full.wide(PEN, plan, m), pilot.point[FullIndexPilot.HELD][c][slot], 1e-12, plan);
+                assertEquals(first.wide(PEN, plan, m), pilot.point[FullIndexPilot.FIRST][c][slot], 1e-12, plan);
+                for (int r = 0; r < RESAMPLES; r++) {
+                    assertEquals(full.wideBoot(PEN, plan, m)[r], pilot.boot[FullIndexPilot.HELD][c][slot][r], 1e-12,
+                            plan + " resample " + r);
+                    assertEquals(first.wideBoot(PEN, plan, m)[r], pilot.boot[FullIndexPilot.FIRST][c][slot][r], 1e-12,
+                            plan + " resample " + r);
+                }
+            }
+        }
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream out = new java.io.PrintStream(bytes, true, "UTF-8");
+        pilot.printSes(out);
+        out.println("## Results");
+        pilot.printSes(out);
+        Map<String, Map<String, double[]>> read = FullIndexPilot.readRatios(Arrays.asList(bytes.toString("UTF-8").split("\n")));
+        assertEquals(Arrays.asList(pilot.metricNames), new ArrayList<>(read.keySet()));
+        for (int k = 0; k < pilot.metrics.length; k++) {
+            for (int c = 0; c < counts.size(); c++) {
+                double[] got = read.get(pilot.metricNames[k]).get(counts.get(c).name);
+                double gain = FullIndexPilot.ratio(pilot.differences(FullIndexPilot.REFIT, c, k, true),
+                        pilot.differences(FullIndexPilot.HELD, c, k, true))[0];
+                assertEquals(gain, got[2], 0.005, pilot.metricNames[k] + " " + counts.get(c));
+                if (c == 0) {
+                    assertTrue(Double.isNaN(got[0]), "no difference of Hi-Lo from itself");
+                } else {
+                    double diff = FullIndexPilot.ratio(pilot.differences(FullIndexPilot.REFIT, c, k, false),
+                            pilot.differences(FullIndexPilot.HELD, c, k, false))[0];
+                    assertEquals(diff, got[0], 0.005, pilot.metricNames[k] + " " + counts.get(c));
+                }
+            }
+        }
+    }
 }

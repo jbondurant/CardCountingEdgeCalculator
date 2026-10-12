@@ -33,6 +33,10 @@ import java.util.List;
  * The ordering comes from the training fold alone; the bet sizes the schedule hands out are
  * the test fold's own distribution, which no count's outcomes enter.
  *
+ * Asked for (wide), the wider plans of PLAN_COMPUTE.md section 3 are scored beside all of this
+ * the same two ways, with spreads to 1-20, a finer unit and sitting out (Plan, Wide), from the
+ * same fitted advantage and blocks, after every existing sum is made, so no existing figure moves.
+ *
  * Each count is scored two or four ways from one fit: as itself; betting only, with the
  * chart playing and the count setting insurance and bets; and, for the ace-neutral systems,
  * with the ace side count moving the bet key, itself and betting only.
@@ -110,6 +114,18 @@ final class SystemScorer {
      * (Entry.ownValue). Off unless asked for, so a published count's Result is as it was.
      */
     boolean ownValueRows;
+    /**
+     * The wider bet plans (PLAN_COMPUTE.md section 3) scored beside every existing figure, or
+     * null for none, as every run before them scored. Their sums are taken apart from the
+     * existing ones and touch none of them, so an entry's estimate, resamples, per-shoe sums and
+     * key table are the same to the bit with them on or off (CeilingScoringTest).
+     */
+    Plan[] wide;
+    /**
+     * Each state's shoe dealt again, for the plans that leave the table (Plan.exit): where the
+     * lowest bet key of the shoe so far comes from. Needed only when a plan in wide has an exit.
+     */
+    RoundStarts roundStarts;
 
     SystemScorer(ScoringStates st, Bootstrap boot, double mPlay) {
         if (boot.shoes != st.shoes) {
@@ -135,6 +151,17 @@ final class SystemScorer {
         final double[] chart;
         /** Sum of 1/q over each shoe's states in the penetration. */
         final double[] shoeWeight;
+        private Plan[] planBetsFor;
+        private double[][] planBets;
+
+        /** The plans' reference bets on these states' chart advantages (referenceBets), worked out once per plans. */
+        synchronized double[][] planBets(Plan[] plans) {
+            if (planBetsFor != plans) {
+                planBets = referenceBets(plans, chart);
+                planBetsFor = plans;
+            }
+            return planBets;
+        }
 
         Pen(ScoringStates st, int cut) {
             this.cut = cut;
@@ -1392,6 +1419,16 @@ final class SystemScorer {
      */
     static void bets(BetKeys bk, int[] train, int[] test, int[] testByChart, double[] w, double[] rv, double[] chart,
                      double[] sums, double[][] detail) {
+        bets(bk, train, test, testByChart, w, rv, chart, sums, detail, null);
+    }
+
+    /**
+     * The same, and given acc, the wide plans' figures added into it from the same fitted advantage
+     * and blocks (Wide.add), after every existing sum is made: with acc null this is the path every
+     * run before the wide plans took, line for line.
+     */
+    static void bets(BetKeys bk, int[] train, int[] test, int[] testByChart, double[] w, double[] rv, double[] chart,
+                     double[] sums, double[][] detail, Wide acc) {
         int keys = bk.value.length;
         double[] tw = new double[keys];
         double[] ts = new double[keys];
@@ -1476,6 +1513,9 @@ final class SystemScorer {
                 detail[k][2] = adv[k];
             }
         }
+        if (acc != null) {
+            acc.add(bk, adv, vw, vs, blockOf, blockWeight, blocks, test, testByChart, w, rv, weight);
+        }
     }
 
     static double clamp(double units, int spread) {
@@ -1532,6 +1572,12 @@ final class SystemScorer {
      */
     static void ownValueBets(int[] test, int[] byChart, double[] w, double[] order, double[] rv, double[] chart,
                              double[] sums) {
+        ownValueBets(test, byChart, w, order, rv, chart, sums, null);
+    }
+
+    /** The same, and given acc, the wide plans' same-schedule figures added into it from the same blocks (Wide.addBlocks). */
+    static void ownValueBets(int[] test, int[] byChart, double[] w, double[] order, double[] rv, double[] chart,
+                             double[] sums, Wide acc) {
         int present = 0;
         for (int j : test) {
             if (w[j] != 0) {
@@ -1568,6 +1614,9 @@ final class SystemScorer {
                 sums[same(s)] += bet * blockSum[b];
                 sums[sameBet(s)] += bet * blockWeight[b];
             }
+        }
+        if (acc != null) {
+            acc.addBlocks(blockWeight, blockSum, blocks, byChart, w);
         }
     }
 
@@ -1622,6 +1671,554 @@ final class SystemScorer {
         return out;
     }
 
+    // ------------------------------------------------------- wide plans (PLAN_COMPUTE.md section 3)
+
+    /**
+     * A bet plan wider than the spreads 1 to 8 (PLAN_COMPUTE.md 3.1). On a round whose advantage is
+     * a it bets g(a) = 0 when a < enter, else clamp(a / unit, 1, cap) units: a unit for each `unit`
+     * of advantage, never less than one or more than cap, and nothing below the entry threshold. A
+     * plan with an exit leaves the table for the rest of the shoe at the first round start whose
+     * advantage is below exit, and is back at the shuffle.
+     *
+     * Bets are handed out two ways, as at spreads 1 to 8 (PLAN_COMPUTE.md 3.2):
+     * - the same schedule (P, S and B plans): g of each test state's true chart advantage gives the
+     *   reference bets, and every count hands them out in order of its own fitted advantage. g never
+     *   decreases, so the hand-out is the one bets already makes, and in every fold and resample
+     *   every count places the same bets, at the same average, in the same share of rounds;
+     * - the own rule: each key bets g of its own fitted advantage. A plan with an exit has only
+     *   this: a reference for it would need the true advantage at every earlier round start of the
+     *   shoe, and only the valued states have one.
+     *
+     * P8 is the 1-8 same schedule and own ramp that same(8) and own(8) hold, and gives them to the
+     * bit (SystemScorerTest), which checks that the plans read the existing figures as they are.
+     */
+    static final class Plan implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
+        final String label;
+        /** The advantage a unit of bet stands for. */
+        final double unit;
+        final int cap;
+        /** A round whose advantage is below this is sat out; minus infinity for none. */
+        final double enter;
+        /** The table is left until the shuffle at the first round start below this; minus infinity for none. */
+        final double exit;
+
+        Plan(String label, double unit, int cap, double enter, double exit) {
+            if (!(unit > 0) || cap < 1 || Double.isNaN(enter) || Double.isNaN(exit)) {
+                throw new IllegalArgumentException(label + ": unit " + unit + ", cap " + cap + ", enter " + enter
+                        + ", exit " + exit);
+            }
+            if (enter != Double.NEGATIVE_INFINITY && exit != Double.NEGATIVE_INFINITY) {
+                throw new IllegalArgumentException(label + ": a plan sits out by entering or by leaving, not both");
+            }
+            this.label = label;
+            this.unit = unit;
+            this.cap = cap;
+            this.enter = enter;
+            this.exit = exit;
+        }
+
+        /**
+         * g(a), the bet on a round of advantage a, 0 when it is sat out. A round exactly at the
+         * entry threshold is played: the threshold is the least advantage the plan plays at.
+         */
+        double bet(double a) {
+            return a < enter ? 0 : clamp(a / unit, cap);
+        }
+
+        /** Whether its bets are also handed out as the same schedule, not only by the own rule. */
+        boolean sameSchedule() {
+            return exit == Double.NEGATIVE_INFINITY;
+        }
+
+        /** Whether it sits out some rounds, by entering at a threshold or by leaving. */
+        boolean wonging() {
+            return enter != Double.NEGATIVE_INFINITY || exit != Double.NEGATIVE_INFINITY;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    /**
+     * The 23 plans of PLAN_COMPUTE.md 3.1, in the order the report prints them: P8 to P20, S16 at
+     * one unit per 0.125%, the back-counting plans B (enter at -0.5, 0, +0.5 or +1.0% with a cap of
+     * 1, 8 or 16) and the plans that leave until the shuffle, X (exit at -1.0, -0.5 or 0% with a cap
+     * of 8 or 16). Labels are those of SHOE_SPEC.md B2.5, such as B0,8 and X-1.0,8.
+     */
+    static final Plan[] WIDE_PLANS = widePlans();
+
+    private static Plan[] widePlans() {
+        double none = Double.NEGATIVE_INFINITY;
+        List<Plan> out = new ArrayList<>();
+        for (int cap : new int[]{8, 12, 16, 20}) {
+            out.add(new Plan("P" + cap, UNIT, cap, none, none));
+        }
+        out.add(new Plan("S16", UNIT / 2, 16, none, none));
+        for (int cap : new int[]{1, 8, 16}) {
+            for (double tau : new double[]{-0.005, 0, 0.005, 0.01}) {
+                out.add(new Plan("B" + tauLabel(tau) + "," + cap, UNIT, cap, tau, none));
+            }
+        }
+        for (int cap : new int[]{8, 16}) {
+            for (double tau : new double[]{-0.01, -0.005, 0}) {
+                out.add(new Plan("X" + tauLabel(tau) + "," + cap, UNIT, cap, none, tau));
+            }
+        }
+        return out.toArray(new Plan[0]);
+    }
+
+    /** A threshold as a label shows it, in percent: 0, or signed with one decimal. */
+    static String tauLabel(double tau) {
+        return tau == 0 ? "0" : String.format(java.util.Locale.ROOT, "%+.1f", 100 * tau);
+    }
+
+    /** The plan of this label among those given; refused if there is none. */
+    static int planIndex(Plan[] plans, String label) {
+        for (int i = 0; i < plans.length; i++) {
+            if (plans[i].label.equals(label)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("no plan " + label);
+    }
+
+    // The figures kept for each plan, at wideAt(plan, m) of Entry.wide: each over the rounds watched,
+    // the rounds dealt whether played or not, a round sat out betting 0.
+    /** The same schedule's EV per round watched. */
+    static final int W_SAME = 0;
+    /** The same schedule's average bet per round watched: the same for every count. */
+    static final int W_SAME_BET = 1;
+    /** The share of rounds the same schedule plays: the same for every count. */
+    static final int W_SAME_SHARE = 2;
+    /** The mean square of the bets the same schedule places, per round watched (PLAN_COMPUTE.md 3.2). */
+    static final int W_SAME_BET2 = 3;
+    static final int W_OWN = 4;
+    static final int W_OWN_BET = 5;
+    static final int W_OWN_SHARE = 6;
+    static final int W_OWN_BET2 = 7;
+    static final int WIDE_METRICS = 8;
+    static final String[] WIDE_NAMES = {"same EV", "same average bet", "same share played", "same mean square bet",
+            "own EV", "own average bet", "own share played", "own mean square bet"};
+
+    static int wideAt(int plan, int m) {
+        return plan * WIDE_METRICS + m;
+    }
+
+    /**
+     * The figures kept on every resample (Entry.wideBoot), as wideAt indices: for each plan in
+     * order, the same schedule's EV where it has one, the own rule's EV and average bet, and for a
+     * plan that sits out the own rule's share played: 81 for WIDE_PLANS. The same schedule's average
+     * bet and share are the same for every count on every resample, so no difference needs them.
+     */
+    static int[] wideRows(Plan[] plans) {
+        List<Integer> rows = new ArrayList<>();
+        for (int i = 0; i < plans.length; i++) {
+            if (plans[i].sameSchedule()) {
+                rows.add(wideAt(i, W_SAME));
+            }
+            rows.add(wideAt(i, W_OWN));
+            rows.add(wideAt(i, W_OWN_BET));
+            if (plans[i].wonging()) {
+                rows.add(wideAt(i, W_OWN_SHARE));
+            }
+        }
+        return rows.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    // The columns of each plan in a row of Entry.wideKeys, at plan x KEY_COLS + c.
+    /** The same schedule's expected bet at the key: the bet when played times the share played. */
+    static final int K_SAME_BET = 0;
+    /** The share of the key's rounds the same schedule plays: 1, 0, or between on a block at the threshold. */
+    static final int K_SAME_PLAY = 1;
+    /** The own rule's bet at the key, while seated for a plan with an exit. */
+    static final int K_OWN_BET = 2;
+    static final int KEY_COLS = 3;
+
+    /**
+     * Where the lowest bet key of each state's shoe so far comes from, for the plans that leave
+     * the table: the shoes dealt again (AllStates.roundStarts), or in a test any other source.
+     */
+    interface RoundStarts {
+        /**
+         * For each state s of the scorer's states, the lowest bet key c gives over the round starts
+         * of s's shoe up to s, s included.
+         */
+        int[] minKey(CountKeys.Count c);
+    }
+
+    private RoundStarts minKeysOf;
+    private final java.util.Map<CountKeys.Count, int[]> minKeys = new java.util.IdentityHashMap<>();
+
+    /** roundStarts' minKey for c, worked out once per count and kept. */
+    synchronized int[] minKey(CountKeys.Count c) {
+        if (roundStarts == null) {
+            throw new IllegalStateException("a plan leaves the table, and no round starts were given to find where "
+                    + "(SystemScorer.roundStarts)");
+        }
+        if (minKeysOf != roundStarts) {
+            minKeys.clear();
+            minKeysOf = roundStarts;
+        }
+        int[] k = minKeys.get(c);
+        if (k == null) {
+            k = roundStarts.minKey(c);
+            if (k.length != st.size) {
+                throw new IllegalStateException("a lowest key for " + k.length + " states, not " + st.size);
+            }
+            minKeys.put(c, k);
+        }
+        return k;
+    }
+
+    /** minKey for c at each state of a penetration, by local index; null when no plan in wide leaves. */
+    int[] minKey(CountKeys.Count c, Pen pen) {
+        if (wide == null || c == null || !anyExit(wide)) {
+            return null;
+        }
+        int[] all = minKey(c);
+        int[] out = new int[pen.states.length];
+        for (int j = 0; j < out.length; j++) {
+            out[j] = all[pen.states[j]];
+        }
+        return out;
+    }
+
+    /**
+     * Check 1 of PLAN_COMPUTE.md 3.5 on one scored entry, in words, nothing when it holds: plan P8
+     * gives the 1-8 same schedule and own ramp the entry already holds, with their average bets,
+     * to the bit, at every penetration scored, on the estimate and on every resample kept. A run
+     * scoring the wide plans calls it on every item before keeping it, so a P8 that strays from the
+     * existing figures stops the run rather than reaching a report.
+     */
+    static List<String> p8Check(Entry e) {
+        List<String> bad = new ArrayList<>();
+        if (e.widePlans == null) {
+            return bad;
+        }
+        int p8 = planIndex(e.widePlans, "P8");
+        int[][] pairs = {{W_SAME, same(SPREADS)}, {W_SAME_BET, sameBet(SPREADS)}, {W_OWN, own(SPREADS)},
+                {W_OWN_BET, ownBet(SPREADS)}};
+        int[] rows = wideRows(e.widePlans);
+        for (int p = 0; p < CUTS.length; p++) {
+            if (e.estimate[p] == null || e.wide[p] == null) {
+                continue;
+            }
+            for (int[] pair : pairs) {
+                int at = wideAt(p8, pair[0]);
+                if (Double.doubleToLongBits(e.wide[p][at]) != Double.doubleToLongBits(e.estimate[p][pair[1]])) {
+                    bad.add(e.name + " at " + PENETRATIONS[p] + ": P8's " + WIDE_NAMES[pair[0]] + " " + e.wide[p][at]
+                            + ", the 1-8 figure " + e.estimate[p][pair[1]]);
+                }
+                for (int k = 0; k < rows.length; k++) {
+                    if (rows[k] != at || e.boot[p] == null) {
+                        continue;
+                    }
+                    for (int r = 0; r < e.boot[p][pair[1]].length; r++) {
+                        if (Double.doubleToLongBits(e.wideBoot[p][k][r]) != Double.doubleToLongBits(e.boot[p][pair[1]][r])) {
+                            bad.add(e.name + " at " + PENETRATIONS[p] + ", resample " + r + ": P8's " + WIDE_NAMES[pair[0]]
+                                    + " " + e.wideBoot[p][k][r] + ", the 1-8 figure " + e.boot[p][pair[1]][r]);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return bad;
+    }
+
+    static boolean anyExit(Plan[] plans) {
+        for (Plan p : plans) {
+            if (!p.sameSchedule()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Each plan's reference bets, g on each state's chart advantage: [state][plan], the states
+     * indexed as chart is, a state's plans side by side since planIntegral reads them so. They
+     * depend on nothing a resample changes, so a penetration works them out once (Pen.planBets).
+     */
+    static double[][] referenceBets(Plan[] plans, double[] chart) {
+        double[][] out = new double[chart.length][plans.length];
+        for (int j = 0; j < chart.length; j++) {
+            for (int i = 0; i < plans.length; i++) {
+                out[j][i] = plans[i].bet(chart[j]);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * scheduleIntegral for plans: at every block boundary, the integral of each plan's reference
+     * bets g and of 1[g > 0] over the quantiles of byChart's states, [plan][0 for g, 1 for
+     * 1[g > 0]][boundary], ref[j][plan] being g at state j. It walks the states as
+     * scheduleIntegral does, with the same arithmetic, so a plan whose g is spread s's clamp gives
+     * spread s's integral to the bit. A block's bets follow from its two integrals (Wide.add).
+     */
+    static double[][][] planIntegral(int[] byChart, double[] w, double[][] ref, int np, double[] blockWeight,
+                                     int blocks) {
+        double[] boundary = new double[blocks + 1];
+        for (int b = 0; b < blocks; b++) {
+            boundary[b + 1] = boundary[b] + blockWeight[b];
+        }
+        double[][][] integral = new double[np][2][blocks + 1];
+        double cw = 0;
+        double[] cg = new double[np];
+        double[] cz = new double[np];
+        int next = 1;
+        for (int j : byChart) {
+            double wj = w[j];
+            if (wj == 0) {
+                continue;
+            }
+            double[] gj = ref[j];
+            while (next < blocks && boundary[next] <= cw + wj) {
+                double part = boundary[next] - cw;
+                for (int i = 0; i < np; i++) {
+                    double g = gj[i];
+                    integral[i][0][next] = cg[i] + part * g;
+                    integral[i][1][next] = cz[i] + (g > 0 ? part : 0);
+                }
+                next++;
+            }
+            cw += wj;
+            for (int i = 0; i < np; i++) {
+                double g = gj[i];
+                cg[i] += wj * g;
+                cz[i] += g > 0 ? wj : 0;
+            }
+        }
+        for (; next <= blocks; next++) {
+            for (int i = 0; i < np; i++) {
+                integral[i][0][next] = cg[i];
+                integral[i][1][next] = cz[i];
+            }
+        }
+        return integral;
+    }
+
+    /**
+     * The share of a block's rounds a plan plays, given the block's integral of 1[g > 0] and its
+     * weight: 1 for a plan that plays every round, otherwise the integral over the weight, at most 1.
+     */
+    static double playShare(Plan plan, double played, double weight) {
+        return plan.wonging() ? Math.min(1, played / weight) : 1;
+    }
+
+    /**
+     * The smallest bet key whose fitted advantage is at least tau, the advantage being
+     * non-decreasing in the key; Integer.MAX_VALUE when no key's is. A round start is at or above
+     * tau exactly when its key is at least this: the isotonic fit makes the advantage a step
+     * function of the key, and a key between two fitted ones takes the lower's.
+     */
+    static int keyFrom(BetKeys bk, double[] adv, double tau) {
+        for (int k = 0; k < adv.length; k++) {
+            if (adv[k] >= tau) {
+                return bk.value[k];
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * One entry's wide figures, added up as bets and ownValueBets go over the folds: what each plan
+     * makes of the round values and fitted advantages the existing figures are worked from.
+     *
+     * The bets are those of PLAN_COMPUTE.md 3.2's one convention, the one the simulator plays:
+     * - same schedule, P and S plans: every key of a block bets the block's average of the
+     *   reference bets, as at spreads 1 to 8; its mean square bet is that average squared, the
+     *   square of a bet placed, not the mean of g squared, which no player bets;
+     * - same schedule, B plans: the same, but for the one block that straddles the entry threshold,
+     *   whose average would be a bet below a unit, not a legal bet. Each of its rounds is played
+     *   with probability pi = (integral of 1[g > 0]) / weight, at (integral of g) / (integral of
+     *   1[g > 0]), at least a unit, and sat out otherwise. Its EV is the average's; its mean square
+     *   bet is pi times that bet squared;
+     * - own rule: each key bets g of its fitted advantage, whole; a plan with an exit bets it only
+     *   while seated, that is while the lowest key of the shoe so far is at least the key where the
+     *   fitted advantage reaches the exit (keyFrom).
+     * The own rule has no meaning for a row bet on its own value: its figures stay NaN, as do the
+     * same schedule's for a plan with an exit.
+     */
+    static final class Wide {
+        final Plan[] plans;
+        /** [state][plan]: each plan's reference bet on each state's chart advantage. */
+        final double[][] ref;
+        /** Per state, the lowest bet key of its shoe so far, itself included; null when no plan leaves. */
+        final int[] minKey;
+        /** At wideAt(plan, m): each figure's sum over the test states, weighted 1/q. */
+        final double[] sums;
+        double weight;
+        /** Whether the own rule was scored, on a count's keys. */
+        boolean own;
+        /** Where add puts one fold's figures by key, [key][plan x KEY_COLS + c], when not null. */
+        double[][] detail;
+
+        Wide(Plan[] plans, double[][] ref, int[] minKey) {
+            if (ref.length > 0 && ref[0].length != plans.length) {
+                throw new IllegalArgumentException("reference bets for " + ref[0].length + " plans, not " + plans.length);
+            }
+            this.plans = plans;
+            this.ref = ref;
+            this.minKey = minKey;
+            this.sums = new double[plans.length * WIDE_METRICS];
+        }
+
+        /** An accumulator whose reference bets are worked out from the chart advantages given. */
+        static Wide of(Plan[] plans, double[] chart, int[] minKey) {
+            return new Wide(plans, referenceBets(plans, chart), minKey);
+        }
+
+        /** The figures, each sum over the weight; NaN where a plan has no such figure here. */
+        double[] figures() {
+            double[] out = new double[sums.length];
+            for (int m = 0; m < out.length; m++) {
+                out[m] = weight == 0 ? Double.NaN : sums[m] / weight;
+            }
+            for (int i = 0; i < plans.length; i++) {
+                for (int m = 0; m < WIDE_METRICS; m++) {
+                    boolean same = m < W_OWN;
+                    if (same ? !plans[i].sameSchedule() : !own) {
+                        out[wideAt(i, m)] = Double.NaN;
+                    }
+                }
+            }
+            return out;
+        }
+
+        /**
+         * One fold's figures for a count's keys, from what bets worked out: the fitted advantage
+         * by key, each key's test weight and weighted sum of round values, the blocks of keys with
+         * equal advantage and their weights, the fold's test states and its weight.
+         */
+        void add(BetKeys bk, double[] adv, double[] vw, double[] vs, int[] blockOf, double[] blockWeight, int blocks,
+                 int[] test, int[] testByChart, double[] w, double[] rv, double foldWeight) {
+            own = true;
+            weight += foldWeight;
+            int keys = vw.length;
+            double[][][] integral = planIntegral(testByChart, w, ref, plans.length, blockWeight, blocks);
+            for (int i = 0; i < plans.length; i++) {
+                Plan plan = plans[i];
+                int at = i * WIDE_METRICS;
+                int col = i * KEY_COLS;
+                if (plan.sameSchedule()) {
+                    double[] g = integral[i][0];
+                    double[] z = integral[i][1];
+                    for (int k = 0; k < keys; k++) {
+                        if (vw[k] == 0) {
+                            continue;
+                        }
+                        int b = blockOf[k];
+                        double bet = (g[b + 1] - g[b]) / blockWeight[b];
+                        double play = playShare(plan, z[b + 1] - z[b], blockWeight[b]);
+                        double placed = !plan.wonging() ? bet : play == 0 ? 0 : (g[b + 1] - g[b]) / (z[b + 1] - z[b]);
+                        sums[at + W_SAME] += bet * vs[k];
+                        sums[at + W_SAME_BET] += bet * vw[k];
+                        sums[at + W_SAME_SHARE] += play * vw[k];
+                        sums[at + W_SAME_BET2] += play * vw[k] * placed * placed;
+                        if (detail != null) {
+                            detail[k][col + K_SAME_BET] = bet;
+                            detail[k][col + K_SAME_PLAY] = play;
+                        }
+                    }
+                } else if (detail != null) {
+                    for (int k = 0; k < keys; k++) {
+                        detail[k][col + K_SAME_BET] = Double.NaN;
+                        detail[k][col + K_SAME_PLAY] = Double.NaN;
+                    }
+                }
+                if (detail != null) {
+                    for (int k = 0; k < keys; k++) {
+                        detail[k][col + K_OWN_BET] = plan.bet(adv[k]);
+                    }
+                }
+                if (plan.sameSchedule()) {
+                    for (int k = 0; k < keys; k++) {
+                        if (vw[k] == 0) {
+                            continue;
+                        }
+                        double bet = plan.bet(adv[k]);
+                        sums[at + W_OWN] += bet * vs[k];
+                        sums[at + W_OWN_BET] += bet * vw[k];
+                        sums[at + W_OWN_SHARE] += bet > 0 ? vw[k] : 0;
+                        sums[at + W_OWN_BET2] += bet * bet * vw[k];
+                    }
+                    continue;
+                }
+                if (minKey == null) {
+                    throw new IllegalStateException(plan.label + " leaves the table, and no state's lowest key so far "
+                            + "was given");
+                }
+                int from = keyFrom(bk, adv, plan.exit);
+                for (int j : test) {
+                    if (w[j] == 0 || minKey[j] < from) {
+                        continue;
+                    }
+                    double bet = plan.bet(adv[bk.index[j]]);
+                    sums[at + W_OWN] += bet * w[j] * rv[j];
+                    sums[at + W_OWN_BET] += bet * w[j];
+                    sums[at + W_OWN_SHARE] += w[j];
+                    sums[at + W_OWN_BET2] += bet * bet * w[j];
+                }
+            }
+        }
+
+        /**
+         * One fold's same-schedule figures for a row bet on each state's own value
+         * (ownValueBets): its blocks of states with equal value, their weights and weighted sums of
+         * round values, handed the fold's reference bets in that order.
+         */
+        void addBlocks(double[] blockWeight, double[] blockSum, int blocks, int[] byChart, double[] w) {
+            double[][][] integral = planIntegral(byChart, w, ref, plans.length, blockWeight, blocks);
+            for (int b = 0; b < blocks; b++) {
+                weight += blockWeight[b];
+            }
+            for (int i = 0; i < plans.length; i++) {
+                Plan plan = plans[i];
+                if (!plan.sameSchedule()) {
+                    continue;
+                }
+                int at = i * WIDE_METRICS;
+                double[] g = integral[i][0];
+                double[] z = integral[i][1];
+                for (int b = 0; b < blocks; b++) {
+                    double bet = (g[b + 1] - g[b]) / blockWeight[b];
+                    double play = playShare(plan, z[b + 1] - z[b], blockWeight[b]);
+                    double placed = !plan.wonging() ? bet : play == 0 ? 0 : (g[b + 1] - g[b]) / (z[b + 1] - z[b]);
+                    sums[at + W_SAME] += bet * blockSum[b];
+                    sums[at + W_SAME_BET] += bet * blockWeight[b];
+                    sums[at + W_SAME_SHARE] += play * blockWeight[b];
+                    sums[at + W_SAME_BET2] += play * blockWeight[b] * placed * placed;
+                }
+            }
+        }
+    }
+
+    /**
+     * One fold's per-key wide figures pooled over the folds by test weight, as keyTable pools the
+     * existing ones, row for row: [key row][plan x KEY_COLS + c], the keys some test state holds.
+     */
+    private static double[][] wideKeyTable(BetKeys bk, double[][][] det, double[][][] wideDet) {
+        List<double[]> rows = new ArrayList<>();
+        for (int k = 0; k < bk.value.length; k++) {
+            double vw = det[0][k][0] + det[1][k][0];
+            if (vw == 0) {
+                continue;
+            }
+            double[] row = new double[wideDet[0][k].length];
+            for (int c = 0; c < row.length; c++) {
+                row[c] = (det[0][k][0] * wideDet[0][k][c] + det[1][k][0] * wideDet[1][k][c]) / vw;
+            }
+            rows.add(row);
+        }
+        return rows.toArray(new double[0][]);
+    }
+
     // ----------------------------------------------------------------- the scoring
 
     /** One row of the report: a count scored one way, at every penetration. */
@@ -1664,6 +2261,22 @@ final class SystemScorer {
         /** [pen][resample]: the same, as Result.halfFitBoot is made. */
         double[][] halfFitSameBoot;
 
+        // Added after c06c061 and the ceiling run; null in Results written before, and in any scored
+        // without the wide plans (SystemScorer.wide). Adding fields under the same serialVersionUID
+        // reads an older file as before, as ownValue and halfFitSame showed (StoredResultsTest).
+
+        /** The wide plans the figures below are for (PLAN_COMPUTE.md section 3), in their order. */
+        Plan[] widePlans;
+        /** [pen][wideAt(plan, m)]: the pooled estimate of each plan's figures, NaN where a plan has none. */
+        double[][] wide;
+        /** [pen][row][resample]: the figures wideRows(widePlans) names, on every resample. */
+        double[][][] wideBoot;
+        /**
+         * [pen][key row][plan x KEY_COLS + c]: each plan's bets by key, row for row with keys[pen],
+         * pooled over the folds by test weight as keys is; null for a row bet on its own value.
+         */
+        double[][][] wideKeys;
+
         Entry(String name, CountKeys.Count count, boolean bettingOnly) {
             this(name, count, bettingOnly, false);
         }
@@ -1681,6 +2294,35 @@ final class SystemScorer {
             if (ownValue && bettingOnly) {
                 throw new IllegalArgumentException(name + ": a row on its own value plays its own fit");
             }
+        }
+
+        /** Makes room for the wide figures of the plans given, at every penetration, once. */
+        void startWide(Plan[] plans) {
+            if (widePlans == null) {
+                widePlans = plans;
+                wide = new double[CUTS.length][];
+                wideBoot = new double[CUTS.length][][];
+                wideKeys = new double[CUTS.length][][];
+            } else if (widePlans != plans) {
+                throw new IllegalStateException(name + " already holds wide figures for other plans");
+            }
+        }
+
+        /** The wide figure m of the plan labelled so at penetration p, NaN when none. */
+        double wide(int p, String plan, int m) {
+            return wide == null || wide[p] == null ? Double.NaN : wide[p][wideAt(planIndex(widePlans, plan), m)];
+        }
+
+        /** The resamples of the wide figure m of a plan at penetration p, which wideRows must name. */
+        double[] wideBoot(int p, String plan, int m) {
+            int at = wideAt(planIndex(widePlans, plan), m);
+            int[] rows = wideRows(widePlans);
+            for (int k = 0; k < rows.length; k++) {
+                if (rows[k] == at) {
+                    return wideBoot[p][k];
+                }
+            }
+            throw new IllegalArgumentException(WIDE_NAMES[m] + " of " + plan + " is not kept on the resamples");
         }
     }
 
@@ -1933,6 +2575,8 @@ final class SystemScorer {
         FoldPlay[] fullPlays = null;
         FoldPlay[] fullHalf = null;
         PlayValues[] halfValues = null;
+        int[][] mk = minKeys(result.entries, pen);
+        int[][] mkFull = minKeys(result.fullEntries, pen);
         if (full) {
             PlayValues[] values = fits.values(p);
             fullPlays = new FoldPlay[2];
@@ -1957,10 +2601,13 @@ final class SystemScorer {
                 }
                 result.fullInSample[p] = check;
             }
-            double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true);
+            double[][] wideFull = startWide(result.fullEntries);
+            double[][] sums = scoreOnce(pen, ip, fullPlays, bkFull, result.fullEntries, pen.weight, p, true, mkFull,
+                    wideFull);
             for (int e = 0; e < sums.length; e++) {
                 result.fullEntries.get(e).estimate[p] = sums[e];
                 result.fullEntries.get(e).boot[p] = new double[METRICS][boot.resamples];
+                putWide(result.fullEntries.get(e), p, wideFull, e);
             }
         }
         FoldPlay[] plays = new FoldPlay[2];
@@ -1979,17 +2626,65 @@ final class SystemScorer {
         }
         halfSchedule(pen, ip, half, bk, result.entries, pen.weight, p, -1);
 
-        double[][] sums = scoreOnce(pen, ip, plays, bk, result.entries, pen.weight, p, true);
+        double[][] wideOut = startWide(result.entries);
+        double[][] sums = scoreOnce(pen, ip, plays, bk, result.entries, pen.weight, p, true, mk, wideOut);
         for (int e = 0; e < sums.length; e++) {
             result.entries.get(e).estimate[p] = sums[e];
             result.entries.get(e).boot[p] = new double[METRICS][boot.resamples];
+            putWide(result.entries.get(e), p, wideOut, e);
         }
         ByKey byKey = boot.resamples > 0 ? byKey(parts, pen) : null;
         FoldPlay[] fp = fullPlays;
         FoldPlay[] fh = fullHalf;
         PlayValues[] hv = halfValues;
-        onThreads(threads, (first, step) ->
-                resamples(result, p, pen, parts, ip, bk, bkFull, plays, fp, fh, hv, byKey, full, first, step));
+        onThreads(threads, (first, step) -> resamples(result, p, pen, parts, ip, bk, bkFull, plays, fp, fh, hv, byKey,
+                full, mk, mkFull, first, step));
+    }
+
+    /**
+     * Each entry's lowest bet key of its shoe so far at a penetration (minKey(c, pen)), none for a
+     * row bet on its own value, which has no own rule; null when wide is off.
+     */
+    private int[][] minKeys(List<Entry> entries, Pen pen) {
+        if (wide == null) {
+            return null;
+        }
+        int[][] out = new int[entries.size()][];
+        for (int e = 0; e < out.length; e++) {
+            Entry x = entries.get(e);
+            out[e] = x.ownValue ? null : minKey(x.count, pen);
+        }
+        return out;
+    }
+
+    /** With wide on, room for each entry's wide figures (Entry.startWide), and the array scoreOnce fills; null when off. */
+    private double[][] startWide(List<Entry> entries) {
+        if (wide == null) {
+            return null;
+        }
+        for (Entry e : entries) {
+            e.startWide(wide);
+        }
+        return new double[entries.size()][];
+    }
+
+    /** Entry e's wide estimate at p, from what scoreOnce filled (nothing when off), and room for its resamples. */
+    private void putWide(Entry x, int p, double[][] wideOut, int e) {
+        if (wideOut == null) {
+            return;
+        }
+        x.wide[p] = wideOut[e];
+        x.wideBoot[p] = new double[wideRows(wide).length][boot.resamples];
+    }
+
+    /** One resample's wide figures, from what scoreOnce filled, into each entry's wideBoot at the rows kept. */
+    private static void wideResample(List<Entry> entries, double[][] wideOut, int[] rows, int p, int r) {
+        for (int e = 0; e < wideOut.length; e++) {
+            double[][] to = entries.get(e).wideBoot[p];
+            for (int k = 0; k < rows.length; k++) {
+                to[k][r] = wideOut[e][rows[k]];
+            }
+        }
     }
 
     /**
@@ -2085,7 +2780,8 @@ final class SystemScorer {
     /** Resamples first, first + step, ... of penetration p, each with its own weights and refits. */
     private void resamples(Result result, int p, Pen pen, Parts parts, InsuranceParts ip, BetKeys[] bk, BetKeys[] bkFull,
                            FoldPlay[] plays, FoldPlay[] fullPlays, FoldPlay[] fullHalf, PlayValues[] halfValues,
-                           ByKey byKey, boolean full, int first, int step) {
+                           ByKey byKey, boolean full, int[][] mk, int[][] mkFull, int first, int step) {
+        int[] rows = wide == null ? null : wideRows(wide);
         double[] wm = new double[pen.states.length];
         double[] um = new double[pen.states.length];
         FoldPlay[] refit = new FoldPlay[2];
@@ -2097,11 +2793,15 @@ final class SystemScorer {
             for (int f = 0; f < 2; f++) {
                 refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, plays[f]);
             }
-            double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false);
+            double[][] wo = rows == null ? null : new double[result.entries.size()][];
+            double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false, mk, wo);
             for (int e = 0; e < rs.length; e++) {
                 for (int m = 0; m < METRICS; m++) {
                     result.entries.get(e).boot[p][m][r] = rs[e][m];
                 }
+            }
+            if (wo != null) {
+                wideResample(result.entries, wo, rows, p, r);
             }
             FoldPlay[] hp = halfPlays(parts, pen, ip, wm, um, byKey, plays, null, pen.test);
             result.halfFitBoot[p][r] = halfFlat(pen, ip, hp, wm);
@@ -2110,11 +2810,15 @@ final class SystemScorer {
                 for (int f = 0; f < 2; f++) {
                     refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
                 }
-                rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false);
+                wo = rows == null ? null : new double[result.fullEntries.size()][];
+                rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false, mkFull, wo);
                 for (int e = 0; e < rs.length; e++) {
                     for (int m = 0; m < METRICS; m++) {
                         result.fullEntries.get(e).boot[p][m][r] = rs[e][m];
                     }
+                }
+                if (wo != null) {
+                    wideResample(result.fullEntries, wo, rows, p, r);
                 }
                 if (fullHalf != null) {
                     result.fullHalfFitBoot[p][r] = halfFit(parts, pen, ip, wm, um, byKey, fullHalf, halfValues, null);
@@ -2172,6 +2876,15 @@ final class SystemScorer {
         return out;
     }
 
+    /** The labels of the plans given, in order, to tell two copies of the same plans apart from other plans. */
+    static List<String> labels(Plan[] plans) {
+        List<String> out = new ArrayList<>();
+        for (Plan x : plans) {
+            out.add(x.label);
+        }
+        return out;
+    }
+
     private static void copyPen(Entry from, Entry to, int p) {
         if (!from.name.equals(to.name)) {
             throw new IllegalArgumentException(from.name + " is not " + to.name);
@@ -2180,6 +2893,16 @@ final class SystemScorer {
         to.boot[p] = from.boot[p];
         to.shoeSums[p] = from.shoeSums[p];
         to.keys[p] = from.keys[p];
+        if (from.wide != null && from.wide[p] != null) {
+            if (to.widePlans == null) {
+                to.startWide(from.widePlans);
+            } else if (!labels(to.widePlans).equals(labels(from.widePlans))) {
+                throw new IllegalArgumentException(to.name + " holds wide figures for other plans");
+            }
+            to.wide[p] = from.wide[p];
+            to.wideBoot[p] = from.wideBoot[p];
+            to.wideKeys[p] = from.wideKeys[p];
+        }
         if (from.halfFitSame != null) {
             if (to.halfFitSame == null) {
                 to.halfFitSame = new double[CUTS.length];
@@ -2197,7 +2920,8 @@ final class SystemScorer {
      * values[f] for fold f's play (the stored values when values is null), insurance and bets
      * fitted in its groups: what one bootstrap resample of score gives the count's entry when the
      * values are the ones it holds. FullIndexPilot scores resamples with their own refitted
-     * values this way.
+     * values this way. With wide on, the plans' figures follow the METRICS existing ones, figure
+     * wideAt(plan, m) at METRICS + wideAt(plan, m).
      */
     double[] scoreWith(CountKeys.Count count, int p, PlayValues[] values, double[] w, double[] units) {
         Pen pen = pens[p];
@@ -2210,7 +2934,15 @@ final class SystemScorer {
         }
         List<Entry> one = new ArrayList<>();
         one.add(new Entry(count.name, count, false, values != null));
-        return scoreOnce(pen, ip, plays, new BetKeys[]{betKeys(count, pen)}, one, w, p, false)[0];
+        if (wide == null) {
+            return scoreOnce(pen, ip, plays, new BetKeys[]{betKeys(count, pen)}, one, w, p, false)[0];
+        }
+        double[][] wo = new double[1][];
+        double[] m = scoreOnce(pen, ip, plays, new BetKeys[]{betKeys(count, pen)}, one, w, p, false,
+                new int[][]{minKey(count, pen)}, wo)[0];
+        double[] out = Arrays.copyOf(m, METRICS + wo[0].length);
+        System.arraycopy(wo[0], 0, out, METRICS, wo[0].length);
+        return out;
     }
 
     // ------------------------------------------------------------- the search's evaluation
@@ -2474,7 +3206,28 @@ final class SystemScorer {
      */
     private double[][] scoreOnce(Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk,
                                  List<Entry> entries, double[] w, int p, boolean detail) {
+        return scoreOnce(pen, ip, plays, bk, entries, w, p, detail, null, null);
+    }
+
+    /**
+     * The same, and given wideOut, the wide plans' figures of entry e put in wideOut[e], each
+     * entry's own rule leaving the table where minKey[e] says its shoe's lowest key so far fell
+     * (null when no plan leaves); with detail, also each entry's wide key table (Entry.wideKeys),
+     * which startWide must have made room for. The existing figures are worked out as without.
+     */
+    private double[][] scoreOnce(Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk,
+                                 List<Entry> entries, double[] w, int p, boolean detail, int[][] minKey,
+                                 double[][] wideOut) {
         int n = pen.states.length;
+        Wide[] acc = null;
+        double[][][][] wideDet = null;
+        if (wideOut != null) {
+            acc = new Wide[entries.size()];
+            for (int e = 0; e < acc.length; e++) {
+                acc[e] = new Wide(wide, pen.planBets(wide), minKey == null ? null : minKey[e]);
+            }
+            wideDet = detail ? new double[entries.size()][2][][] : null;
+        }
         double[][] sums = new double[entries.size()][METRICS + 1];
         double[][][][] det = detail ? new double[entries.size()][2][][] : null;
         double[] rv = new double[n];
@@ -2498,11 +3251,15 @@ final class SystemScorer {
                     d = new double[bk[e].value.length][DETAIL];
                     det[e][f] = d;
                 }
+                Wide a = acc == null ? null : acc[e];
+                if (wideDet != null) {
+                    a.detail = wideDet[e][f] = new double[bk[e].value.length][wide.length * KEY_COLS];
+                }
                 if (entries.get(e).ownValue) {
-                    ownValueBets(pen.test[f], pen.testByChart[f], w, rv, rv, pen.chart, s);
+                    ownValueBets(pen.test[f], pen.testByChart[f], w, rv, rv, pen.chart, s, a);
                     continue;
                 }
-                bets(bk[e], pen.train[f], pen.test[f], pen.testByChart[f], w, rv, pen.chart, s, d);
+                bets(bk[e], pen.train[f], pen.test[f], pen.testByChart[f], w, rv, pen.chart, s, d, a);
                 if (detail) {
                     for (int j : pen.test[f]) {
                         shoe[e][st.shoe[pen.states[j]]] += w[j] * d[bk[e].index[j]][2 + SPREADS] * rv[j];
@@ -2522,6 +3279,12 @@ final class SystemScorer {
             if (detail) {
                 entries.get(e).shoeSums[p] = shoe[e];
                 entries.get(e).keys[p] = keyTable(bk[e], det[e], weight);
+            }
+            if (acc != null) {
+                wideOut[e] = acc[e].figures();
+                if (detail) {
+                    entries.get(e).wideKeys[p] = entries.get(e).ownValue ? null : wideKeyTable(bk[e], det[e], wideDet[e]);
+                }
             }
         }
         return out;
@@ -2659,17 +3422,25 @@ final class SystemScorer {
      * The rows fitted on nothing, scored on every state of the penetration, with the
      * bootstrap: the chart flat; the perfect first move with perfect insurance, flat; and the
      * chart playing with the same-schedule bets placed on each state's own true advantage,
-     * the most any ordering of that schedule can make of the chart's play.
+     * the most any ordering of that schedule can make of the chart's play. With wide on, the last
+     * also bets each wide plan's schedule on each state's own chart advantage (referenceWide).
      */
     List<Entry> references() {
         Entry chart = new Entry("Chart, no count, flat", null, false);
         Entry perfect = new Entry("Perfect first move and insurance, flat", null, false);
         Entry oracle = new Entry("Chart play, schedule on the true advantage", null, false);
         List<Entry> out = Arrays.asList(chart, perfect, oracle);
+        int[] rows = wide == null ? null : wideRows(wide);
+        if (wide != null) {
+            oracle.startWide(wide);
+        }
         for (int p = 0; p < CUTS.length; p++) {
             Pen pen = pens[p];
             for (Entry e : out) {
                 e.boot[p] = new double[METRICS][boot.resamples];
+            }
+            if (wide != null) {
+                oracle.wideBoot[p] = new double[rows.length][boot.resamples];
             }
             double[] w = pen.weight.clone();
             for (int r = -1; r < boot.resamples; r++) {
@@ -2685,6 +3456,16 @@ final class SystemScorer {
                     } else {
                         for (int k = 0; k < METRICS; k++) {
                             out.get(e).boot[p][k][r] = m[e][k];
+                        }
+                    }
+                }
+                if (wide != null) {
+                    double[] x = referenceWide(pen, w);
+                    if (r < 0) {
+                        oracle.wide[p] = x;
+                    } else {
+                        for (int k = 0; k < rows.length; k++) {
+                            oracle.wideBoot[p][k][r] = x[rows[k]];
                         }
                     }
                 }
@@ -2761,7 +3542,9 @@ final class SystemScorer {
      *   insurance (FullIndexFit.perfect), that play and perfect insurance bet on its value: the
      *   full-play bound, but for what perfect play of split hands adds, which it plays by the chart.
      * The own ramp has no bound: those figures are NaN. A penetration where perfectPlay lacks a
-     * state is left out of the third row, its estimate and resamples null.
+     * state is left out of the third row, its estimate and resamples null. With wide on, each row
+     * also hands out each wide plan's schedule in the same order (Wide.addBlocks): the bound for
+     * that plan's same schedule.
      */
     List<Entry> bounds(double[] perfectPlay) {
         if (perfectPlay != null && perfectPlay.length != st.size) {
@@ -2773,6 +3556,12 @@ final class SystemScorer {
         if (perfectPlay != null) {
             out.add(new Entry("Perfect play of the dealt hand and insurance, bet on its own value", null, false, true,
                     true));
+        }
+        int[] rows = wide == null ? null : wideRows(wide);
+        if (wide != null) {
+            for (Entry e : out) {
+                e.startWide(wide);
+            }
         }
         for (int p = 0; p < CUTS.length; p++) {
             Pen pen = pens[p];
@@ -2794,6 +3583,9 @@ final class SystemScorer {
             for (int e = 0; e < out.size(); e++) {
                 if (every[e]) {
                     out.get(e).boot[p] = new double[METRICS][boot.resamples];
+                    if (wide != null) {
+                        out.get(e).wideBoot[p] = new double[rows.length][boot.resamples];
+                    }
                 }
             }
             double[] w = pen.weight.clone();
@@ -2812,12 +3604,23 @@ final class SystemScorer {
                         v[j] = play[e][j] + ins[j];
                     }
                     double[] sums = new double[METRICS + 1];
+                    Wide acc = wide == null ? null : new Wide(wide, pen.planBets(wide), null);
                     for (int f = 0; f < 2; f++) {
                         for (int j : pen.test[f]) {
                             sums[PLAY] += w[j] * play[e][j];
                             sums[INSURANCE] += w[j] * ins[j];
                         }
-                        ownValueBets(pen.test[f], pen.testByChart[f], w, v, v, pen.chart, sums);
+                        ownValueBets(pen.test[f], pen.testByChart[f], w, v, v, pen.chart, sums, acc);
+                    }
+                    if (acc != null) {
+                        double[] x = acc.figures();
+                        if (r < 0) {
+                            out.get(e).wide[p] = x;
+                        } else {
+                            for (int k = 0; k < rows.length; k++) {
+                                out.get(e).wideBoot[p][k][r] = x[rows[k]];
+                            }
+                        }
                     }
                     double[] m = new double[METRICS];
                     for (int k = 0; k < METRICS; k++) {
@@ -2835,6 +3638,35 @@ final class SystemScorer {
             }
         }
         return out;
+    }
+
+    /**
+     * The oracle row's wide figures: each state bets each plan's g on its own chart advantage and
+     * plays the chart, so no block is shared and no threshold is played at random; it has no own
+     * rule, whose figures are NaN.
+     */
+    private double[] referenceWide(Pen pen, double[] w) {
+        Wide acc = new Wide(wide, pen.planBets(wide), null);
+        double weight = 0;
+        for (int j = 0; j < w.length; j++) {
+            weight += w[j];
+        }
+        for (int i = 0; i < wide.length; i++) {
+            if (!wide[i].sameSchedule()) {
+                continue;
+            }
+            int at = i * WIDE_METRICS;
+            for (int j = 0; j < w.length; j++) {
+                int s = pen.states[j];
+                double bet = acc.ref[j][i];
+                acc.sums[at + W_SAME] += w[j] * bet * st.chart[s];
+                acc.sums[at + W_SAME_BET] += w[j] * bet;
+                acc.sums[at + W_SAME_SHARE] += bet > 0 ? w[j] : 0;
+                acc.sums[at + W_SAME_BET2] += w[j] * bet * bet;
+            }
+        }
+        acc.weight = weight;
+        return acc.figures();
     }
 
     private double[][] referenceMetrics(Pen pen, double[] w) {
