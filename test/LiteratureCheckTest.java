@@ -37,6 +37,30 @@ import static org.junit.jupiter.api.Assertions.*;
  *   quotations stay short (copyright);</li>
  *   <li>report-final's tables read by column occurrence, since its headline names two columns 95% CI.</li>
  * </ul>
+ *
+ * Planted bugs, run once each on 12 October 2026 in scratch copies of src/ that were not kept
+ * (a script applied each edit, compiled, ran this class alone, and recorded what failed). All 16
+ * failed at least one test on that first run. The test of a claim no code can read again was
+ * written while the list was drawn up, before any plant ran, when the plan for P3 showed no test
+ * covered it.
+ * <ol>
+ *   <li>a reason no code tested counts as tested: aVerdictComesFromTheRuleTheConditionsAndWhatCodeTested;</li>
+ *   <li>an AI agent's reading worded as Justin's: aStatusIsWordedFromWhoReadItNeverAsJustinsUnlessHeSaysSo;</li>
+ *   <li>a changed copy confirms a claim no code reads: aClaimNoCodeCanReadAgainRestsOnTheCopysHash;</li>
+ *   <li>the deck-size scaling inverted (415/311): effectsOfRemovalAreReadByColumnAndScaledFromSixDecksToEight;</li>
+ *   <li>the split read from the DAS=No column: appendix9IsReadCellByCellFromTheDasYesColumn;</li>
+ *   <li>R accepted from the twin file: rIsTakenOnlyFromASaveOfTheMainFileOverReportFinalsStates;</li>
+ *   <li>a direction judged on the estimate, not the interval: eachRuleTestsWhatItSays;</li>
+ *   <li>the calculator indexed by listing order, not each label's value: theCalculatorIsReadFromItsCodeByTheFormsOwnLabels;</li>
+ *   <li>the largest gap taken by sign, not size: aChangeOf1eMinus4InOneCachedCellIsFlagged;</li>
+ *   <li>a spot figure that changed passes: aChangeOf1eMinus4InOneCachedCellIsFlagged;</li>
+ *   <li>the quadratic's linear term taken for its curvature: theQuadraticThroughThePerKeyMeansCurvesTheWayTheyDo;</li>
+ *   <li>a row run to its own end tag past a nested row: rowsOfANestedTableAreItsOwnRowsWithTextDecoded;</li>
+ *   <li>a figure the cache cannot confirm still compared: aVerdictComesFromTheRuleTheConditionsAndWhatCodeTested;</li>
+ *   <li>the page sentence keeping a kind with no claims: thePageSentenceDropsAKindWithNoClaims;</li>
+ *   <li>a secondary source stated as published: aVerdictComesFromTheRuleTheConditionsAndWhatCodeTested;</li>
+ *   <li>a hand given twice in appendix 9 overwriting the first: appendix9RefusesAMissingOrDoubledHand.</li>
+ * </ol>
  */
 public class LiteratureCheckTest {
 
