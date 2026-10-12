@@ -417,9 +417,12 @@ public class SiteBuildTest {
             assertTrue(p.contains("Not yet computed: " + what), what);
         }
         Path withRisk = copy("with-risk");
+        // The answer names the money of the row ranked first, by its own key (SiteRisk's keys).
+        String best = SiteSvg.rowOf(SiteBuild.one("full.80.s8.@best", page.data));
         Files.write(withRisk.resolve("risk-fixture.json"), ("{\"_source\":{\"what\":\"risk\",\"commit\":\"fixture\",\"fixture\":true},"
                 + "\"figures\":{\"risk.unit_usd\":{\"value\":25,\"fmt\":\"usd\"},\"risk.rounds\":{\"value\":100,\"fmt\":\"n\"},"
-                + "\"risk.per100.80.s8.best\":{\"value\":12,\"fmt\":\"usd\"},\"risk.sd100.80.s8.best\":{\"value\":280,\"fmt\":\"usd\"}}}")
+                + "\"risk.ev_per100_usd.full.80.s8." + best + "\":{\"value\":12,\"fmt\":\"usd\"},"
+                + "\"risk.sd_per100_usd.full.80.s8." + best + "\":{\"value\":280,\"fmt\":\"usd\"}}}")
                 .getBytes(StandardCharsets.UTF_8));
         SiteBuild.Output o = build(withRisk, template);
         assertEquals(List.of(), o.problems);
