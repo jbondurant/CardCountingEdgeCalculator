@@ -260,6 +260,39 @@ public class LiteratureCheckTest {
     }
 
     /**
+     * A claim that rests on reading a copy no code can parse (a PDF, here a page with extract none)
+     * is confirmed only by the copy's unchanged hash: once the copy changes, it is not compared. A
+     * missing copy confirms nothing.
+     */
+    @Test
+    public void aClaimNoCodeCanReadAgainRestsOnTheCopysHash(@TempDir Path dir) throws Exception {
+        String page = "<p>Table 2: AN 0 2.8 2.68</p>";
+        String sha = LiteratureSources.sha256(page.getBytes(StandardCharsets.UTF_8));
+        String json = "{\"sources\": [{\"id\": \"v\", \"title\": \"preprint\", \"url\": \"https://example.invalid/v\", "
+                + "\"cache\": {\"file\": \"v.html\", \"sha256\": \"" + sha + "\", \"fetched\": \"2026-10-12\"}, "
+                + "\"status\": \"CHECKED\", \"status_date\": \"2026-10-12\", \"checked_by\": \"AI agent (Claude Code), 2026-10-12\", "
+                + "\"read_by_justin\": false}], \"claims\": [{\"id\": \"an\", \"topic\": \"2J\", \"source\": \"v\", "
+                + "\"locator\": \"Table 2\", \"what\": \"tags\", \"conditions\": {\"unit\": \"tags\"}, \"same_game\": false, "
+                + "\"printed\": \"0, 2.8\", \"extract\": {\"how\": \"none\"}, \"ours\": null, \"compare\": {\"rule\": \"none\"}}]}";
+        for (String copy : new String[]{page, page.replace("2.68", "2.69"), null}) {
+            Files.deleteIfExists(dir.resolve("v.html"));
+            if (copy != null) {
+                Files.write(dir.resolve("v.html"), copy.getBytes(StandardCharsets.UTF_8));
+            }
+            LiteratureCheck.Result r = new LiteratureCheck.Result();
+            r.register = LiteratureClaims.parse(json, "fixture");
+            LiteratureCheck.drift(r, LiteratureCheck.cachedPages(r, dir), null);
+            if (page.equals(copy)) {
+                assertFalse(r.drift.containsKey("an"), "an unchanged copy confirms it");
+            } else {
+                assertTrue(r.drift.containsKey("an"), (copy == null ? "a missing" : "a changed") + " copy confirms nothing");
+                assertEquals(LiteratureClaims.Verdict.NOT_COMPARED, LiteratureClaims.verdict(r.register.claims.get(0),
+                        r.register.sources.get(0), null, new HashMap<>(), r.drift.get("an")).verdict);
+            }
+        }
+    }
+
+    /**
      * A hand-written calculator in the Wizard of Odds' shape, two decks of options instead of six,
      * with the options of the doubling question listed in another order than their values. The
      * lookup must follow the values the labels carry, not the order they are listed in.

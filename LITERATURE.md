@@ -12,6 +12,18 @@ Written by an AI agent (Claude Code) on 9 October 2026, from the literature
 design of 8 October 2026 and a second round of checks. Not committed by its
 writer; a later stage commits it.
 
+**Since 12 October the register and the comparison are code.** An AI agent
+(Claude Code) built what section 1 plans, on the branch site-literature:
+`literature/claims.json` (the register: 50 sources, 73 published figures),
+`src/LiteratureCheck.java` with its readers (`LiteratureSources`,
+`LiteraturePrinted`), the verdict rules (`LiteratureClaims`), the outputs
+(`LiteratureOutput`) and `test/LiteratureCheckTest.java`. On the same day it
+fetched the sources again and ran the check; what that found is in "The third
+round (12 October)" below, and every figure there comes from that committed
+code. Where this file and `claims.json` disagree about a source's status,
+`claims.json` is the one home; the source register of section 5 now points to
+it.
+
 ## How to read this file
 
 **Who read the sources.** Every reading and check in this file was done by an AI
@@ -92,7 +104,95 @@ conditions match.
 5. **Snackjack's point about effects of removal is narrower than the design
    put it** (section 2C).
 
+## The third round (12 October): the check run by committed code
+
+An AI agent (Claude Code) fetched every web source again on 12 October 2026,
+read the figures used, recorded each cached copy's SHA-256 in `claims.json`,
+and ran `LiteratureCheck` single-threaded on the cached copies (14 s), without
+R (section 1 (d)): step 7's save was not read, so every BC/R waits. The report
+is `runs/literature/literature-SHA.md`, with the page's file beside it. Nothing
+in this list is a page figure until the page build runs the check again at its
+tag.
+
+1. **The split values: the resplitting explanation holds for every pair but
+   tens.** Valued again resplitting every new pair up to four hands
+   (`BasicStrategy.policy(true)`), the engine's splits of 2s, 3s, 4s, 5s, 6s, 7s
+   and 9s come within 0.0007 of appendix 9 at every up-card (under the chart
+   after the split the gaps were 0.020 to 0.112); aces and eights agreed
+   already (0.0000 and 0.0005). Tens do not: resplitting cuts the largest gap
+   from 0.506 to 0.055, and nothing found here accounts for the rest. So the
+   page says the tables agree once the resplitting rule is matched, except
+   tens, where it shows the gap and says it is unexplained.
+2. **Stand and double agree over all 540 hands** to 5.7e-7 and 5.6e-7, the
+   table's rounding. Hit differs by up to 6.0e-4, never with ours above theirs,
+   which their card-dependent play after a hit predicts; no code values the
+   hit their way, so it counts as untested.
+3. **The house edge.** The exact value off the top is -0.64645% a round. The
+   total-dependent table's 0.6468% (appendix 15) and the calculator's
+   continuous-shuffler figure (0.64683%, derived from the page's code) are
+   both 0.0004% away, still unexplained. The calculator's cut-card figure
+   (0.66083%) and *Modern Blackjack*'s -.664 sit inside our 80% interval
+   [-0.671, -0.649]; the cut card costs 0.0135% [0.0025, 0.0245] here against
+   the Wizard of Odds' 0.014%.
+4. **Effects of removal:** every rank has the same sign as the Wizard of Odds'
+   six-deck figures, the angle between the two vectors is 3.2 degrees, and the
+   ace agrees after scaling (-0.0633% against -0.0629%); the 5 (+0.0901%
+   against +0.1072%) and the ten (-0.0660% against -0.0727%) differ, reasons
+   untested.
+5. **Correlations:** the insurance correlation agrees for all six counts
+   claimed (Hi-Lo, Hi-Opt II, Zen, Wong Halves, KO, Uston APC) within
+   rounding, and the Ten Count's tags are the perfect insurance tags. The
+   catalog's tags match QFIT's for all 23 of QFIT's rows that are counts here.
+   PE is lower for every count claimed, reasons untested; the order of the 21
+   counts by PE has a rank correlation of 0.742 with QFIT's, short of the 0.8
+   set before the run (0.979 over the 15 balanced counts alone, reported, not
+   judged).
+6. **Pivots:** K-O's +4 a deck and standard start of -28 at eight decks, and
+   Red Seven's +2 a deck and start of -16, agree with the catalog's tags.
+7. **Vidami et al.:** Table 2 read again; F1 lies 7.0 degrees from their
+   ace-reckoned vector and 16.5 from the ace-neutral one (search file).
+8. **Without R and the later components,** 22 claims wait: BC/R, the
+   variance, spreads, wonging, and F1's held-out score.
+
+The verdict counts this run gave: of 51 figures compared, 19 agree, 13 agree in
+direction only, 7 differ for a reason tested by code here, 11 differ for a
+reason not yet tested, and 1 differs for no reason found (the split of tens).
+
+**Sources added or changed on 12 October.** QFIT answered over TLS, so its
+table, "KO versus HiLo" (its URL recorded at last) and *Modern Blackjack*'s
+pages were read on qfit.com itself. New: the publisher's sample of
+*Knock-Out Blackjack* (the standard start, 4 - 4 x decks, and +4 a deck; it
+does not state K-O's pivot), Snyder's "The Easy Red 7 Count" (the start of
+-2 x decks that puts the pivot at 0), Membrino's Red 7 note (the pivot as a
+Hi-Lo true count of 2), and Loto-Quebec's rules (the wonging rule PLAN_COMPUTE.md
+3.1 quotes). *Blackjack in Color* 8.1 and "Effect of a Wonger" were read and
+summarised. Crossref gives Baldwin et al. only a first page (429), so 429-439
+is unconfirmed. The Internet Archive was offline all day: no snapshot was
+looked up and none was requested; the two the 9 October pass used are recorded.
+
+**PLAN_COMPUTE.md section 9's list**, as it stands: the Wizard of Odds' house
+edge and variance tables, fetched and quoted (CHECKED); "about 0.5% per true
+count", quoted from *Blackjack in Color* 2.2, which calls it a very rough
+estimate (CHECKED); the K-O and Red Seven pivots as above (READ); the
+Loto-Quebec rule (READ); *Blackjack Attack*'s risk-of-ruin formulas and page
+numbers, NOT READ (the book is not available here; *Blackjack in Color* 8.1
+names them as Schlesinger's); rounds-per-hour norms, not found in any source
+read, so the page's three rates stay labelled assumptions.
+
 ## 1. What gets built
+
+**Built on 12 October, with these differences from the plan below.** The cache
+is `runs/literature/cache/` (outside git, as `runs/` is), and the report is
+`runs/literature/literature-SHA.md`. The page's file is written in the site
+generator's input form (SiteData: `_source`, `figures`, `tables`) to
+`runs/site/literature-SHA.json` unless `--json` says otherwise. A claim's
+verdict is one of the kinds PLAN_PAGE.md section 9 counts, worked out by
+`LiteratureClaims.verdict` from the claim's rule and from which explanations a
+check tested; nothing types it. A part (g) was added: the catalog's tags against
+QFIT's table and the K-O and Red Seven deck sums and starts against their
+authors', as PLAN_COMPUTE.md 1.8 asks. Each claim's figure is found again in its
+cached page (`extract`), so a page that changes shows up as a changed figure,
+and a figure the cache cannot confirm is not compared.
 
 Three pieces, all in this repository except the page itself.
 
@@ -316,6 +416,10 @@ resplitting rule is matched. If not, the page shows the gap and both checks, and
 says plainly that we cannot account for it. The repo's older infinite-deck
 solvers (EXPLAINER.md) are a third check if they model splits; this pass did
 not look. Either way the page does not say the Wizard of Odds is wrong.
+
+*Done 12 October* (the third round, item 1): LiteratureCheck (b) found the
+always-resplit values within 0.0007 of the table for every pair but tens,
+where 0.055 remains unexplained.
 
 **Why it matters here.** Split values decide the count at which splitting tens
 becomes worth it (an "index"). In first-decision play the chart makes every
@@ -823,38 +927,15 @@ page numbers. Until then the page says "not checked" wherever they would apply.
 
 ## 5. Source register
 
-One line per source, for `claims.json` to start from. Every status below was set
-by an AI agent; `checked_by` records that and `read_by_justin` starts false for
-every row. "Copy" means a saved copy from 8 October exists in the session
-scratchpad (`scratchpad/site-plan/literature/`), which is wiped when the session
-ends; LiteratureCheck's cache replaces it.
-
-| Source | Link | Status | Used in |
-|---|---|---|---|
-| Wizard of Odds, house edge calculator | <https://wizardofodds.com/games/blackjack/calculator/> | READ 8 Oct, copy re-read 9 Oct | 2A |
-| Wizard of Odds, total- vs composition-dependent (appendix 15) | <https://wizardofodds.com/games/blackjack/composition-dependent-benefit/> | READ 8 Oct, copy re-read 9 Oct | 2A |
-| Wizard of Odds, cut card effect (appendix 10) | <https://wizardofodds.com/games/blackjack/cut-card-effect/> | READ 8 Oct, copy re-read 9 Oct | 2A |
-| Wizard of Odds, 8-deck H17 expected returns (appendix 9) | <https://wizardofodds.com/games/blackjack/appendix/9/8dh17r4/> | CHECKED 9 Oct (live) | 2A, 2B |
-| Wizard of Odds, effect of card removal | <https://wizardofodds.com/games/blackjack/effect-of-removal/> | READ 8 Oct, copy re-read 9 Oct | 2C |
-| Wizard of Odds, High-Low strategy (I18, Fab 4, CVCX sims) | <https://wizardofodds.com/games/blackjack/card-counting/high-low/> | READ 8 Oct, copy re-read 9 Oct | 2F |
-| Wizard of Odds, variance (appendix 4) | <https://wizardofodds.com/games/blackjack/variance/> | READ 8 Oct, copy re-read 9 Oct | 2I |
-| Wizard of Odds, risk of ruin | <https://wizardofodds.com/games/blackjack/risk-of-ruin/> | READ 8 Oct, copy re-read 9 Oct | 2I (not a check) |
-| Wattenberger, *Modern Blackjack* p.106 | <https://web.archive.org/web/20150111033408/http://www.qfit.com/book/ModernBlackjackPage106.htm> | CHECKED 9 Oct (archive) | 2A |
-| Wattenberger, *Modern Blackjack* pp.102, 110–111, 113–114, 172, 518 | `http://www.qfit.com/book/ModernBlackjackPage<N>.htm` via the Internet Archive | READ 8 Oct; pp.102, 110, 111, 113 copies re-read 9 Oct | 2D, 2E, 2H, 2I |
-| QFIT, card counting systems table | <https://web.archive.org/web/20201208222104/https://www.qfit.com/card-counting.htm> | CHECKED 9 Oct (archive) | 2D |
-| QFIT, KO versus HiLo | qfit.com, saved as `KO-HiLo-BlackjackComparison.htm`; URL to record | READ 8 Oct, copy re-read 9 Oct | 2E |
-| QFIT, side counts | <https://www.qfit.com/blackjack-side-counts.htm> | READ 8 Oct | 2G |
-| Wattenberger, *Blackjack in Color* (2007), sections 2.2, 2.4, 4.1, 4.2, 4.4, 4.5, 4.6 | <http://www.blackjackincolor.com/> (pages named in each section) | READ 8 Oct; 2.2 and 2.4 copies re-read 9 Oct | 2E–2H |
-| BlackjackInfo, counting efficiency calculator | <https://www.blackjackinfo.com/card-counting-efficiency-calculator/> | used by the earlier stage; not re-checked | 2D, 2J |
-| Encyclopedia of Blackjack, system comparisons | <https://www.blackjackreview.com/wp/encyclopedia/card-counting-system-comparisons/> | used by the earlier stage; not re-checked | 2D |
-| Encyclopedia of Blackjack, "I is for the Illustrious 18" | <https://www.blackjackreview.com/wp/encyclopedia/i/> | READ 8 Oct | 2F |
-| Encyclopedia of Blackjack, Blackjack Forum index | <https://www.blackjackreview.com/wp/encyclopedia/blackjack-forum/> | READ 8 Oct (index only) | 2F, 3 |
-| Snyder, *Beat the 6-Deck Game* excerpt | <https://www.lasvegasadvisor.com/gambling-with-an-edge/an-excerpt-from-arnold-snyders-beat-the-6-deck-game/> | READ 8 Oct, copy re-read 9 Oct | 2E, 2H |
-| Ethier and Lee, "Snackjack" (2020) | <https://doi.org/10.9741/2327-8455.1425>, <https://arxiv.org/abs/1906.01220> | preprint READ 8 Oct, copy re-read 9 Oct; record CHECKED 9 Oct | 2C, 2H |
-| Thorp and Walden (1973) | <https://doi.org/10.1007/BF01737563> | citation CHECKED 9 Oct; content SECONDARY | 2H |
-| Ethier and Levin (2005) | <https://doi.org/10.1239/aap/1113402401> | citation CHECKED 9 Oct; abstract READ 8 Oct | 2H |
-| Vidámi, Szilágyi and Iclanzan (2020) | <https://doi.org/10.1007/978-3-030-63833-7_6>, <http://real.mtak.hu/114350/> | preprint READ 8 Oct, copy re-read 9 Oct; citation CHECKED 9 Oct | 2C, 2J |
-| BlackjackPilot benchmark (18 June 2026) | URL to record | READ 8 Oct, little weight | 2E |
+The register now lives in `literature/claims.json` (12 October): one record per
+source with its citation, link, snapshot if one existed, the cached copy's
+SHA-256 and fetch date, its status with the date, `checked_by` and
+`read_by_justin`, and one record per published figure. `LiteratureCheck`'s
+report prints every source with its status worded as the page will word it.
+The table that stood here on 9 October was its starting point; keeping a copy
+here would be a second home that drifts, so it is not repeated. Every status in
+it was set by an AI agent, and `read_by_justin` is false for every source until
+Justin says otherwise.
 
 ## 6. Checks done on 9 October, and how
 
