@@ -33,6 +33,14 @@ public final class P2 {
     private final Plants plants;
     private final int[] offset;
     private final int size;
+    /**
+     * The paired differences, reported and never tested (SIM_CHECK.md section 9): each row's figure
+     * less Hi-Lo's at the same play and bets, and Victor APC + ace less Hi-Opt II + ace at full play;
+     * each {row, figure, the other row, its figure, offset}.
+     */
+    private final List<int[]> pairs = new ArrayList<>();
+    static final String VICTOR_FULL = "Victor Advanced Point Count (Victor APC) + ace side count, full play";
+    static final String HI_OPT_FULL = "Hi-Opt II + ace side count, full play";
 
     /** rows: those of rows that have a section in states.bin at their penetration; the others are left out. */
     public P2(long seed, int k, States states, List<Row> candidates, Chart chart, Plants plants) {
@@ -59,6 +67,21 @@ public final class P2 {
             n += 4 * rows.get(r).figures.size();
             if (rows.get(r).folds != null && sections.get(r).plans.length != rows.get(r).figures.size() - 1) {
                 throw new IllegalArgumentException(rows.get(r).name + ": states.bin's plans are not the files'");
+            }
+        }
+        for (int r = 0; r < rows.size(); r++) {
+            Row row = rows.get(r);
+            for (int o = 0; o < rows.size() && row.folds != null; o++) {
+                Row other = rows.get(o);
+                boolean hiLo = !P3.isHiLo(row) && P3.isHiLo(other) && other.folds[0].scope.equals(row.folds[0].scope);
+                boolean named = row.name.equals(VICTOR_FULL) && other.name.equals(HI_OPT_FULL);
+                for (int j = 0; j < row.figures.size() && (hiLo || named); j++) {
+                    int jo = other.figures.indexOf(row.figures.get(j));
+                    if (jo >= 0) {
+                        pairs.add(new int[]{r, j, o, jo, n});
+                        n += 4;
+                    }
+                }
             }
         }
         size = n;
@@ -145,6 +168,9 @@ public final class P2 {
         double[][] units = new double[rows.size()][];
         double[][] chance = new double[rows.size()][];
         int[] entries = new int[rows.size()];
+        double[][] value = new double[rows.size()][];
+        double[] d1 = new double[pairs.size()];
+        double[] d2 = new double[pairs.size()];
         Strategy.Play[] who = new Strategy.Play[rows.size()];
         for (int i = first; i < Math.min(states.n, first + count); i++) {
             int[] dealt = dealt(i);
@@ -158,6 +184,7 @@ public final class P2 {
                 s2[r] = new double[jn];
                 units[r] = new double[jn];
                 chance[r] = new double[jn];
+                value[r] = new double[jn];
                 units[r][0] = 1;
                 chance[r][0] = 1;
                 if (entries[r] < 0 || row.folds == null) {
@@ -177,6 +204,8 @@ public final class P2 {
                     chance[r][p + 1] = b[1];
                 }
             }
+            java.util.Arrays.fill(d1, 0);
+            java.util.Arrays.fill(d2, 0);
             deck.state(dealt);
             Xoshiro coins = Xoshiro.of(seed, i, Xoshiro.STREAM_COINS, 0);
             for (int redeal = 0; redeal < k; redeal++) {
@@ -198,6 +227,15 @@ public final class P2 {
                         double v = coin < chance[r][j] ? units[r][j] * x : 0;
                         s1[r][j] += v;
                         s2[r][j] += v * v;
+                        value[r][j] = v;
+                    }
+                }
+                for (int q = 0; q < pairs.size(); q++) {
+                    int[] p = pairs.get(q);
+                    if (entries[p[0]] >= 0 && entries[p[2]] >= 0) {
+                        double d = value[p[0]][p[1]] - value[p[2]][p[3]];
+                        d1[q] += d;
+                        d2[q] += d * d;
                     }
                 }
             }
@@ -219,12 +257,51 @@ public final class P2 {
                     sums[o + 3] += w * (j == 0 ? 1 : sec.bet[j - 1][e]) * rv;
                 }
             }
+            for (int q = 0; q < pairs.size(); q++) {
+                int[] p = pairs.get(q);
+                int ea = entries[p[0]];
+                int eb = entries[p[2]];
+                if (ea < 0 || eb < 0) {
+                    continue;
+                }
+                States.Section sa = sections.get(p[0]);
+                States.Section sb = sections.get(p[2]);
+                double mean = d1[q] / k;
+                double var = (d2[q] - k * mean * mean) / (k - 1);
+                int o = p[4];
+                sums[o] += w * mean;
+                sums[o + 1] += w;
+                sums[o + 2] += w * w * var / k;
+                sums[o + 3] += w * ((p[1] == 0 ? 1 : sa.bet[p[1] - 1][ea]) * (sa.rvPlay[ea] + sa.rvInsurance[ea])
+                        - (p[3] == 0 ? 1 : sb.bet[p[3] - 1][eb]) * (sb.rvPlay[eb] + sb.rvInsurance[eb]));
+            }
         }
         return sums;
     }
 
+    /** P2's paired differences from a run's sums: the simulator's with its SE, beside the engine's on the same states. */
+    public List<Summary.Difference> differences(double[] sums) {
+        List<Summary.Difference> out = new ArrayList<>();
+        for (int[] p : pairs) {
+            Row a = rows.get(p[0]);
+            Row b = rows.get(p[2]);
+            int o = p[4];
+            int oa = offset[p[0]] + 4 * p[1];
+            int ob = offset[p[2]] + 4 * p[3];
+            out.add(new Summary.Difference("P2", a.name, a.pen, a.figures.get(p[1]), b.name, sums[o] / sums[o + 1],
+                    Math.sqrt(sums[o + 2]) / sums[o + 1], Double.NaN, sums[oa] / sums[oa + 1], sums[ob] / sums[ob + 1],
+                    sums[o + 3] / sums[o + 1], (double) k * sections.get(p[0]).index.length, sections.get(p[0]).index.length));
+        }
+        return out;
+    }
+
     /** P2's comparisons from a run's sums: the engine's figure on the same states, and the simulator's with its SE. */
     public List<Summary.Comparison> comparisons(double[] sums) {
+        return comparisons(sums, null);
+    }
+
+    /** The same, each named by its registered id where it has one. */
+    public List<Summary.Comparison> comparisons(double[] sums, Registry registry) {
         List<Summary.Comparison> out = new ArrayList<>();
         for (int r = 0; r < rows.size(); r++) {
             Row row = rows.get(r);
@@ -232,7 +309,8 @@ public final class P2 {
                 int o = offset[r] + 4 * j;
                 out.add(new Summary.Comparison("P2", row.name, row.pen, row.figures.get(j), sums[o + 3] / sums[o + 1],
                         Double.NaN, sums[o] / sums[o + 1], Math.sqrt(sums[o + 2]) / sums[o + 1],
-                        (double) k * sections.get(r).index.length, sections.get(r).index.length, 0, ""));
+                        (double) k * sections.get(r).index.length, sections.get(r).index.length, 0,
+                        Summary.fig(registry, row.name, row.pen, row.figures.get(j))));
             }
         }
         return out;

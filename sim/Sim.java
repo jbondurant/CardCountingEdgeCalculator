@@ -193,7 +193,61 @@ public final class Sim {
         System.out.println("variants: " + v.ids + "; " + out.resolve("variants.tsv"));
     }
 
-    /** Checks D1 and D4, then P2; false if an exact check failed (P2 is then not run). */
+    /**
+     * The exact checks a bundle allows (SIM_CHECK.md section 5): D1 and D4 on states.bin, D2 on
+     * keys-sample.tsv from the catalog, D5 on lookups.tsv. Writes checks.txt; true if all passed.
+     */
+    static boolean exactChecks(Bundle bundle, States states, P2 p2, Path catalogFile, Plants plants, Path out)
+            throws Exception {
+        States.D1 d1 = states.d1(new Round(Rules.montreal(plants)), bundle.chart);
+        java.util.List<String> d4first = new java.util.ArrayList<>();
+        long[] d4 = p2.d4(d4first);
+        java.util.List<String> checks = new java.util.ArrayList<>();
+        checks.add("D1\t" + d1.matched + " of " + states.n + " records card for card and in q to the bit; "
+                + d1.valued + " valued by the walk; " + d1.mismatches + " mismatches");
+        checks.addAll(d1.first);
+        boolean ok = d1.cardForCard();
+        if (states.isMainFile()) {
+            for (int p = 0; p < 3; p++) {
+                ok &= d1.rounds[p] == A8_ROUNDS[p];
+                checks.add("D1\t" + Shoe.PENS[p] + "%: " + d1.rounds[p] + " round starts, A8 says " + A8_ROUNDS[p]);
+            }
+        }
+        Path keys = bundle.dir.resolve("keys-sample.tsv");
+        if (java.nio.file.Files.exists(keys)) {
+            KeysSample.Result d2 = KeysSample.check(keys, Catalog.read(catalogFile), bundle.strategies.values(), states, plants);
+            checks.add("D2\t" + (d2.cells() - d2.mismatches()) + " of " + d2.cells() + " keys equal to keys-sample.tsv's on "
+                    + d2.lines() + " lines; " + d2.mismatches() + " mismatches; catalog counts missing from its header: "
+                    + d2.missing());
+            checks.addAll(d2.first());
+            ok &= d2.passes();
+        } else {
+            checks.add("D2\tnot run: the bundle has no keys-sample.tsv");
+            ok = false;
+        }
+        checks.add("D4\t" + (d4[0] - d4[1]) + " of " + d4[0] + " bet keys and bets equal to states.bin's; " + d4[1] + " mismatches");
+        checks.addAll(d4first);
+        ok &= d4[1] == 0;
+        Path lookups = bundle.dir.resolve("lookups.tsv");
+        if (java.nio.file.Files.exists(lookups)) {
+            Lookups.Result d5 = Lookups.check(lookups, bundle, states);
+            checks.add("D5\t" + (d5.cells() - d5.mismatches()) + " of " + d5.cells() + " lookups equal to lookups.tsv's on "
+                    + d5.lines() + " lines; " + d5.mismatches() + " mismatches");
+            checks.addAll(d5.first());
+            ok &= d5.passes();
+        } else {
+            checks.add("D5\tnot run: the bundle has no lookups.tsv");
+            ok = false;
+        }
+        checks.add("D3\tengine side: test/SimVsExactSmallShoeTest.java; D6: sim/test/P3Test, chunks on 1 and 6 threads");
+        checks.add("plants\t" + plants.describe());
+        java.nio.file.Files.createDirectories(out);
+        Outputs.write(out.resolve("checks.txt"), checks);
+        checks.forEach(System.out::println);
+        return ok;
+    }
+
+    /** Checks D1, D2, D4 and D5, then P2; false if an exact check failed (P2 is then not run, unless a plant is on). */
     static boolean p2(String[] args) throws Exception {
         Plants plants = plants(args);
         Bundle bundle = new Bundle(Path.of(required(args, "--bundle")), plants);
@@ -201,8 +255,8 @@ public final class Sim {
         String commit = required(args, "--sim-commit");
         int k = Integer.parseInt(option(args, "--k", "120000"));
         int threads = Integer.parseInt(option(args, "--threads", "1"));
+        Registry registry = registry(args);
         States states = bundle.states();
-        States.D1 d1 = states.d1(new Round(Rules.montreal(plants)), bundle.chart);
         // SIM_CHECK.md section 2: P2 tests the figures at 80% only, where every valued state is in play.
         java.util.List<Row> at80 = new java.util.ArrayList<>();
         for (Row r : bundle.rows(true)) {
@@ -211,26 +265,7 @@ public final class Sim {
             }
         }
         P2 p2 = new P2(P2.SEED, k, states, at80, bundle.chart, plants);
-        java.util.List<String> d4first = new java.util.ArrayList<>();
-        long[] d4 = p2.d4(d4first);
-        java.util.List<String> checks = new java.util.ArrayList<>();
-        checks.add("D1\t" + d1.matched + " of " + states.n + " records card for card and in q to the bit; "
-                + d1.valued + " valued by the walk; " + d1.mismatches + " mismatches");
-        checks.addAll(d1.first);
-        boolean roundsOk = true;
-        if (states.isMainFile()) {
-            for (int p = 0; p < 3; p++) {
-                roundsOk &= d1.rounds[p] == A8_ROUNDS[p];
-                checks.add("D1\t" + Shoe.PENS[p] + "%: " + d1.rounds[p] + " round starts, A8 says " + A8_ROUNDS[p]);
-            }
-        }
-        checks.add("D4\t" + (d4[0] - d4[1]) + " of " + d4[0] + " bet keys and bets equal to states.bin's; " + d4[1] + " mismatches");
-        checks.addAll(d4first);
-        checks.add("plants\t" + plants.describe());
-        java.nio.file.Files.createDirectories(out);
-        java.nio.file.Files.write(out.resolve("checks.txt"), checks);
-        checks.forEach(System.out::println);
-        boolean exact = d1.cardForCard() && roundsOk && d4[1] == 0;
+        boolean exact = exactChecks(bundle, states, p2, Path.of(option(args, "--catalog", "counting-systems.json")), plants, out);
         if (!exact && !plants.any()) {
             System.out.println("an exact check failed: P2 is not run");
             return false;
@@ -239,18 +274,31 @@ public final class Sim {
         // reports whether the z tests alone would have caught the bug.
         long t0 = System.nanoTime();
         double[] sums = p2.chunked(out.resolve("p2"), commit, bundle.sha256, 1000, threads, -1);
+        java.util.List<Summary.Comparison> comparisons = p2.comparisons(sums, registry);
+        java.util.List<String> z = new java.util.ArrayList<>();
+        for (Registry.Fig fig : registry.figures) {
+            for (Summary.Comparison c : comparisons) {
+                if (fig.swings() && fig.tests().contains("P2") && c.fig().equals(fig.id())) {
+                    z.add("z\t" + fig.id() + "\tP2\t" + c.z());
+                }
+            }
+        }
+        Outputs.write(out.resolve("swings-p2.tsv"), z);
+        Outputs.assembleSwings(out);
         java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
         facts.put("check", "P2");
         facts.put("simulatorCommit", commit);
         facts.put("bundleSha256", bundle.sha256);
+        facts.put("chartFingerprint", bundle.chart.fingerprint());
         facts.put("seed", Long.toString(P2.SEED));
         facts.put("k", Integer.toString(k));
         facts.put("states", Integer.toString(states.n));
+        facts.put("exactChecks", exact ? "all passed" : "failed (see checks.txt)");
         facts.put("threads", Integer.toString(threads));
         facts.put("wallSeconds", String.format("%.1f", (System.nanoTime() - t0) / 1e9));
         facts.put("java", System.getProperty("java.version"));
         facts.put("plants", plants.describe());
-        Summary.write(out.resolve("summary-p2.json"), facts, p2.comparisons(sums));
+        Summary.write(out.resolve("summary-p2.json"), facts, comparisons, p2.differences(sums));
         System.out.println("P2: " + p2.rows().size() + " rows; summary in " + out.resolve("summary-p2.json"));
         return exact;
     }
