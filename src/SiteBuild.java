@@ -536,7 +536,7 @@ final class SiteBuild {
      * Evaluates every guard and pair list in the template on the inputs' resamples, records each in
      * the data, and returns the guards that fail, each with its expanded text.
      */
-    static List<String> guards(String template, SiteData in) {
+    static List<String> guards(String template, SiteData in, String generator) {
         List<String> failed = new ArrayList<>();
         Matcher m = PLACEHOLDER.matcher(template);
         while (m.find()) {
@@ -560,7 +560,7 @@ final class SiteBuild {
                 String key = rangeKey(pat);
                 if (!in.figures.containsKey(key)) {
                     in.figures.put(key, new SiteData.Figure(key, hi - lo, Double.NaN, Double.NaN, Double.NaN, "s4",
-                            "computed by SiteBuild", "the highest less the lowest of " + String.join(", ", keys), "", "main",
+                            "computed by SiteBuild", "the highest less the lowest of " + String.join(", ", keys), generator, "main",
                             1, false, null));
                 }
             } else if (p.startsWith("pairs:")) {
@@ -886,7 +886,7 @@ final class SiteBuild {
             throw new IllegalArgumentException("the template has typed figures:\n  " + String.join("\n  ", typed));
         }
         String t = conditionals(template, in);
-        List<String> failed = guards(t, in);
+        List<String> failed = guards(t, in, generator);
         if (!failed.isEmpty()) {
             throw new IllegalArgumentException("claim guards that fail; rewrite these sentences by hand:\n  "
                     + String.join("\n  ", failed));

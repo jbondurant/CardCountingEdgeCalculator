@@ -24,6 +24,27 @@ import static org.junit.jupiter.api.Assertions.*;
  * of its label are each refused; the page takes its colours from the site's tokens in light and
  * dark, with every pair it uses readable; and it stays within the plan's budgets at the largest
  * grid the plan foresees. Each refusal is tested by planting the fault it guards against.
+ *
+ * <p>Plants, each made in a scratch copy of src/ on 12 October 2026 and run against this class
+ * (never kept on a branch). First run, eleven of twelve were caught:
+ * <ul>
+ *   <li>the page's digit check switched off: aNumberTypedIntoThePageIsCaught failed;</li>
+ *   <li>a figure span's text no longer compared with results.json: aPrintedFigureThatDiffersFromResultsJsonIsCaught;</li>
+ *   <li>a "&gt; 0" guard met by the point estimate alone: aGuardMetOnlyByPointEstimatesIsNotMet;</li>
+ *   <li>guards no longer widened for full play: aGuardMetOnlyByPointEstimatesIsNotMet;</li>
+ *   <li>unwidened full-play intervals accepted: anUnwidenedFullPlayIntervalIsRefused;</li>
+ *   <li>search-file figures allowed outside their label: aSearchFileFigureIsPrintedOnlyInsideItsLabel;</li>
+ *   <li>the grid rounded to six decimals with no print check: theCompactGridPrintsAsTheFullValueDoes;</li>
+ *   <li>no fixture banner: six tests, aFixtureBuildIsMarkedEverywhereAndKeptOutOfTheWebsite among them;</li>
+ *   <li>the template's typed-figure rule off: aNumberTypedIntoTheTemplateStopsTheBuild;</li>
+ *   <li>one number, one value not enforced: oneNumberHasOneValue;</li>
+ *   <li>a colour literal allowed in the CSS: aColourWrittenIntoTheStylesOrAChartIsRefused;</li>
+ *   <li>the pairs' max-|t| multiplier replaced by 1.96: <b>passed every test</b>. It now fails
+ *   pairsAndEachGuardsTakeOneMultiplierOverTheWholeFamily, written for it, as does the same plant
+ *   in the "each" guards (which also fails aGuardThatFailsStopsTheBuild).</li>
+ * </ul>
+ * The rule that a data-file="search" element print the words "search file", added with that
+ * test, was planted off too and fails aSearchFileFigureIsPrintedOnlyInsideItsLabel.
  */
 public class SiteBuildTest {
 
@@ -383,6 +404,9 @@ public class SiteBuildTest {
         List<String> problems = build(small, out).problems;
         assertEquals(1, problems.size(), problems.toString());
         assertTrue(problems.get(0).contains("search.f1.80.s8 comes from the search file"), problems.get(0));
+        String unlabelled = html().replace("On that search file, ", "On it, ").replace(" (search file).</span>", ".</span>");
+        assertNotEquals(html(), unlabelled);
+        assertTrue(checkPlanted(unlabelled).contains("a data-file=\"search\" element that does not say \"search file\" in its text"));
     }
 
     @Test
@@ -714,5 +738,70 @@ public class SiteBuildTest {
         String each = SiteBuild.expandGuard("each > 0: full.80.s8.@top5 - full.80.s8.hi_lo", d);
         assertEquals(5, each.split(";").length);
         assertTrue(each.startsWith("each > 0: " + top.get(0) + " - full.80.s8.hi_lo; "));
+    }
+
+    /** The family's max-|t| multiplier, computed here apart from SiteGuards: widened differences, their SEs, the 0.95 quantile of the largest |t|. */
+    static double familyMultiplier(SiteData d, List<String[]> diffs) {
+        int n = diffs.size();
+        int r = d.resolve(diffs.get(0)[0]).boot.length;
+        double[] est = new double[n];
+        double[] se = new double[n];
+        double[][] b = new double[n][r];
+        for (int j = 0; j < n; j++) {
+            SiteData.Figure x = d.resolve(diffs.get(j)[0]);
+            SiteData.Figure y = d.resolve(diffs.get(j)[1]);
+            est[j] = x.value - y.value;
+            double ratio = Math.max(x.widen, y.widen);
+            double mean = 0;
+            for (int k = 0; k < r; k++) {
+                b[j][k] = x.boot[k] - y.boot[k];
+                mean += b[j][k] / r;
+            }
+            double ss = 0;
+            for (int k = 0; k < r; k++) {
+                b[j][k] = mean + ratio * (b[j][k] - mean);
+                ss += (b[j][k] - mean) * (b[j][k] - mean);
+            }
+            se[j] = Math.sqrt(ss / (r - 1));
+        }
+        double[] t = new double[r];
+        for (int k = 0; k < r; k++) {
+            for (int j = 0; j < n; j++) {
+                t[k] = Math.max(t[k], Math.abs(b[j][k] - est[j]) / se[j]);
+            }
+        }
+        java.util.Arrays.sort(t);
+        double h = (r - 1) * 0.95;
+        int lo = (int) Math.floor(h);
+        return t[lo] + (h - lo) * (t[Math.min(lo + 1, r - 1)] - t[lo]);
+    }
+
+    /**
+     * The pair lists and the "each" guards take one max-|t| multiplier over the whole family, not
+     * one interval's 1.96: with ten pairs, each pair's interval must be wide enough that all ten
+     * hold together 95% of the time (PLAN_PAGE.md 5a).
+     */
+    @Test
+    public void pairsAndEachGuardsTakeOneMultiplierOverTheWholeFamily() throws IOException {
+        SiteData d = SiteData.read(small);
+        List<String> top = SiteBuild.expand("full.80.s8.@top5", d);
+        SiteGuards.Pairs p = SiteGuards.pairs(top, d);
+        assertEquals(10, p.pairs.size());
+        List<String[]> diffs = new ArrayList<>();
+        for (SiteGuards.Pair x : p.pairs) {
+            diffs.add(new String[]{x.a, x.b});
+        }
+        double c = familyMultiplier(d, diffs);
+        assertEquals(c, p.multiplier, 1e-9);
+        assertTrue(c > 2.2, "ten pairs need a wider multiplier than one interval's: " + c);
+        for (SiteGuards.Pair x : p.pairs) {
+            assertEquals(x.diff, (x.lo + x.hi) / 2, 1e-12);
+        }
+        List<String[]> vsHiLo = new ArrayList<>();
+        for (String k : top) {
+            vsHiLo.add(new String[]{k, "full.80.s8.hi_lo"});
+        }
+        Map<String, Object> each = SiteGuards.evaluate(SiteBuild.expandGuard("each > 0: full.80.s8.@top5 - full.80.s8.hi_lo", d), d);
+        assertEquals(familyMultiplier(d, vsHiLo), (Double) each.get("multiplier"), 1e-9);
     }
 }

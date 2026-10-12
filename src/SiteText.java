@@ -181,6 +181,8 @@ final class SiteText {
         final String name;
         final Map<String, String> attrs;
         final StringBuilder text = new StringBuilder();
+        /** All the text inside, for the search-file label. */
+        final StringBuilder all = new StringBuilder();
 
         Element(String name, Map<String, String> attrs) {
             this.name = name;
@@ -345,6 +347,9 @@ final class SiteText {
                 e.text.append(t);
                 sourced = true;
             }
+            if (e.attrs.containsKey("data-file")) {
+                e.all.append(t);
+            }
             if (e.name.equals("code") || e.name.equals("pre")) {
                 code = true;
             }
@@ -371,8 +376,14 @@ final class SiteText {
         }
     }
 
+    /** The words a data-file="search" element must print, so the label is text a reader sees, not a style. */
+    static final String SEARCH_LABEL = "search file";
+
     private static void close(Element e, Deque<Element> stack, SiteData d, Map<String, String> strings,
                               List<String> problems) {
+        if ("search".equals(e.attrs.get("data-file")) && !e.all.toString().contains(SEARCH_LABEL)) {
+            problems.add("a data-file=\"search\" element that does not say \"" + SEARCH_LABEL + "\" in its text");
+        }
         String got = e.text.toString();
         if (e.attrs.containsKey("data-k")) {
             String k = e.attrs.get("data-k");
