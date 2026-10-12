@@ -42,6 +42,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the hooks left out of the replay's identity (aReplayKilledAndResumed...); c06c061's
  * names-only count lines not taken by name (c06c061sRunId...); and in ResultDiffTest, a count
  * compared field by field, and the timing compared.
+ *
+ * Planted for the hooks on 12 October 2026, the same way, each failing the test named: the sink's
+ * records handed to the collector at the wrong penetration; the export's later cells read on the
+ * other softness, written as the chart, or each turned over; P8 not checked; the bound rows left out
+ * of wide.ser; a state's bet taken from the other fold; the export's first decisions refitted on the
+ * stored values instead of the full-play ones (theHooksOutputs...); export.txt carrying a time, and
+ * the hooks' rows and plans left out of the replay's identity (aReplayKilledAndResumed...).
  */
 public class FullIndexReplayTest {
 

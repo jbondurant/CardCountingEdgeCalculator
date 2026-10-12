@@ -29,6 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * taken first and then transformed, which the data file's five digits hide (N0's lower end moved
  * by 1.1e-7 of itself); everyFigureIsTheFormulaOnEachResampleThenItsPercentiles was added for
  * it, and catches it.
+ *
+ * Planted on 12 October for the wide rows, each caught by theWidePlansRowsComeFromTheReplaysWideSer:
+ * every wide plan read by the own rule; the wide rows' resamples not widened; the 1-8 rows' default
+ * ratio taken over the wide plans' tables too; E[b^2] read from the average bet.
  */
 public class RiskReportTest {
 
