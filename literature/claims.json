@@ -407,7 +407,7 @@
     {"id": "ic.perfect", "topic": "2D", "source": "qfit-table", "locator": "the definitions under the table: Insurance Correlation",
      "what": "Tags of -9 for tens and +4 for every other card would predict the insurance bet perfectly",
      "conditions": {"basis": "the tags alone", "unit": "a correlation of 1"}, "same_game": true, "printed": null,
-     "extract": {"how": "text", "quote": "A point value of -9 for tens and +4 for all other cards would be perfect"},
+     "extract": {"how": "text", "quote": "A point value of -9 for tens and +4 for all other cards"},
      "ours": "ic.perfect", "compare": {"rule": "check"},
      "note": "Ours: the Ten Count, whose tags are -9 and +4 (counting-systems.json), has a measured insurance correlation of 1.000."},
     {"id": "bc.hilo", "topic": "2D", "source": "qfit-table", "locator": "the counting-systems table, row Hi-Lo, column BC",

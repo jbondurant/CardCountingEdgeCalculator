@@ -443,8 +443,9 @@ final class LiteratureCheck {
         return rank == 1 ? "A" : Integer.toString(rank);
     }
 
+    /** A hand as appendix 9 prints it, the higher card first and an ace last ("6,5", "9,A"), and its up-card. */
     static String describe(int deal) {
-        return name(Deals.P1[deal]) + "," + name(Deals.P2[deal]) + " against " + name(Deals.UP[deal]);
+        return name(Deals.P2[deal]) + "," + name(Deals.P1[deal]) + " against " + name(Deals.UP[deal]);
     }
 
     // ------------------------------------------------------------------ (e): effects of removal
