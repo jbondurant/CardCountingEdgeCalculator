@@ -49,10 +49,16 @@ import java.util.List;
  * from those records, never from what is in memory, so an interrupted and resumed replay writes
  * what an uninterrupted one writes (FullIndexReplayTest).
  *
+ * What each item adds is a hook's (ReplayHooks): --wide scores the wide plans and writes wide.ser in
+ * DIR; --sink SINK_DIR keeps each state's values for the edge at each count (SINK_DIR/run-b.ser);
+ * --export EXPORT_DIR writes the full-play rows of the simulator's bundle (EXPORT_DIR.partial, the
+ * rows SIM_CHECK.md registers unless --export-row names others, at the 1-8 same schedule unless
+ * --export-plans names others), with export.txt in DIR.
+ *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --fit-from SOURCE_DIR
  * --states FILE --out DIR (--trees-read-only PATH | --trees none) [--folds-only] [--only COUNT@P,...]
- * [--wide] [--sink DIR] [--export DIR] [--resume], with the source's --shoes, --resamples, --threads
- * and --pens.
+ * [--wide] [--sink SINK_DIR] [--export EXPORT_DIR [--export-row NAME ...] [--export-plans LABEL,...]]
+ * [--resume], with the source's --shoes, --resamples, --threads and --pens.
  */
 final class FullIndexReplay {
 
@@ -77,9 +83,16 @@ final class FullIndexReplay {
         boolean foldsOnly;
         /** Only these items, each COUNT@P, COUNT a count's name or one of its systems' and P a penetration as --pens takes it; null for all. */
         List<String> only;
+        /** Score the wide plans beside every figure and write wide.ser (ReplayHooks.WidePlans). */
         boolean wide;
+        /** Where the state sink's per-state values go, run B of PLAN_COMPUTE.md 5.3 (ReplayHooks.Sink); null for none. */
         Path sink;
+        /** Where the full-play export bundle goes, as DIR.partial until its round trip (ReplayHooks.Export); null for none. */
         Path export;
+        /** The full-play rows exported, by entry name; null for those SIM_CHECK.md registers (ReplayHooks.Export.registered). */
+        List<String> exportRows;
+        /** The report plans the exported rows' bets are written for (B2.5 labels). */
+        String[] exportPlans = ReplayHooks.Export.PLANS.clone();
         /** Hooks given in code, by a test or a tool that drives the replay (the page look of 6.3), after those the options make. */
         final List<Hook> hooks = new ArrayList<>();
         /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the replay holds. */
@@ -130,8 +143,20 @@ final class FullIndexReplay {
      * to the scorer in before and take itself off in after.
      */
     interface Hook {
-        /** Its name, in the replay's identity, its records and its log. */
+        /** Its name, in its records and its log. */
         String name();
+
+        /** What it does, in the replay's identity: its name, and what it was asked for that changes what it keeps. */
+        default String describe() {
+            return name();
+        }
+
+        /**
+         * Once the source is found to be the run these settings make and before its strategies are
+         * put back: the scorer every item is scored with, to set up what the hook needs of it.
+         */
+        default void start(SystemScorer scorer, Options o) throws Exception {
+        }
 
         /**
          * Before the item is scored, its two strategies holding their plays and, after their last
@@ -346,24 +371,24 @@ final class FullIndexReplay {
     }
 
     /**
-     * The hooks the options ask for, then those given in code. The wide plans, the sinks and the
-     * export are built on branches of their own (PLAN_COMPUTE.md 7.1, items 2 to 4); until they
-     * are merged here their options are refused, before anything is read, rather than ignored.
+     * The hooks the options ask for, the wide plans, the sink and the export in that order, then
+     * those given in code; two of one name are refused.
      */
     static List<Hook> hooks(Options o) {
+        List<Hook> out = new ArrayList<>();
         if (o.wide) {
-            throw new IllegalArgumentException("--wide needs the wide plans of PLAN_COMPUTE.md 3.4 (SystemScorer.wide and "
-                    + "WideReport.save), which these classes do not hold");
+            out.add(new ReplayHooks.WidePlans());
         }
         if (o.sink != null) {
-            throw new IllegalArgumentException("--sink needs the scorer's state sink and KeyEdges.Collector of "
-                    + "PLAN_COMPUTE.md 5.3, which these classes do not hold");
+            out.add(new ReplayHooks.Sink(o.sink));
         }
         if (o.export != null) {
-            throw new IllegalArgumentException("--export needs StrategyExport's full-play writer of PLAN_COMPUTE.md 1.2, "
-                    + "which these classes do not hold");
+            out.add(new ReplayHooks.Export(o.export, o.exportRows == null ? ReplayHooks.Export.registered()
+                    : ReplayHooks.Export.everyPen(o.exportRows), o.exportPlans));
+        } else if (o.exportRows != null) {
+            throw new IllegalArgumentException("export rows were named but no --export directory was given");
         }
-        List<Hook> out = new ArrayList<>(o.hooks);
+        out.addAll(o.hooks);
         List<String> names = new ArrayList<>();
         for (Hook h : out) {
             if (names.contains(h.name())) {
@@ -384,7 +409,7 @@ final class FullIndexReplay {
         b.append(o.only == null ? "" : ", only " + String.join(", ", o.only)).append('\n');
         b.append("hooks:");
         for (Hook h : hooks) {
-            b.append(' ').append(h.name());
+            b.append(' ').append(h.describe());
         }
         b.append("\nthe source's identity:\n").append(sourceId);
         return b.toString();
@@ -423,6 +448,12 @@ final class FullIndexReplay {
         if (out.startsWith(source)) {
             throw new IllegalArgumentException(out + " is in the source's directory, " + source
                     + ", where the replay writes nothing");
+        }
+        for (Path dir : new Path[]{o.sink, o.export}) {
+            if (dir != null && dir.toAbsolutePath().normalize().startsWith(source)) {
+                throw new IllegalArgumentException(dir + " is in the source's directory, " + source
+                        + ", where the replay writes nothing");
+            }
         }
         List<Hook> hooks = hooks(o);
         FullIndexCheckpoint src = FullIndexCheckpoint.source(source);
@@ -477,6 +508,9 @@ final class FullIndexReplay {
         try {
             // The fit put back and found finished before the replay's directory is opened, so a
             // refusal writes nothing anywhere.
+            for (Hook h : hooks) {
+                h.start(scorer, o);
+            }
             Restored back = restore(o, scorer, counts, src, store != null ? store : FullIndexFit.built(st), log);
             own.open(o.resume);
             perfectSource = replay(o, scorer, counts, items, src, own, back, hooks, log);
