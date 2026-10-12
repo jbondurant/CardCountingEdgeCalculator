@@ -1,5 +1,8 @@
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 /**
  * The value of one round, as ROUND_CONTRACT.md defines it, by following every card.
@@ -15,6 +18,11 @@ import java.util.List;
  *
  * The state of the round is copied at each draw, so a branch cannot disturb its
  * siblings. That makes it slow: it is meant for shoes of a couple of dozen cards.
+ *
+ * The walk is written once, over what it adds up (Tally): the value of the round for
+ * valueOfFirstMove, or, for the tests of the risk figures, the probability of each payoff
+ * (distributionOfFirstMove). Both follow the same branches in the same order and weight
+ * them the same way, so the distribution is the value's own walk, not a second one.
  *
  * Comments quote the contract where a sentence of it is implemented.
  */
@@ -33,7 +41,24 @@ public final class BruteForceRound implements RoundValuer {
     public double valueOfFirstMove(int[] shoe, int p1, int p2, int up, PlayerMove first,
                                    RoundPolicy policy) {
         requireArguments(shoe, p1, p2, up, policy);
-        return new Play(up, first, policy).value(shoe, p1, p2);
+        return new Play<>(VALUE, up, first, policy).value(shoe, p1, p2);
+    }
+
+    /**
+     * The whole distribution of the round's payoff, which valueOfFirstMove gives the mean of:
+     * payoff to probability, on the same terms (conditional on the dealer not having a natural,
+     * in units of the dealt hand's stake, no insurance). Its probabilities add up to 1 and its
+     * mean is valueOfFirstMove's value, each up to rounding. It throws exactly what
+     * valueOfFirstMove throws on the same arguments.
+     *
+     * Only the tests use it: the swings on the results page rest on a round's second moment, so
+     * the simulator's histogram of payoffs is held to this one on small shoes (PLAN_COMPUTE.md
+     * 2.4, check 1). It is as slow as the value's walk, and builds a map at every branch.
+     */
+    SortedMap<Double, Double> distributionOfFirstMove(int[] shoe, int p1, int p2, int up, PlayerMove first,
+                                                      RoundPolicy policy) {
+        requireArguments(shoe, p1, p2, up, policy);
+        return new Play<>(DISTRIBUTION, up, first, policy).value(shoe, p1, p2);
     }
 
     private static void requireArguments(int[] shoe, int p1, int p2, int up, RoundPolicy policy) {
@@ -130,24 +155,108 @@ public final class BruteForceRound implements RoundValuer {
         }
     }
 
-    /** What happens after a card is drawn, given the round with that card gone and its rank. */
-    private interface AfterCard {
-        double value(State next, int card);
+    /**
+     * What the walk adds up over the ways the round can go. Every weighted sum of the walk is
+     * built as zero(), then plus(sum, p, v) once per branch in the order the branches are
+     * tried, so an instance sees exactly the arithmetic the walk does.
+     */
+    private interface Tally<V> {
+        V zero();
+
+        /** A settled round: what it paid. */
+        V payoff(double x);
+
+        /** sum plus p times v, where v is what one branch gave and p its probability. */
+        V plus(V sum, double p, V v);
+
+        /** v over d: the renormalization over hole cards that do not give the dealer a natural. */
+        V over(V v, double d);
     }
 
-    /** One call to valueOfFirstMove. */
-    private final class Play {
+    /**
+     * The value of the round. Each step is the double arithmetic the walk did before it was
+     * written over a Tally (sum += p * v, then sum / notNatural), with the same operands in the
+     * same order; Java never fuses or reorders double arithmetic, so the values are the same to
+     * the bit, and BruteForceDistributionTest holds them to what the walk gave before.
+     */
+    private static final Tally<Double> VALUE = new Tally<Double>() {
+        @Override
+        public Double zero() {
+            return 0.0;
+        }
+
+        @Override
+        public Double payoff(double x) {
+            return x;
+        }
+
+        @Override
+        public Double plus(Double sum, double p, Double v) {
+            return sum + p * v;
+        }
+
+        @Override
+        public Double over(Double v, double d) {
+            return v / d;
+        }
+    };
+
+    /**
+     * The probability of each payoff. A payoff is a sum of stakes, halves and blackjackPayout,
+     * so equal payoffs are equal doubles and meet at one key; 0 is kept as +0.0, since a
+     * TreeMap of Doubles tells -0.0 from 0.0. A sum is built only from maps its own branches
+     * made, so plus may add into it in place.
+     */
+    private static final Tally<SortedMap<Double, Double>> DISTRIBUTION = new Tally<SortedMap<Double, Double>>() {
+        @Override
+        public SortedMap<Double, Double> zero() {
+            return new TreeMap<>();
+        }
+
+        @Override
+        public SortedMap<Double, Double> payoff(double x) {
+            SortedMap<Double, Double> m = new TreeMap<>();
+            m.put(x == 0 ? 0.0 : x, 1.0);
+            return m;
+        }
+
+        @Override
+        public SortedMap<Double, Double> plus(SortedMap<Double, Double> sum, double p, SortedMap<Double, Double> v) {
+            for (Map.Entry<Double, Double> e : v.entrySet()) {
+                sum.merge(e.getKey(), p * e.getValue(), Double::sum);
+            }
+            return sum;
+        }
+
+        @Override
+        public SortedMap<Double, Double> over(SortedMap<Double, Double> v, double d) {
+            for (Map.Entry<Double, Double> e : v.entrySet()) {
+                e.setValue(e.getValue() / d);
+            }
+            return v;
+        }
+    };
+
+    /** What happens after a card is drawn, given the round with that card gone and its rank. */
+    private interface AfterCard<V> {
+        V value(State next, int card);
+    }
+
+    /** One call to valueOfFirstMove or distributionOfFirstMove, adding up what tally adds. */
+    private final class Play<V> {
+        final Tally<V> tally;
         final int up;
         final PlayerMove first;
         final RoundPolicy policy;
 
-        Play(int up, PlayerMove first, RoundPolicy policy) {
+        Play(Tally<V> tally, int up, PlayerMove first, RoundPolicy policy) {
+            this.tally = tally;
             this.up = up;
             this.first = first;
             this.policy = policy;
         }
 
-        double value(int[] shoe, int p1, int p2) {
+        V value(int[] shoe, int p1, int p2) {
             // "Order of checks. Before anything is dealt: a malformed argument ... and an
             // illegal first throw IllegalArgumentException. Then the hole card is dealt".
             // The malformed arguments were refused by requireArguments; first is checked
@@ -181,7 +290,7 @@ public final class BruteForceRound implements RoundValuer {
             if (left == 0) {
                 throw new IllegalStateException("the shoe is empty, so no hole card can be dealt");
             }
-            double sum = 0;
+            V sum = tally.zero();
             double notNatural = 0;
             for (int hole = 1; hole <= 10; hole++) {
                 if (undealt[hole] == 0) {
@@ -211,7 +320,7 @@ public final class BruteForceRound implements RoundValuer {
                     dealt.end = End.BLACKJACK;
                 }
                 s.hands.add(dealt);
-                sum += p * play(s);
+                sum = tally.plus(sum, p, play(s));
             }
             // "a shoe whose every card would give the dealer a natural throws
             // IllegalArgumentException."
@@ -220,7 +329,7 @@ public final class BruteForceRound implements RoundValuer {
             }
             // "The value returned is the expected payoff conditional on the dealer not
             // having a natural": renormalize over the hole cards that are not naturals.
-            return sum / notNatural;
+            return tally.over(sum, notNatural);
         }
 
         /**
@@ -228,13 +337,13 @@ public final class BruteForceRound implements RoundValuer {
          * probability shoe[r] / (shoe[1] + ... + shoe[10]), and removes it." Tries each
          * rank in turn on its own copy of the round.
          */
-        double overNextCard(State s, AfterCard then) {
+        V overNextCard(State s, AfterCard<V> then) {
             int left = cardsLeft(s.shoe);
             // "If a draw is needed and the shoe is empty, throw IllegalStateException."
             if (left == 0) {
                 throw new IllegalStateException("a card is needed and the shoe is empty");
             }
-            double sum = 0;
+            V sum = tally.zero();
             for (int r = 1; r <= 10; r++) {
                 if (s.shoe[r] == 0) {
                     continue;
@@ -242,13 +351,13 @@ public final class BruteForceRound implements RoundValuer {
                 double p = (double) s.shoe[r] / left;
                 State next = s.copy();
                 next.shoe[r]--;
-                sum += p * then.value(next, r);
+                sum = tally.plus(sum, p, then.value(next, r));
             }
             return sum;
         }
 
         /** The value of the round from state s on. s belongs to this call and may be changed. */
-        double play(State s) {
+        V play(State s) {
             // Splitting: "Draw the second card of the first new hand, then the second card
             // of the second new hand, both at once." Owed cards come before anything else.
             if (!s.owed.isEmpty()) {
@@ -298,7 +407,7 @@ public final class BruteForceRound implements RoundValuer {
         }
 
         /** Plays move on the current hand. */
-        double apply(State s, PlayerMove move) {
+        V apply(State s, PlayerMove move) {
             Hand h = s.hands.get(s.current);
             switch (move) {
                 case Stand:
@@ -356,7 +465,7 @@ public final class BruteForceRound implements RoundValuer {
         }
 
         /** The dealer's turn, then settlement. */
-        double dealerThenSettle(State s) {
+        V dealerThenSettle(State s) {
             // "The dealer's outcome only matters for hands that ended by standing or
             // doubling without passing 21. When there are none, the dealer does not draw,
             // so a shoe too short for the dealer does not matter in that case."
@@ -377,7 +486,7 @@ public final class BruteForceRound implements RoundValuer {
          * it, until the total is 17 or more. The dealer hits a soft 17 if and only if
          * hitsSoft17."
          */
-        double dealerDraws(State s) {
+        V dealerDraws(State s) {
             int t = total(s.dealer);
             boolean mustHit = t < 17 || (t == 17 && isSoft(s.dealer) && rules.hitsSoft17);
             if (!mustHit) {
@@ -390,7 +499,7 @@ public final class BruteForceRound implements RoundValuer {
         }
 
         /** "Settling a hand", summed over every hand the round ended with. */
-        double settle(State s) {
+        V settle(State s) {
             double sum = 0;
             for (Hand h : s.hands) {
                 switch (h.end) {
@@ -427,7 +536,7 @@ public final class BruteForceRound implements RoundValuer {
                         throw new IllegalStateException("a hand was settled before it ended");
                 }
             }
-            return sum;
+            return tally.payoff(sum);
         }
 
         /**
