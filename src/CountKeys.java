@@ -398,6 +398,32 @@ final class CountKeys {
         }
     }
 
+    /**
+     * The spread of what a count's bet key counts, measured as SPREAD measures Hi-Lo's: over the
+     * 26 kinds, each a 26th of the shoe, the mean squared distance of a kind's bet tag from their
+     * mean, on the count's whole-number scale. An ace side count of weight m moves the bet key by
+     * m x (aces left - cards left / 13), which is the key of tags with m taken off each ace and
+     * m / 13 added to every card; the shift does not change a spread, so the aces' tags are taken
+     * m lower. Hi-Lo's is 10/13; Hi-Opt II's 28/13 and Zen's 32/13, so a step of their true counts
+     * is sqrt(10/28) = 0.598 and sqrt(10/32) = 0.559 of Hi-Lo's (PLAN_COMPUTE.md 5.2; KeyEdges.Axis
+     * puts every true count's keys on Hi-Lo's steps this way). The scale cancels: tags and keys
+     * on the whole-number scale give the same ratio as the book's.
+     */
+    static double betSpread(Count c) {
+        int[] t = c.betTags();
+        double[] x = new double[ShoeRun.KINDS];
+        double mean = 0;
+        for (int k = 0; k < ShoeRun.KINDS; k++) {
+            x[k] = t[k] - (ShoeRun.rankOf(k) == 1 ? c.aceSideCount : 0);
+            mean += x[k] / ShoeRun.KINDS;
+        }
+        double v = 0;
+        for (int k = 0; k < ShoeRun.KINDS; k++) {
+            v += (x[k] - mean) * (x[k] - mean) / ShoeRun.KINDS;
+        }
+        return v;
+    }
+
     /** numerator / denominator rounded to the nearest whole number, ties toward zero, as the simulator rounds. */
     static int roundedRatio(long numerator, long denominator) {
         return (int) GranularCount.roundToGrain((double) numerator / denominator, 1.0);

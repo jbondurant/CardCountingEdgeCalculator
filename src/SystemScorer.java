@@ -127,6 +127,49 @@ final class SystemScorer {
      */
     RoundStarts roundStarts;
 
+    /**
+     * What the point estimate values each test state at, handed out entry by entry and fold by
+     * fold (PLAN_COMPUTE.md 5.3): KeyEdges builds the edge at each count from it. Null by
+     * default, and then nothing is handed out. It is called only from the pass that fills the
+     * per-key tables, never from a resample, so it costs one copy per entry and fold even in a
+     * run with 1,000 resamples. It is handed copies, so nothing it does can change a figure the
+     * scorer computes; SinkTest holds every figure of a Result the same to the bit with it on
+     * and off.
+     */
+    StateSink stateSink;
+    /**
+     * Each resample's per-key sums under that resample's refitted play and its multiplicities,
+     * handed out entry by entry and fold by fold (PLAN_COMPUTE.md 5.3, run A'), so the edge at
+     * each count gets intervals with the plays refitted, as the published ones are. Null by
+     * default. Resamples are worked out on several threads, so it is called from several at
+     * once, each call with its own resample; it is handed arrays made for it alone.
+     */
+    ResampleSink resampleSink;
+
+    /** Takes what the point estimate values each test state at (stateSink). */
+    interface StateSink {
+        /**
+         * Entry entry at penetration p, fold f: its test states, each by its index in the
+         * ScoringStates, with its weight 1/q, its round value before insurance under the entry's
+         * play (the chart's for a row betting only), what the fold's fitted insurance adds to
+         * it, and its bet key (the key itself, not its place among the keys). All five arrays
+         * are in the order the scorer walks the fold's test states, and are the sink's to keep.
+         */
+        void states(int p, Entry entry, int f, int[] state, double[] weight, double[] play, double[] insurance, int[] key);
+    }
+
+    /** Takes each resample's per-key sums (resampleSink). */
+    interface ResampleSink {
+        /**
+         * Resample r at penetration p, entry entry, fold f: for each of the entry's bet keys at
+         * the penetration (key, in increasing order), the sum over the fold's test states with
+         * that key of their resampled weight (1/q times the shoe's multiplicity), of weight times
+         * round value under the resample's refitted play and insurance, and of weight times what
+         * that insurance adds. Every array is new and the sink's to keep.
+         */
+        void sums(int p, int r, Entry entry, int f, int[] key, double[] weight, double[] value, double[] insurance);
+    }
+
     SystemScorer(ScoringStates st, Bootstrap boot, double mPlay) {
         if (boot.shoes != st.shoes) {
             throw new IllegalArgumentException("the bootstrap is over " + boot.shoes + " shoes, the states " + st.shoes);
@@ -2794,7 +2837,7 @@ final class SystemScorer {
                 refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, plays[f]);
             }
             double[][] wo = rows == null ? null : new double[result.entries.size()][];
-            double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false, mk, wo);
+            double[][] rs = scoreOnce(pen, ip, refit, bk, result.entries, wm, p, false, mk, wo, r);
             for (int e = 0; e < rs.length; e++) {
                 for (int m = 0; m < METRICS; m++) {
                     result.entries.get(e).boot[p][m][r] = rs[e][m];
@@ -2811,7 +2854,7 @@ final class SystemScorer {
                     refit[f] = foldPlay(parts, pen, ip, drawn(pen.train[f], wm), wm, um, null, byKey, fullPlays[f]);
                 }
                 wo = rows == null ? null : new double[result.fullEntries.size()][];
-                rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false, mkFull, wo);
+                rs = scoreOnce(pen, ip, refit, bkFull, result.fullEntries, wm, p, false, mkFull, wo, r);
                 for (int e = 0; e < rs.length; e++) {
                     for (int m = 0; m < METRICS; m++) {
                         result.fullEntries.get(e).boot[p][m][r] = rs[e][m];
@@ -3206,7 +3249,7 @@ final class SystemScorer {
      */
     private double[][] scoreOnce(Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk,
                                  List<Entry> entries, double[] w, int p, boolean detail) {
-        return scoreOnce(pen, ip, plays, bk, entries, w, p, detail, null, null);
+        return scoreOnce(pen, ip, plays, bk, entries, w, p, detail, null, null, -1);
     }
 
     /**
@@ -3218,6 +3261,18 @@ final class SystemScorer {
     private double[][] scoreOnce(Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk,
                                  List<Entry> entries, double[] w, int p, boolean detail, int[][] minKey,
                                  double[][] wideOut) {
+        return scoreOnce(pen, ip, plays, bk, entries, w, p, detail, minKey, wideOut, -1);
+    }
+
+    /**
+     * The same, r the resample the weights are (-1 for the estimate): with detail the state sink
+     * is handed each entry's test states, and on a resample the resample sink its per-key sums.
+     * Both read what the scoring has worked out and write nothing it reads; the wide plans'
+     * figures are worked out as without them.
+     */
+    private double[][] scoreOnce(Pen pen, InsuranceParts ip, FoldPlay[] plays, BetKeys[] bk,
+                                 List<Entry> entries, double[] w, int p, boolean detail, int[][] minKey,
+                                 double[][] wideOut, int r) {
         int n = pen.states.length;
         Wide[] acc = null;
         double[][][][] wideDet = null;
@@ -3245,6 +3300,12 @@ final class SystemScorer {
                 for (int j : pen.test[f]) {
                     s[PLAY] += w[j] * play[j];
                     s[INSURANCE] += w[j] * ins[j];
+                }
+                if (detail && stateSink != null) {
+                    handStates(pen, entries.get(e), bk[e], f, w, play, ins, p);
+                }
+                if (r >= 0 && resampleSink != null) {
+                    handSums(pen, entries.get(e), bk[e], f, w, play, ins, p, r);
                 }
                 double[][] d = null;
                 if (detail) {
@@ -3288,6 +3349,45 @@ final class SystemScorer {
             }
         }
         return out;
+    }
+
+    /** Hands the state sink copies of one entry's test states of fold f, as scoreOnce values them. */
+    private void handStates(Pen pen, Entry entry, BetKeys bk, int f, double[] w, double[] play, double[] ins, int p) {
+        int[] test = pen.test[f];
+        int[] state = new int[test.length];
+        double[] weight = new double[test.length];
+        double[] pv = new double[test.length];
+        double[] iv = new double[test.length];
+        int[] key = new int[test.length];
+        for (int t = 0; t < test.length; t++) {
+            int j = test[t];
+            state[t] = pen.states[j];
+            weight[t] = w[j];
+            pv[t] = play[j];
+            iv[t] = ins[j];
+            key[t] = bk.value[bk.index[j]];
+        }
+        stateSink.states(p, entry, f, state, weight, pv, iv, key);
+    }
+
+    /**
+     * Hands the resample sink one entry's per-key sums over fold f's test states, each summed in
+     * the order bets sums them, w x (play + insurance), so a key's value sum is the one its bets
+     * were scored with, to the bit.
+     */
+    private void handSums(Pen pen, Entry entry, BetKeys bk, int f, double[] w, double[] play, double[] ins, int p,
+                          int r) {
+        int keys = bk.value.length;
+        double[] weight = new double[keys];
+        double[] value = new double[keys];
+        double[] insurance = new double[keys];
+        for (int j : pen.test[f]) {
+            int k = bk.index[j];
+            weight[k] += w[j];
+            value[k] += w[j] * (play[j] + ins[j]);
+            insurance[k] += w[j] * ins[j];
+        }
+        resampleSink.sums(p, r, entry, f, bk.value.clone(), weight, value, insurance);
     }
 
     /** NaN in the own ramp's figures, which a row betting on its own value does not have. */
