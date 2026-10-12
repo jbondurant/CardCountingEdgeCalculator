@@ -58,6 +58,9 @@ public final class Sim {
             case "p2":
                 System.exit(p2(Arrays.copyOfRange(args, 1, args.length)) ? 0 : 1);
                 break;
+            case "variants":
+                variants(Arrays.copyOfRange(args, 1, args.length));
+                break;
             default:
                 System.err.println("unknown command " + args[0]);
                 System.exit(2);
@@ -154,6 +157,40 @@ public final class Sim {
         Summary.write(out.resolve("summary-" + name + ".json"), facts, comparisons,
                 Outputs.differences(p3, rows, sums, bundle.exact, plants));
         System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-" + name + ".json"));
+    }
+
+    /**
+     * Mode B and the moving count beside mode A (SIM_CHECK.md section 9), on P3's first 4 chunks by
+     * default: variants.tsv and summary-variants.json, the paired differences shoe by shoe.
+     */
+    static void variants(String[] args) throws Exception {
+        Plants plants = plants(args);
+        Bundle bundle = new Bundle(Path.of(required(args, "--bundle")), plants);
+        Path out = Path.of(required(args, "--out"));
+        String commit = required(args, "--sim-commit");
+        int chunks = Integer.parseInt(option(args, "--chunks", "4"));
+        int size = Integer.parseInt(option(args, "--chunk-size", "1000000"));
+        int threads = Integer.parseInt(option(args, "--threads", "1"));
+        long t0 = System.nanoTime();
+        Variants v = new Variants(P3.SEED, bundle.rows(false), registry(args), bundle.chart, plants);
+        double[] sums = v.chunked(bundle, out.resolve("variants"), commit, chunks, size, threads, -1);
+        java.util.List<Summary.Difference> differences = new java.util.ArrayList<>();
+        Outputs.write(out.resolve("variants.tsv"), v.lines(sums, bundle.exact, differences));
+        java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
+        facts.put("check", "mode B and the moving count beside mode A (reported, not tested)");
+        facts.put("simulatorCommit", commit);
+        facts.put("bundleSha256", bundle.sha256);
+        facts.put("chartFingerprint", bundle.chart.fingerprint());
+        facts.put("seed", Long.toString(P3.SEED));
+        facts.put("figures", String.join(",", v.ids));
+        facts.put("shoes", Long.toString((long) chunks * size));
+        facts.put("chunks", chunks + " of " + size + " shoes");
+        facts.put("threads", Integer.toString(threads));
+        facts.put("wallSeconds", String.format("%.1f", (System.nanoTime() - t0) / 1e9));
+        facts.put("java", System.getProperty("java.version"));
+        facts.put("plants", plants.describe());
+        Summary.write(out.resolve("summary-variants.json"), facts, java.util.List.of(), differences);
+        System.out.println("variants: " + v.ids + "; " + out.resolve("variants.tsv"));
     }
 
     /** Checks D1 and D4, then P2; false if an exact check failed (P2 is then not run). */
