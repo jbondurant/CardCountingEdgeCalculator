@@ -22,6 +22,9 @@ public final class Table {
     /** The result of each first move (0 to 4) played with the chart after it, and the chart's own round (5). */
     private final double[] main = new double[6];
     private final boolean[] known = new boolean[6];
+    private final boolean[] splitAt = new boolean[6];
+    /** Whether the player split in the round of the last {@link #result} or {@link #chartRound} (the swings' SPLITS). */
+    public boolean split;
     private final int[] seen = new int[4];
     private Round.Deck deck;
     private int from;
@@ -59,7 +62,9 @@ public final class Table {
 
     /** The chart's own round: its result (the chart never insures), and where it ended. */
     public double chartRound() {
-        return main(-1);
+        double x = main(-1);
+        split = splitAt[5];
+        return x;
     }
 
     /** The next round's start after the chart's round (mode A's walk). */
@@ -73,6 +78,7 @@ public final class Table {
         if (!known[slot]) {
             round.play(deck, from, chart, slot == 5 ? -1 : move);
             main[slot] = round.main;
+            splitAt[slot] = round.handsPlayed > 1;
             known[slot] = true;
             if (slot == 5) {
                 chartNext = round.next;
@@ -89,6 +95,7 @@ public final class Table {
         Strategy s = play.strategy();
         if ("full".equals(s.scope)) {
             round.play(deck, from, play, -1);
+            split = round.handsPlayed > 1;
             return round.main + round.insurance;
         }
         int key = play.keyOfDeal(seen, holeCardSeen ? 4 : 3);
@@ -97,6 +104,8 @@ public final class Table {
             insurance = hole == 10 ? 2 * rules.insuranceStake : -rules.insuranceStake;
         }
         int move = natural || "betting".equals(s.scope) ? -1 : play.firstMoveAt(key, p1, p2, up);
-        return main(move) + insurance;
+        double x = main(move) + insurance;
+        split = splitAt[move < 0 ? 5 : move];
+        return x;
     }
 }

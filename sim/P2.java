@@ -232,7 +232,7 @@ public final class P2 {
                 int o = offset[r] + 4 * j;
                 out.add(new Summary.Comparison("P2", row.name, row.pen, row.figures.get(j), sums[o + 3] / sums[o + 1],
                         Double.NaN, sums[o] / sums[o + 1], Math.sqrt(sums[o + 2]) / sums[o + 1],
-                        (double) k * sections.get(r).index.length, sections.get(r).index.length, 0));
+                        (double) k * sections.get(r).index.length, sections.get(r).index.length, 0, ""));
             }
         }
         return out;

@@ -86,7 +86,16 @@ public final class Sim {
         return v;
     }
 
-    /** Check P3: the run, then its summary beside the chunks. */
+    /** The registry of SIM_CHECK.md section 2 (SHOE_SPEC.md answer 9): --registry, by default SIM_CHECK.md here. */
+    static Registry registry(String[] args) throws java.io.IOException {
+        return Registry.read(Path.of(option(args, "--registry", "SIM_CHECK.md")));
+    }
+
+    /**
+     * Check P3: the run, then beside its chunks the summary (with the paired differences from
+     * Hi-Lo), depth.tsv, ev-by-key.tsv, swings, the per-shoe records of the first two chunks and
+     * the fans (SHOE_SPEC.md Part C). With --moving only the summary and depth file, as p3-moving.
+     */
     static void p3(String[] args) throws Exception {
         Plants plants = plants(args);
         Bundle bundle = new Bundle(Path.of(required(args, "--bundle")), plants);
@@ -95,37 +104,55 @@ public final class Sim {
         int chunks = Integer.parseInt(option(args, "--chunks", "38"));
         int size = Integer.parseInt(option(args, "--chunk-size", "1000000"));
         int threads = Integer.parseInt(option(args, "--threads", "1"));
+        int fanPaths = Integer.parseInt(option(args, "--fan-paths", "20"));
+        int fanRounds = Integer.parseInt(option(args, "--fan-rounds", "100000"));
+        Registry registry = registry(args);
         java.util.List<Row> rows = bundle.rows(true);
         long t0 = System.nanoTime();
         boolean moving = Arrays.asList(args).contains("--moving");
         String name = moving ? "p3-moving" : "p3";
-        double[] sums = P3.chunked(bundle, rows, out.resolve(name), commit, P3.SEED, chunks, size, threads, plants, -1, moving);
-        P3 shape = new P3(P3.SEED, rows, bundle.chart, plants);
-        java.util.List<String> depth = new java.util.ArrayList<>(java.util.List.of(
-                "# depth.tsv: the chart's flat result by band of 26 cards dealt, simulated (P3, every round start of the walk)",
-                "band\tfrom\tto\trounds\tmean"));
-        for (int b = 0; b < P3.BANDS; b++) {
-            double y = sums[shape.bandsAt() + 2 * b];
-            double n = sums[shape.bandsAt() + 2 * b + 1];
-            depth.add(b + "\t" + 26 * b + "\t" + Math.min(26 * b + 25, Shoe.CUTS[2] - 1) + "\t" + (long) n + "\t" + y / n);
+        long recordShoes = Math.min(2L * size, (long) chunks * size);
+        Path parts = out.resolve(name + "-records");
+        java.nio.file.Files.createDirectories(parts);
+        P3 p3 = new P3(P3.SEED, rows, bundle.chart, plants).moving(moving).extras(registry, moving ? null : parts, recordShoes);
+        double[] sums = P3.chunked(p3, bundle, out.resolve(name), commit, chunks, size, threads, -1);
+        States states = bundle.states();
+        java.util.List<Summary.Comparison> comparisons = Summary.p3(rows, sums, bundle.exact, plants, registry);
+        Outputs.write(out.resolve(moving ? "p3-moving-depth.tsv" : "depth.tsv"), Outputs.depth(p3, sums, states));
+        if (!moving) {
+            Outputs.write(out.resolve("ev-by-key.tsv"), Outputs.evByKey(p3, sums, states, rows));
+            Outputs.write(out.resolve("swings-p3.tsv"), Outputs.swingsP3(p3, sums, comparisons, rows));
+            Outputs.assembleSwings(out);
+            p3.writeRecords(out, size);
+            for (Registry.Fig fig : registry.figures) {
+                int r = p3.rowOf(fig.row(), fig.pen());
+                if (fig.paths() && r >= 0) {
+                    double[][] fan = P3.fan(P3.SEED, rows.get(r), rows.get(r).figures.indexOf(fig.figure()), bundle.chart,
+                            plants, fanPaths, fanRounds, 100);
+                    Outputs.write(out.resolve("fan-" + fig.id() + ".tsv"), Outputs.fan(fan));
+                }
+            }
         }
-        java.nio.file.Files.write(out.resolve(name + "-depth.tsv"), depth);
         double seconds = (System.nanoTime() - t0) / 1e9;
         java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
         facts.put("check", moving ? "P3, the count moving through split hands (reported, not tested)" : "P3");
         facts.put("simulatorCommit", commit);
         facts.put("bundleSha256", bundle.sha256);
+        facts.put("chartFingerprint", bundle.chart.fingerprint());
         facts.put("seed", Long.toString(P3.SEED));
         facts.put("generator", "xoshiro256** seeded by SplitMix64: Xoshiro.of(seed, shoe, 0 cards / 1 coins, 0)");
         facts.put("shoes", Long.toString((long) chunks * size));
         facts.put("chunks", chunks + " of " + size + " shoes");
+        facts.put("records", "shoes 0 to " + (recordShoes - 1));
+        facts.put("fan", fanPaths + " paths of " + fanRounds + " rounds, the win every 100");
         facts.put("threads", Integer.toString(threads));
         facts.put("wallSeconds", String.format("%.1f", seconds));
         facts.put("loadAverage", Double.toString(java.lang.management.ManagementFactory.getOperatingSystemMXBean()
                 .getSystemLoadAverage()));
         facts.put("java", System.getProperty("java.version"));
         facts.put("plants", plants.describe());
-        Summary.write(out.resolve("summary-" + name + ".json"), facts, Summary.p3(rows, sums, bundle.exact, plants));
+        Summary.write(out.resolve("summary-" + name + ".json"), facts, comparisons,
+                Outputs.differences(p3, rows, sums, bundle.exact, plants));
         System.out.println("P3: " + rows.size() + " rows; summary in " + out.resolve("summary-" + name + ".json"));
     }
 

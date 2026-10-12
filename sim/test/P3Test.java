@@ -184,8 +184,9 @@ class P3Test {
         double y = 0;
         double n = 0;
         for (int band = 0; band < P3.BANDS; band++) {
-            y += sums[p3.bandsAt() + 2 * band];
-            n += sums[p3.bandsAt() + 2 * band + 1];
+            double[] e = p3.band(sums, band);
+            y += e[0] * e[2];
+            n += e[2];
         }
         Row chart80 = rows.get(2);
         assertEquals(sums[chart80.offset + 1], n);
