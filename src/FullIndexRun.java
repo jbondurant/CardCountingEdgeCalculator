@@ -48,9 +48,15 @@ import java.util.List;
  * (TreeStore.readOnly): the one way a run of other classes may open a kept store such as
  * runs/full-index/full-c06c061/trees.bin.
  *
+ * --fit-from DIR replays the finished run in DIR instead (FullIndexReplay, PLAN_COMPUTE.md 6.1): its
+ * strategies put back from its fit.ckpt, the passes skipped, each item given its last round and
+ * scored again and set beside the part DIR holds, with --folds-only, --only, --wide, --sink and
+ * --export saying which items and what more each gives; DIR is only read.
+ *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --states FILE --out DIR
  * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH]
  * [--counts FILE] [--pens P,P] [--resume] [--second-look]
+ * [--fit-from DIR [--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR]]
  */
 public final class FullIndexRun {
 
@@ -93,6 +99,8 @@ public final class FullIndexRun {
         int threads = 6;
         boolean resume = false;
         boolean secondLook = false;
+        FullIndexReplay.Options replay = new FullIndexReplay.Options();
+        boolean replayOnly = false;
         for (int a = 0; a < args.length; a++) {
             switch (args[a]) {
                 case "--states":
@@ -131,14 +139,59 @@ public final class FullIndexRun {
                 case "--second-look":
                     secondLook = true;
                     break;
+                case "--fit-from":
+                    replay.fitFrom = Paths.get(args[++a]);
+                    break;
+                case "--folds-only":
+                    replay.foldsOnly = replayOnly = true;
+                    break;
+                case "--only":
+                    replay.only = java.util.Arrays.asList(args[++a].split(","));
+                    replayOnly = true;
+                    break;
+                case "--wide":
+                    replay.wide = replayOnly = true;
+                    break;
+                case "--sink":
+                    replay.sink = Paths.get(args[++a]);
+                    replayOnly = true;
+                    break;
+                case "--export":
+                    replay.export = Paths.get(args[++a]);
+                    replayOnly = true;
+                    break;
                 default:
                     throw new IllegalArgumentException("usage: FullIndexRun --states FILE --out DIR [--shoes N] "
                             + "[--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH] "
-                            + "[--counts FILE] [--pens P,P] [--resume] [--second-look]; not " + args[a]);
+                            + "[--counts FILE] [--pens P,P] [--resume] [--second-look], or a replay, --fit-from DIR "
+                            + "[--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR]; not " + args[a]);
             }
         }
         if (states == null || out == null) {
             throw new IllegalArgumentException("--states and --out are needed");
+        }
+        if (replay.fitFrom != null) {
+            if (secondLook) {
+                throw new IllegalArgumentException("a replay makes no look at registered counts, so takes no --second-look");
+            }
+            replay.states = states;
+            replay.out = out;
+            replay.trees = treeFile;
+            replay.noTrees = noTrees;
+            replay.readOnlyTrees = readOnlyTrees;
+            replay.countsFile = countsFile;
+            replay.pens = pens;
+            replay.shoes = shoes;
+            replay.resamples = resamples;
+            replay.threads = threads;
+            replay.resume = resume;
+            replay.heapFill = heapFill;
+            FullIndexReplay.run(replay, commit, log);
+            return;
+        }
+        if (replayOnly) {
+            throw new IllegalArgumentException("--folds-only, --only, --wide, --sink and --export are for a replay, "
+                    + "which --fit-from DIR asks for");
         }
         if (treeFile == null && !noTrees) {
             treeFile = out.resolve("trees.bin");
