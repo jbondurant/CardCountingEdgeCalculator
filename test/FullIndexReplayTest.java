@@ -1,5 +1,6 @@
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -48,7 +49,8 @@ public class FullIndexReplayTest {
             + "    \"tags\": [0, 10000, 10000, 20000, 20000, 10000, 10000, 0, 0, -20000],\n"
             + "    \"betting\": [-20000, 10000, 10000, 20000, 20000, 10000, 10000, 0, 0, -20000] } ] }";
 
-    /** The fixture: a state file, its counts, the run's directory and its tree store, made once. */
+    /** The fixture: a state file, its counts, the run's directory and its tree store, made once, in a directory JUnit removes. */
+    @TempDir
     static Path root;
     static Path states;
     static Path counts;
@@ -75,7 +77,6 @@ public class FullIndexReplayTest {
 
     @BeforeAll
     static void theRun() throws Exception {
-        root = Files.createTempDirectory("replay");
         states = ComparisonReportTest.syntheticRun(root, 79, 79, 12);
         counts = CustomCountsTest.write(root, "candidates.json", COUNTS);
         source = root.resolve("run");
