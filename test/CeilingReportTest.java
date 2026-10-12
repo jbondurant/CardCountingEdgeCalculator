@@ -25,19 +25,101 @@ public class CeilingReportTest {
 
     /** A results.ser as FullIndexRun writes it, of the counts given scored at first decisions. */
     static Path results(Path dir, Path file, ScoringStates st, List<SystemScorer.Result> results) throws Exception {
+        return results(dir, file, st, results, st.perfect.clone());
+    }
+
+    /** The same with the perfect array given, in dir/results.ser. */
+    static Path results(Path dir, Path file, ScoringStates st, List<SystemScorer.Result> results, double[] perfect)
+            throws Exception {
         List<CountKeys.Count> counts = new ArrayList<>();
         for (SystemScorer.Result r : results) {
             counts.add(r.count);
         }
         String id = FullIndexRun.identity("test", file, st.shoes, st.size, RESAMPLES, 2, counts, FullIndexRun.PENS, null);
+        Files.createDirectories(dir);
         Path out = dir.resolve("results.ser");
         try (ObjectOutputStream o = new ObjectOutputStream(Files.newOutputStream(out))) {
             o.writeUTF(id);
             o.writeObject(new ArrayList<>(results));
-            o.writeObject(st.perfect.clone());
+            o.writeObject(perfect);
             o.writeObject(new ArrayList<>());
         }
         return out;
+    }
+
+    /** A state of the 80% penetration alone, one past the 75% cut. */
+    static int onlyAt80(SystemScorer sc) {
+        java.util.Set<Integer> at75 = new java.util.HashSet<>();
+        for (int s : sc.pen(1).states) {
+            at75.add(s);
+        }
+        for (int s : sc.pen(2).states) {
+            if (!at75.contains(s)) {
+                return s;
+            }
+        }
+        throw new IllegalStateException("the fixture has no state at 80% alone");
+    }
+
+    /**
+     * PLAN_COMPUTE.md 4.2: SystemScorer.bounds leaves the full-play bound row out, without a word,
+     * at a penetration where the perfect array lacks a state, so the report refuses such an array,
+     * naming the penetration and the number of states, before anything is scored. A missing array
+     * and one of another length are refused too, where the report used to drop the row. The
+     * complete array gives the row at all three penetrations. Removing the check in
+     * CeilingReport.check fails this: the run goes on and the 80% bound is null.
+     */
+    @Test
+    public void aPerfectArrayLackingAStateIsRefused(@TempDir Path dir) throws Exception {
+        Path file = ComparisonReportTest.syntheticRun(dir, 79, 79, 16);
+        ScoringStates st = FullIndexPilot.load(file, StateStore.shoesDone(file));
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, RESAMPLES, Bootstrap.SEED), SystemScorer.M_PLAY);
+        List<SystemScorer.Result> stored = published(sc);
+        Path counts = CustomCountsTest.write(dir, "candidates.json", CustomCountsTest.CANDIDATES);
+        PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+
+        double[] lacking = st.perfect.clone();
+        lacking[onlyAt80(sc)] = Double.NaN;
+        Path nan = results(dir.resolve("nan"), file, st, stored, lacking);
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, nan, null,
+                counts, null, RESAMPLES, 1, "test", nowhere));
+        assertTrue(e.getMessage().contains("lacks a value at 80%: 1 of " + sc.pen(2).states.length + " states"),
+                e.getMessage());
+        assertFalse(e.getMessage().contains("75%"), e.getMessage());
+
+        Path none = results(dir.resolve("none"), file, st, stored, null);
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, none, null, counts, null, RESAMPLES, 1,
+                "test", nowhere));
+        assertTrue(e.getMessage().contains("holds no perfect array"), e.getMessage());
+        Path shortOne = results(dir.resolve("short"), file, st, stored, Arrays.copyOf(st.perfect, st.size - 1));
+        e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(file, shortOne, null, counts, null,
+                RESAMPLES, 1, "test", nowhere));
+        assertTrue(e.getMessage().contains((st.size - 1) + " values"), e.getMessage());
+
+        Path whole = results(dir.resolve("whole"), file, st, stored, st.perfect.clone());
+        CeilingReport.Ceiling c = CeilingReport.run(file, whole, null, counts, null, RESAMPLES, 1, "test", nowhere);
+        assertEquals(3, c.bounds.size());
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            assertNotNull(c.bounds.get(2).estimate[p], "the full-play bound at " + SystemScorer.PENETRATIONS[p]);
+        }
+    }
+
+    /** On the main file the refusal of an incomplete perfect array comes before the look: the ledger is left as committed. */
+    @Test
+    public void anIncompletePerfectArrayCostsNoLook(@TempDir Path dir) throws Exception {
+        MainFileLookTest.Repo r = MainFileLookTest.repo(dir, MainFileLookTest.ONE);
+        r.commit("register");
+        ScoringStates st = FullIndexPilot.load(r.main, StateStore.shoesDone(r.main));
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, RESAMPLES, Bootstrap.SEED), SystemScorer.M_PLAY);
+        double[] lacking = st.perfect.clone();
+        lacking[onlyAt80(sc)] = Double.NaN;
+        Path nan = results(dir.resolve("runs").resolve("nan"), r.main, st, published(sc), lacking);
+        Path save = dir.resolve("ceiling.ser");
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingReport.run(r.main, nan,
+                r.printed, r.counts, save, r.resamples, 1, "test", r.nowhere));
+        assertTrue(e.getMessage().contains("lacks a value at 80%"), e.getMessage());
+        assertEquals(1, r.ledgerLines(), "an incomplete perfect array costs no look");
+        assertFalse(Files.exists(save));
     }
 
     static List<SystemScorer.Result> published(SystemScorer sc) throws Exception {

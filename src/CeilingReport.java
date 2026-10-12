@@ -23,7 +23,9 @@ import java.util.List;
  * report (report-final), it also sets the stored rows once beside its printed figures
  * (checkPrinted): its headline section, printed again from the stored rows by ComparisonReport's
  * own code, must read as published, every estimate, SE, bias and interval and each penetration's
- * max-|t| multipliers, to the printed digit. On the main state file both checks are required; the
+ * max-|t| multipliers, to the printed digit. The stored perfect array must hold a value for every
+ * state of every penetration, or the run is refused (requireCompletePerfect), since the full-play
+ * bound row would otherwise be left out without a word. On the main state file both checks are required; the
  * counts must be the registration, committed as it stands, and the ledger clean (CustomCounts),
  * and the look is written to the ledger.
  *
@@ -249,10 +251,53 @@ final class CeilingReport {
         return c;
     }
 
+    /**
+     * Refuses a perfect array that cannot give the full-play bound row at every penetration
+     * (PLAN_COMPUTE.md 4.2): one missing, one of another length than the states, or one holding a
+     * NaN at any state of any penetration. SystemScorer.bounds leaves the full-play bound out,
+     * without a word, at a penetration where the array lacks a state, and FullIndexFit fills the
+     * array only for the states its run visits; until this check the report also dropped the row
+     * when the array was missing or the wrong length. A report without its full-play bound reads as
+     * complete and is not, so each case stops the run here, naming how many states of each
+     * penetration lack a value. The way on is a complete array: the replay of c06c061
+     * (PLAN_COMPUTE.md 6.1) works out every state's value again. source names the array in the
+     * message.
+     */
+    static void requireCompletePerfect(double[] perfect, SystemScorer scorer, String source) {
+        int size = scorer.st.size;
+        if (perfect == null) {
+            throw new IllegalStateException(source + " holds no perfect array, so the full-play bound row cannot be "
+                    + "scored; a report without it is refused (PLAN_COMPUTE.md 4.2)");
+        }
+        if (perfect.length != size) {
+            throw new IllegalStateException(source + "'s perfect array holds " + perfect.length + " values, not one for "
+                    + "each of the " + size + " states (PLAN_COMPUTE.md 4.2)");
+        }
+        List<String> missing = new ArrayList<>();
+        for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+            int[] states = scorer.pen(p).states;
+            int nan = 0;
+            for (int s : states) {
+                if (Double.isNaN(perfect[s])) {
+                    nan++;
+                }
+            }
+            if (nan > 0) {
+                missing.add(SystemScorer.PENETRATIONS[p] + ": " + nan + " of " + states.length + " states");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(source + "'s perfect array lacks a value at " + String.join("; ", missing)
+                    + ". The full-play bound row would be left out there without a word, so the run stops; the "
+                    + "replay of c06c061 (PLAN_COMPUTE.md 6.1) works out every state's value again (4.2)");
+        }
+    }
+
     /** The checks that the stored rows pair with this run and this code, which refuse to go on if not. */
     static Ceiling check(Path states, ScoringStates st, SystemScorer scorer, Published p, CustomCounts.Listing counts,
                          int threads) throws Exception {
         requirePaired(p, states, st, scorer.boot.resamples);
+        requireCompletePerfect(p.perfect, scorer, "the stored rows");
         Ceiling c = new Ceiling();
         c.published = p;
         c.st = st;
@@ -292,7 +337,8 @@ final class CeilingReport {
         } finally {
             scorer.ownValueRows = false;
         }
-        c.bounds = scorer.bounds(p.perfect != null && p.perfect.length == st.size ? p.perfect : null);
+        // check has refused an array that lacks any state, so the full-play bound is scored at every penetration.
+        c.bounds = scorer.bounds(p.perfect);
         List<CountKeys.Count> refit = new ArrayList<>();
         for (CustomCounts.Entry e : counts.entries) {
             if ("headline".equals(e.role)) {
@@ -589,9 +635,19 @@ final class CeilingReport {
     }
 
     static Claim claim(SystemScorer.Entry row, List<SystemScorer.Entry> comparators, int p, int m) {
+        return claim(row, comparators, p, m, (a, b) -> 1);
+    }
+
+    /**
+     * The same with each difference widened by the ratio given for its pair (SystemScorer.difference):
+     * at full play the larger of the two counts' difference ratios (COUNT_DESIGN.md section 5). At
+     * first decisions the ratio is 1 and nothing is widened, so the figures are the report's.
+     */
+    static Claim claim(SystemScorer.Entry row, List<SystemScorer.Entry> comparators, int p, int m,
+                       java.util.function.ToDoubleBiFunction<SystemScorer.Entry, SystemScorer.Entry> widen) {
         Claim out = new Claim(row);
         for (SystemScorer.Entry j : comparators) {
-            Bootstrap.Interval d = SystemScorer.difference(row, j, p, m, 1);
+            Bootstrap.Interval d = SystemScorer.difference(row, j, p, m, widen.applyAsDouble(row, j));
             out.against.add(j);
             out.differences.add(d);
             out.gain = Math.min(out.gain, d.lo);
@@ -701,85 +757,8 @@ final class CeilingReport {
                 : "ROWS ABOVE THEIR BOUND, A SCORING BUG: " + String.join("; ", over) + ".");
         out.println();
 
-        SystemScorer.Entry none = c.published.nullCount().entries.get(0);
-        SystemScorer.Entry hiLo = c.published.of("Hi-Lo").entries.get(0);
-        for (int metric : new int[]{s8, SystemScorer.FLAT}) {
-            String cell = metric == SystemScorer.FLAT ? "flat" : "1-" + SystemScorer.SPREADS + " same schedule";
-            out.printf("## The ladder, %s%n", cell);
-            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
-                out.println();
-                out.printf("### %s penetration%n%n", SystemScorer.PENETRATIONS[p]);
-                out.println("| Row | EV | 95% CI | Diff from Hi-Lo | 95% CI | Efficiency |");
-                out.println("|---|---|---|---|---|---|");
-                SystemScorer.Entry bound = c.bounds.get(0);
-                List<SystemScorer.Entry> ladder = new ArrayList<>();
-                ladder.add(none);
-                ladder.add(hiLo);
-                ladder.add(bestOf(published(c, false), p, metric));
-                ladder.add(bestOf(published(c, true), p, metric));
-                for (SystemScorer.Result r : c.custom) {
-                    for (SystemScorer.Entry e : r.entries) {
-                        if (!e.bettingOnly) {
-                            ladder.add(e);
-                        }
-                    }
-                }
-                ladder.addAll(c.bounds);
-                for (SystemScorer.Entry e : ladder) {
-                    if (e.estimate[p] == null) {
-                        continue;
-                    }
-                    Bootstrap.Interval iv = Bootstrap.interval(e.estimate[p][metric], e.boot[p][metric]);
-                    Bootstrap.Interval d = SystemScorer.difference(e, hiLo, p, metric, 1);
-                    double eff = (e.estimate[p][metric] - none.estimate[p][metric])
-                            / (bound.estimate[p][metric] - none.estimate[p][metric]);
-                    out.printf("| %s | %s | %s | %s | %s | %s |%n", e.name, ComparisonReport.pct(iv.estimate),
-                            ComparisonReport.ci(iv), ComparisonReport.pct(d.estimate), ComparisonReport.ci(d),
-                            ComparisonReport.ratio(eff));
-                }
-            }
-            out.println();
-        }
-
-        out.println("## Headline claims");
-        out.println();
-        if (c.counts.cells == null) {
-            out.printf("%s names no cells, so no claim is made.%n%n", c.counts.file);
-        } else {
-            out.println("Only the counts the file names for each cell. Each such row less each of its comparators, paired "
-                    + "resample by resample, at the 95% interval's lower end (a one-sided 97.5% bound). The claim holds "
-                    + "where every lower end is above zero; the smallest is the gain, a lower bound on the row less the "
-                    + "best published row, whichever that is. A cell names at most two rows, so its claims hold together "
-                    + "at 95% (Bonferroni); each cell is a statement of its own, not covered jointly with the others, and "
-                    + "the headline is 80%, 1-8.");
-            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
-                for (String[] cell : CLAIM_CELLS) {
-                    int metric = claimMetric(cell[0]);
-                    for (SystemScorer.Result r : claimed(c, cell[0])) {
-                        SystemScorer.Entry k = row(r);
-                        List<SystemScorer.Entry> family = comparators(c, r);
-                        Claim cl = claim(k, family, p, metric);
-                        List<SystemScorer.Entry> controls = controls(c, r);
-                        String tags = "no controls registered";
-                        if (!controls.isEmpty()) {
-                            Claim tc = claim(k, controls, p, metric);
-                            tags = ComparisonReport.pct(tc.gain) + " against " + controls.size() + " controls at g";
-                        }
-                        SystemScorer.Entry[] from = new SystemScorer.Entry[1];
-                        double[] fl = floor(k, family, p, metric, from);
-                        out.printf("%n- %s at %s, %s: gain %s; best comparator %s, difference %s %s; %d comparators; "
-                                        + "claim %s. Tags part: %s. Floor %s, from %s (max-|t| %.2f over %d rows).",
-                                k.name, SystemScorer.PENETRATIONS[p], cell[1],
-                                ComparisonReport.pct(cl.gain), cl.best.name, ComparisonReport.pct(cl.fromBest.estimate),
-                                ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made",
-                                tags, ComparisonReport.pct(fl[0]), from[0].name, fl[1], family.size() + 1);
-                    }
-                }
-            }
-            out.println();
-            out.println();
-        }
-
+        printLadder(c, out);
+        printClaims(c, out);
         grainPart(c, out);
         bettingCorrelations(c, out);
         efficiencies(c, out);
@@ -865,6 +844,96 @@ final class CeilingReport {
         }
         if (!over.isEmpty()) {
             throw new IllegalStateException("rows above their bound: " + String.join("; ", over));
+        }
+    }
+
+    /**
+     * The ladder sections of the report, 1-8 and flat, from what was scored alone (no state is
+     * needed), so CeilingResults can print them again from the saved file and set them beside the
+     * report as printed.
+     */
+    static void printLadder(Ceiling c, PrintStream out) {
+        int s8 = SystemScorer.same(SystemScorer.SPREADS);
+        SystemScorer.Entry none = c.published.nullCount().entries.get(0);
+        SystemScorer.Entry hiLo = c.published.of("Hi-Lo").entries.get(0);
+        for (int metric : new int[]{s8, SystemScorer.FLAT}) {
+            String cell = metric == SystemScorer.FLAT ? "flat" : "1-" + SystemScorer.SPREADS + " same schedule";
+            out.printf("## The ladder, %s%n", cell);
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                out.println();
+                out.printf("### %s penetration%n%n", SystemScorer.PENETRATIONS[p]);
+                out.println("| Row | EV | 95% CI | Diff from Hi-Lo | 95% CI | Efficiency |");
+                out.println("|---|---|---|---|---|---|");
+                SystemScorer.Entry bound = c.bounds.get(0);
+                List<SystemScorer.Entry> ladder = new ArrayList<>();
+                ladder.add(none);
+                ladder.add(hiLo);
+                ladder.add(bestOf(published(c, false), p, metric));
+                ladder.add(bestOf(published(c, true), p, metric));
+                for (SystemScorer.Result r : c.custom) {
+                    for (SystemScorer.Entry e : r.entries) {
+                        if (!e.bettingOnly) {
+                            ladder.add(e);
+                        }
+                    }
+                }
+                ladder.addAll(c.bounds);
+                for (SystemScorer.Entry e : ladder) {
+                    if (e.estimate[p] == null) {
+                        continue;
+                    }
+                    Bootstrap.Interval iv = Bootstrap.interval(e.estimate[p][metric], e.boot[p][metric]);
+                    Bootstrap.Interval d = SystemScorer.difference(e, hiLo, p, metric, 1);
+                    double eff = (e.estimate[p][metric] - none.estimate[p][metric])
+                            / (bound.estimate[p][metric] - none.estimate[p][metric]);
+                    out.printf("| %s | %s | %s | %s | %s | %s |%n", e.name, ComparisonReport.pct(iv.estimate),
+                            ComparisonReport.ci(iv), ComparisonReport.pct(d.estimate), ComparisonReport.ci(d),
+                            ComparisonReport.ratio(eff));
+                }
+            }
+            out.println();
+        }
+    }
+
+    /** The headline claims section of the report, from what was scored alone, as printLadder. */
+    static void printClaims(Ceiling c, PrintStream out) {
+        out.println("## Headline claims");
+        out.println();
+        if (c.counts.cells == null) {
+            out.printf("%s names no cells, so no claim is made.%n%n", c.counts.file);
+        } else {
+            out.println("Only the counts the file names for each cell. Each such row less each of its comparators, paired "
+                    + "resample by resample, at the 95% interval's lower end (a one-sided 97.5% bound). The claim holds "
+                    + "where every lower end is above zero; the smallest is the gain, a lower bound on the row less the "
+                    + "best published row, whichever that is. A cell names at most two rows, so its claims hold together "
+                    + "at 95% (Bonferroni); each cell is a statement of its own, not covered jointly with the others, and "
+                    + "the headline is 80%, 1-8.");
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                for (String[] cell : CLAIM_CELLS) {
+                    int metric = claimMetric(cell[0]);
+                    for (SystemScorer.Result r : claimed(c, cell[0])) {
+                        SystemScorer.Entry k = row(r);
+                        List<SystemScorer.Entry> family = comparators(c, r);
+                        Claim cl = claim(k, family, p, metric);
+                        List<SystemScorer.Entry> controls = controls(c, r);
+                        String tags = "no controls registered";
+                        if (!controls.isEmpty()) {
+                            Claim tc = claim(k, controls, p, metric);
+                            tags = ComparisonReport.pct(tc.gain) + " against " + controls.size() + " controls at g";
+                        }
+                        SystemScorer.Entry[] from = new SystemScorer.Entry[1];
+                        double[] fl = floor(k, family, p, metric, from);
+                        out.printf("%n- %s at %s, %s: gain %s; best comparator %s, difference %s %s; %d comparators; "
+                                        + "claim %s. Tags part: %s. Floor %s, from %s (max-|t| %.2f over %d rows).",
+                                k.name, SystemScorer.PENETRATIONS[p], cell[1],
+                                ComparisonReport.pct(cl.gain), cl.best.name, ComparisonReport.pct(cl.fromBest.estimate),
+                                ComparisonReport.ci(cl.fromBest), cl.against.size(), cl.holds() ? "holds" : "not made",
+                                tags, ComparisonReport.pct(fl[0]), from[0].name, fl[1], family.size() + 1);
+                    }
+                }
+            }
+            out.println();
+            out.println();
         }
     }
 
