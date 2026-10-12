@@ -187,4 +187,42 @@ final class SiteInput {
     static String shortName(String name) {
         return name.replaceAll("\\s*\\(.*\\)", "").trim();
     }
+
+    /** The play scopes' suffixes an entry's name carries after its count's name (SystemScorer.score). */
+    static final String[] SUFFIXES = {", full play, bet on its own value", ", bet on its own value", ", full play",
+            ", betting only"};
+
+    /**
+     * A row's page id and name from the name its entry carries in the results files, by the rule
+     * SiteExport names the rows by: a catalog entry by its first system without the parenthesis
+     * ("Hi-Lo = Hi-Lo Lite" is hi_lo, Hi-Lo), its ace side-count variant with _ace and " + ace",
+     * the null count null; the play scope's suffix left off. {id, name}; null for a name of no
+     * catalog row (a reference, bound or registered row, which each adapter names itself).
+     */
+    static String[] catalogRow(String entry) {
+        String n = entry;
+        for (String s : SUFFIXES) {
+            if (n.endsWith(s)) {
+                n = n.substring(0, n.length() - s.length());
+                break;
+            }
+        }
+        if (n.equals("Null count (no count)")) {
+            return new String[]{"null", "Null count"};
+        }
+        boolean ace = n.endsWith(" + ace side count");
+        if (ace) {
+            n = n.substring(0, n.length() - " + ace side count".length());
+        }
+        String first = n.split(" = ")[0];
+        if (!CountKeys.SIDE_COUNTED.contains(first) && ace) {
+            return null;
+        }
+        for (CountingSystem c : CountingSystem.all()) {
+            if (c.name.equals(first)) {
+                return new String[]{slug(shortName(first)) + (ace ? "_ace" : ""), shortName(first) + (ace ? " + ace" : "")};
+            }
+        }
+        return null;
+    }
 }
