@@ -1210,9 +1210,23 @@ final class KeyEdges {
                 }
             }
         }
+        if (layer == Layer.FULL && refit != null) {
+            // A full-play run with the resample sink on refits first decisions, insurance and bets
+            // on each resample, as the published full-play intervals do, but holds the later plays:
+            // "refitted" alone would claim more than that.
+            for (Figure f : Widening.all(e)) {
+                if (f.refit != null) {
+                    f.how = FULL_REFITTED;
+                }
+            }
+        }
         check(e, held, refit, scorersFlat);
         return e;
     }
+
+    /** How a full-play figure refitted on each resample was made: its later plays are held. */
+    static final String FULL_REFITTED = "refitted at first decisions, insurance and bets; later plays held fixed, "
+            + "their fitting uncertainty not included";
 
     /** Checks 2 and 5 of PLAN_COMPUTE.md 5.4 on one row's figures; failures go into e.failures. */
     static void check(Edges e, Sums[] held, Sums[] refit, double scorersFlat) {

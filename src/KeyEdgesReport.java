@@ -188,6 +188,11 @@ final class KeyEdgesReport {
                 d.how = "difference held, widened by the largest ratio measured on the differences of "
                         + String.join(", ", w.measuredOn) + String.format(java.util.Locale.ROOT, ", x%.3f", d.widen);
             }
+            if (row.layer == KeyEdges.Layer.FULL) {
+                // Both rows hold their later plays on every resample, whichever way the rest was made.
+                d.how = d.refit != null ? KeyEdges.FULL_REFITTED
+                        : d.how + "; later plays held fixed, their fitting uncertainty not included";
+            }
             out.add(d);
         }
         return out;
@@ -284,8 +289,17 @@ final class KeyEdgesReport {
         KeyEdges.Collector fc = holding(in.full, name + ", full play", p);
         if (fc != null) {
             SystemScorer.Entry fe = fc.entries.get(name + ", full play");
-            out.add(KeyEdges.edges(name, KeyEdges.Layer.FULL, axis, fc.values(fe.name, p), facts, in.boot,
-                    fc.refitted(fe.name, p), fe.estimate[p][SystemScorer.FLAT]));
+            KeyEdges.Edges full = KeyEdges.edges(name, KeyEdges.Layer.FULL, axis, fc.values(fe.name, p), facts, in.boot,
+                    fc.refitted(fe.name, p), fe.estimate[p][SystemScorer.FLAT]);
+            // Check 1 of 5.4: a full-play run scores the first decisions beside full play, and its
+            // first-decision values must be run A's, state for state.
+            if (fc.has(name, p)) {
+                KeyEdges.Values b = fc.values(name, p);
+                if (!Arrays.equals(b.state, v.state) || !Arrays.equals(b.value, v.value) || !Arrays.equals(b.key, v.key)) {
+                    full.failures.add("the full-play run's first-decision values are not run A's");
+                }
+            }
+            out.add(full);
         }
         out.add(KeyEdges.edges(name, KeyEdges.Layer.PERFECT_FIRST, axis, v.withValues(facts.perfect,
                 facts.perfectInsurance), facts, in.boot, null, Double.NaN));
@@ -542,6 +556,11 @@ final class KeyEdgesReport {
                     continue;
                 }
                 KeyEdges.Values in2 = v.only(s -> f.depth[s] >= lo && f.depth[s] < hi);
+                if (in2.state.length == 0) {
+                    // No state was dealt this deep (a small fixture; on the real file every band
+                    // below the cut holds states), so the band has no table and is left out.
+                    continue;
+                }
                 KeyEdges.Edges e = KeyEdges.edges(hl.name, KeyEdges.Layer.FIRST, new KeyEdges.Axis(hl.count), in2, f,
                         in.boot, null, Double.NaN);
                 if (w != null) {

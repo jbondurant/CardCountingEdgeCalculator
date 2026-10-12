@@ -310,4 +310,65 @@ public class SinkTest {
         }
         assertTrue(keysDiffer, "the side count moves some bet key");
     }
+
+    /**
+     * With full play (runs B and D score this way): scoring a count's full-index fit with both
+     * sinks on leaves every figure of its Result the same to the bit, entries and full entries;
+     * the state sink is handed the full entries' states, and the tables built from them are the
+     * full entries' key tables to the bit; the resample sink's sums give each full-play resample's
+     * flat figure to the bit.
+     */
+    @Test
+    public void withFullPlayTheSinksChangeNothingAndSeeWhatTheTablesWereMadeFrom() throws Exception {
+        FullIndexFitTest.Run run = FullIndexFitTest.capped();
+        FullIndexFitTest.Fixture fx = run.fx;
+        CountKeys.Count hiLo = FullIndexFitTest.HI_LO;
+        SystemScorer on = new SystemScorer(fx.st, new Bootstrap(fx.st.shoes, fx.scorer.boot.resamples, 1), 1);
+        KeyEdges.Collector col = new KeyEdges.Collector(fx.st, on.boot.resamples);
+        Vandal v = new Vandal();
+        on.stateSink = (p, entry, f, state, weight, play, insurance, key) -> {
+            col.states(p, entry, f, state.clone(), weight.clone(), play.clone(), insurance.clone(), key.clone());
+            v.states(p, entry, f, state, weight, play, insurance, key);
+        };
+        on.resampleSink = col;
+        SystemScorer.Result b = on.score(hiLo, null, run.fits.get(hiLo));
+        sameEverything(run.results.get(hiLo), b);
+        assertFalse(b.fullEntries.isEmpty());
+        int full = 0;
+        for (SystemScorer.Entry e : b.fullEntries) {
+            for (int p = 0; p < SystemScorer.CUTS.length; p++) {
+                if (e.keys[p] == null) {
+                    continue;
+                }
+                full++;
+                KeyEdges.Table t = KeyEdges.table(col.values(e.name, p));
+                assertEquals(e.keys[p].length, t.keys(), e.name);
+                for (int k = 0; k < t.keys(); k++) {
+                    assertEquals(e.keys[p][k][0], t.sums.key[k], 0);
+                    assertEquals(Double.doubleToLongBits(e.keys[p][k][1]), Double.doubleToLongBits(t.share(k)), e.name);
+                    assertEquals(Double.doubleToLongBits(e.keys[p][k][2]), Double.doubleToLongBits(t.edge(k)), e.name);
+                }
+                KeyEdges.Sums[] refit = KeyEdges.refitted(col.refitted(e.name, p), t.sums.key);
+                for (int r = 0; r < refit.length; r++) {
+                    double w = 0;
+                    double flat = 0;
+                    KeyEdges.Refitted rf = col.refitted(e.name, p);
+                    for (int f = 0; f < 2; f++) {
+                        double fw = 0;
+                        double fv = 0;
+                        for (int k = 0; k < rf.key.length; k++) {
+                            fw += rf.weight[r][f][k];
+                            fv += rf.value[r][f][k];
+                        }
+                        w += fw;
+                        flat += fv;
+                    }
+                    assertEquals(Double.doubleToLongBits(e.boot[p][SystemScorer.FLAT][r]), Double.doubleToLongBits(flat / w),
+                            e.name + " resample " + r);
+                    assertEquals(e.boot[p][SystemScorer.FLAT][r], refit[r].flat(), 1e-12);
+                }
+            }
+        }
+        assertTrue(full > 0, "a full entry was scored");
+    }
 }

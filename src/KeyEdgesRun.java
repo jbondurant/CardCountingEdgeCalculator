@@ -226,7 +226,13 @@ final class KeyEdgesRun {
      * stored Results (by count name).
      */
     static Collected scoreA(ScoringStates st, List<CountKeys.Count> rows, List<SystemScorer.Result> stored) {
-        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, 0, Bootstrap.SEED), SystemScorer.M_PLAY);
+        return scoreA(st, rows, stored, SystemScorer.M_PLAY);
+    }
+
+    /** The same with the play groups' M_play given, as a fixture's stored Results were scored with. */
+    static Collected scoreA(ScoringStates st, List<CountKeys.Count> rows, List<SystemScorer.Result> stored,
+                            double mPlay) {
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, 0, Bootstrap.SEED), mPlay);
         Collected c = new Collected(new KeyEdges.Collector(st, 0));
         sc.stateSink = c.collector;
         for (CountKeys.Count count : rows) {

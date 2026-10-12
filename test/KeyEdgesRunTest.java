@@ -213,4 +213,52 @@ public class KeyEdgesRunTest {
         }
         assertEquals(6, list(d2, "oracle").size());
     }
+
+    /**
+     * Full play in the report (runs B and D): a full-index fit scored with a collector attached,
+     * as the replay will, gives Hi-Lo a full-play layer at the penetration it was fitted at, with
+     * refitted first decisions on each resample and no failed check, since its first-decision
+     * values are run A's; and a full-play run whose first decisions differ from run A's fails.
+     */
+    @Test
+    public void aFullPlayRunGivesTheFullPlayLayer(@TempDir Path dir) throws Exception {
+        FullIndexFitTest.Run run = FullIndexFitTest.capped();
+        FullIndexFitTest.Fixture fx = run.fx;
+        CountKeys.Count hiLo = FullIndexFitTest.HI_LO;
+        Bootstrap boot = new Bootstrap(fx.st.shoes, fx.scorer.boot.resamples, 1);
+        List<SystemScorer.Result> stored = new ArrayList<>(run.results.values());
+        KeyEdgesRun.Collected a = KeyEdgesRun.scoreA(fx.st, Arrays.asList(hiLo), stored, fx.scorer.mPlay);
+        assertEquals(new ArrayList<String>(), a.failures);
+        SystemScorer on = new SystemScorer(fx.st, boot, 1);
+        KeyEdges.Collector b = new KeyEdges.Collector(fx.st, boot.resamples);
+        on.stateSink = b;
+        on.resampleSink = b;
+        on.score(hiLo, null, run.fits.get(hiLo));
+        KeyEdgesReport.Inputs in = new KeyEdgesReport.Inputs();
+        in.a = a.collector;
+        in.full.add(b);
+        in.boot = boot;
+        in.perfect = fx.st.perfect.clone();
+        Path json = dir.resolve("k.json");
+        KeyEdgesReport.report(in, new ArrayList<>(), "test", json, dir.resolve("k.csv"), System.out);
+        Document d = Document.parse(new String(Files.readAllBytes(json), StandardCharsets.UTF_8));
+        Document row = list(d, "rows").get(0);
+        Document full = layer(row, "80%", "full play");
+        assertNotNull(full);
+        assertNull(full.get("failures"));
+        assertEquals(KeyEdges.FULL_REFITTED, ((Document) full.get("flat")).getString("how"),
+                "a full-play figure says its later plays are held");
+        Document fromHiLo = (Document) full.get("differenceFromHiLo");
+        assertTrue(((List<Document>) fromHiLo.get("top")).get(0).getString("how").contains("later plays held"));
+        assertNull(layer(row, "70%", "full play"), "fitted at 80% alone");
+
+        // First decisions of the full-play run made otherwise than run A's: the layer fails check 1.
+        in.a = KeyEdgesRun.scoreA(fx.st, Arrays.asList(hiLo), stored, fx.scorer.mPlay).collector;
+        Object[] f0 = in.a.handed.get(hiLo.name)[2][0];
+        ((double[]) f0[2])[0] += 0.5;
+        KeyEdgesReport.report(in, new ArrayList<>(), "test", json, dir.resolve("k.csv"), System.out);
+        Document d2 = Document.parse(new String(Files.readAllBytes(json), StandardCharsets.UTF_8));
+        Document bad = layer(list(d2, "rows").get(0), "80%", "full play");
+        assertTrue(bad.get("failures").toString().contains("not run A's"), bad.toJson());
+    }
 }
