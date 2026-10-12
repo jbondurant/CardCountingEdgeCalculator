@@ -740,6 +740,12 @@ public class StrategyExportTest {
             o.writeObject(scored);
             o.writeObject(new double[0]);
         }
+        Path saved = shared.resolve("ceiling.ser");
+        writeSaved(saved, "CeilingReport\ncommit test\n" + FullIndexRun.stateFile(states) + "\ncounts none\nresamples 0",
+                published.references());
+        Path elsewhere = shared.resolve("ceiling-elsewhere.ser");
+        writeSaved(elsewhere, "CeilingReport\ncommit test\nstates /another/file, 1 bytes, modified 0\ncounts none",
+                published.references());
         Path out = shared.resolve("export-cli");
         PrintStream was = System.out;
         ByteArrayOutputStream text = new ByteArrayOutputStream();
@@ -747,13 +753,18 @@ public class StrategyExportTest {
         try {
             StrategyExport.main(new String[]{states.toString(), "--published", ser.toString(), "--out", out.toString(),
                     "--row", catalog("Hi-Opt II").name + " + ace side count@80", "--row", "Hi-Lo = Hi-Lo Lite, betting only@70,80",
-                    "--plans", "same-2,same-8,own-8,played-8"});
+                    "--chart-from", saved + "@70,80", "--plans", "same-2,same-8,own-8,played-8"});
         } finally {
             System.setOut(was);
         }
         String log = text.toString("UTF-8");
         assertTrue(log.contains("round trip passed"), log);
+        assertTrue(log.contains("Chart, no count, flat at 70%: ") && log.contains("Chart, no count, flat at 80%: ")
+                && !log.contains("Chart, no count, flat at 75%"), log);
         assertEquals(3 * 2 + 7, Files.list(out).count());
+        IllegalStateException other = assertThrows(IllegalStateException.class, () -> StrategyExport.chartRow(
+                CeilingReport.readSaved(elsewhere), states, new int[]{2}));
+        assertTrue(other.getMessage().contains("were not scored on"), other.getMessage());
         ExportBundle.KeysSample ks = ExportBundle.readKeysSample(out.resolve("keys-sample.tsv"));
         assertEquals(CountKeys.catalog().size() + 1 + 8, ks.counts.length, Arrays.toString(ks.counts));
         ExportBundle.Strategy s = ExportBundle.readStrategy(out.resolve(ExportBundle.Strategy.fileName(
@@ -825,5 +836,19 @@ public class StrategyExportTest {
         s.plans.add(new ExportBundle.Plan("X-1.0,8", "own", -1, new int[]{-3, 0, 4}, new double[]{0, 1, 8},
                 new double[]{0, 0.25, 1}));
         return s;
+    }
+
+    /** A CeilingReport save as CeilingReport.save writes one, holding only these reference rows. */
+    static void writeSaved(Path file, String identity, List<SystemScorer.Entry> references) throws IOException {
+        try (java.io.ObjectOutputStream o = new java.io.ObjectOutputStream(Files.newOutputStream(file))) {
+            o.writeUTF(identity + "\n");
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeDouble(0);
+            o.writeObject(new ArrayList<>(references));
+            o.writeObject(new java.util.LinkedHashMap<>());
+        }
     }
 }

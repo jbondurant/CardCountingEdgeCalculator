@@ -53,7 +53,11 @@ import java.util.TreeMap;
  *
  *   java -Xmx8g -cp build/classes:lib/mongo-java-driver-3.12.14.jar StrategyExport STATES
  *       --published RESULTS.ser --out runs/sim/export-SHA --row "NAME@70,75,80" [--row ...]
- *       [--plans same-1,...] [--sample-seed N]
+ *       [--chart-from SAVED.ser@70,75,80] [--plans same-1,...] [--sample-seed N]
+ *
+ * --chart-from names a CeilingReport save (step 7's report-ceiling .ser) whose reference rows
+ * were scored on the same state file: the chart's row is exported at the penetrations given and
+ * held to its Chart, no count, flat entry.
  */
 final class StrategyExport {
 
@@ -2378,6 +2382,7 @@ final class StrategyExport {
         Path published = null;
         Path out = null;
         List<String> rowArgs = new ArrayList<>();
+        String chartFrom = null;
         String[] labels = reportPlans().toArray(new String[0]);
         long seed = SAMPLE_SEED;
         for (int k = 0; k < args.length; k++) {
@@ -2390,6 +2395,9 @@ final class StrategyExport {
                     break;
                 case "--row":
                     rowArgs.add(args[++k]);
+                    break;
+                case "--chart-from":
+                    chartFrom = args[++k];
                     break;
                 case "--plans":
                     labels = args[++k].split(",");
@@ -2406,7 +2414,8 @@ final class StrategyExport {
         }
         if (file == null || published == null || out == null || rowArgs.isEmpty()) {
             throw new IllegalArgumentException("usage: StrategyExport STATES --published RESULTS.ser --out DIR "
-                    + "--row \"NAME@70,75,80\" [--row ...] [--plans same-1,...] [--sample-seed N]");
+                    + "--row \"NAME@70,75,80\" [--row ...] [--chart-from SAVED.ser@70,75,80] [--plans same-1,...] "
+                    + "[--sample-seed N]");
         }
         StateStore.Header header = StateStore.header(file);
         int shoes = StateStore.shoesDone(file);
@@ -2428,7 +2437,28 @@ final class StrategyExport {
                     : Arrays.stream(a.substring(at + 1).split(",")).mapToInt(x -> penIndex(Integer.parseInt(x.trim()))).toArray();
             rows.add(wanted(p.results, name, pens));
         }
-        export(out, scorer, header, rows, labels, keyCounts(CountKeys.catalog(), new ArrayList<>()), seed, System.out);
+        ChartRow chart = null;
+        if (chartFrom != null) {
+            int at = chartFrom.lastIndexOf('@');
+            int[] pens = at < 0 ? new int[]{0, 1, 2}
+                    : Arrays.stream(chartFrom.substring(at + 1).split(",")).mapToInt(x -> penIndex(Integer.parseInt(x.trim()))).toArray();
+            chart = chartRow(CeilingReport.readSaved(Paths.get(at < 0 ? chartFrom : chartFrom.substring(0, at))), file, pens);
+        }
+        export(out, scorer, header, rows, chart, labels, keyCounts(CountKeys.catalog(), new ArrayList<>()), seed, System.out);
+    }
+
+    /** The chart's reference row of a CeilingReport save, refused unless the save was scored on this state file. */
+    static ChartRow chartRow(CeilingReport.Saved saved, Path states, int[] pens) throws IOException {
+        if (!saved.identity.contains("\n" + FullIndexRun.stateFile(states) + "\n")) {
+            throw new IllegalStateException("the saved reference rows were not scored on " + states + " as it is now:\n"
+                    + saved.identity);
+        }
+        for (SystemScorer.Entry e : saved.references) {
+            if (e.name.equals(CHART_ROW)) {
+                return new ChartRow(e, pens);
+            }
+        }
+        throw new IllegalArgumentException("the saved reference rows hold no " + CHART_ROW);
     }
 
     /** 0, 1 or 2 for 70, 75 or 80. */

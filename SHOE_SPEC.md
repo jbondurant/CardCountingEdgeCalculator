@@ -1158,8 +1158,10 @@ reading is what the engine does; **corrected** means the simulator must change.
    flat` has no strategy file; states.bin has its section at each penetration exported (bet key 0,
    the chart's round value, insurance 0, no plan; B3), and exact.tsv its `flat`, `play` and
    `insurance` lines for folds 0 and 1 (B5), which pool to the reference row's figure. The round
-   trip holds them to step 7's reference row (`SystemScorer.references`); c06c061's results.ser
-   holds no chart row, and SIM_CHECK.md now names step 7 as F01 to F03's source.
+   trip holds them to step 7's reference row (`SystemScorer.references`), which the command line
+   reads with `--chart-from runs/report-ceiling-97bf834.ser@70,75,80` and refuses unless it was
+   scored on the same state file; c06c061's results.ser holds no chart row, and SIM_CHECK.md now
+   names step 7 as F01 to F03's source.
 7. **lookups.tsv. Corrected: the format exists now (B8).** StrategyExport writes it from the
    engine's own fit and the round trip holds every cell to the strategy files; write D5's reader
    from B8.
