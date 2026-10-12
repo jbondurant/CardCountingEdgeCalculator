@@ -24,7 +24,10 @@ import java.util.Map;
  * bet and share of rounds played, EV per round played and per unit bet, and the mean square of
  * the bets placed. The same schedule's figures rank counts: every count places the same bets in
  * the same share of rounds. The own rule's do not: counts play different shares at different
- * average bets, so its tables give those two beside the EV and rank nothing.
+ * average bets, so its tables give those two beside the EV and rank nothing. Each count's
+ * thresholds are also given as the keys where its pooled fitted advantage reaches them, and the
+ * data file carries Hi-Lo's bet at each key under every plan, for the page's figure of Hi-Lo's
+ * bet by true count.
  *
  * Full-play intervals hold the later plays as fitted, so they are widened per plan as
  * FULL_INDEX_PLAYS.md section 4 widens them at 1-8 (widening): a count the wide pilot measured
