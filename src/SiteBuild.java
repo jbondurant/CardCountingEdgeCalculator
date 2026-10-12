@@ -1048,6 +1048,15 @@ final class SiteBuild {
         }
     }
 
+    /** A fixture build is never written into the website's working tree, so made-up numbers cannot reach it. */
+    static void refuseFixtureIntoWebsite(SiteData in, Path out) {
+        for (Path part : out) {
+            if (in.fixture() && part.toString().equals("jbondurant.github.io")) {
+                throw new IllegalArgumentException("a fixture build is never written into the website's tree: " + out);
+            }
+        }
+    }
+
     static String read(Path p) throws IOException {
         return new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
     }
@@ -1088,8 +1097,9 @@ final class SiteBuild {
                 read(site.resolve("page.js")), tokens(read(Paths.get(a.get("index")))), a.get("version"), a.get("date"),
                 a.get("commit"));
         Path out = Paths.get(a.get("out")).toAbsolutePath().normalize();
-        if (in.fixture() && out.toString().contains("jbondurant.github.io")) {
-            throw new IllegalArgumentException("a fixture build is never written into the website's tree");
+        refuseFixtureIntoWebsite(in, out);
+        if (a.containsKey("draft")) {
+            refuseFixtureIntoWebsite(in, Paths.get(a.get("draft")).toAbsolutePath().normalize());
         }
         if (checkOnly) {
             List<String> diff = new ArrayList<>();
