@@ -1170,4 +1170,58 @@ public class ShoeSpecTest {
         assertEquals(1, none.scale);
         assertEquals(1, none.divisor());
     }
+
+    // ------------------------------------------------------------------ Part C: the simulator's files
+
+    /**
+     * Part C's formats as RiskReport reads them: the swings example read by readSwings (sums,
+     * cells and both tests of the figure), a records file and a fan file written from C2's and
+     * C3's words read by readRecords and readFan, and the ev-by-key example's lines of the field
+     * counts C4 gives.
+     */
+    @Test
+    public void partCIsWhatRiskReportReads(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Map<String, RiskReport.Swing> swings = RiskReport.readSwings(block(spec, "shoe-spec-swings"));
+        assertEquals(java.util.Collections.singleton("F27"), swings.keySet());
+        RiskReport.Swing f27 = swings.get("F27");
+        assertNotNull(f27.sums);
+        assertEquals(38_000_000L, f27.sums.shoes);
+        assertEquals(2, f27.counts().length);
+        assertEquals(-4, f27.twoXs()[0]);
+        assertEquals(java.util.Set.of("P3", "P2"), f27.z.keySet());
+        StringBuilder records = new StringBuilder();
+        double[][] shoe = {{-3.5, 62, -12.0}, {8.0, 58, 0.0}, {-1.0, 61, -4.5}};
+        for (double[] h : shoe) {
+            records.append(h[0]).append('\t').append((int) h[1]).append('\t').append(h[2]).append('\n');
+        }
+        Path rec = dir.resolve("records-F27.tsv");
+        Files.write(rec, records.toString().getBytes(StandardCharsets.UTF_8));
+        RiskMath.Records r = RiskReport.readRecords(rec);
+        assertArrayEquals(new double[]{-3.5, 8.0, -1.0}, r.y);
+        assertArrayEquals(new int[]{62, 58, 61}, r.n);
+        StringBuilder fan = new StringBuilder();
+        for (int j = 0; j < 20; j++) {
+            fan.append(j);
+            for (int w = 1; w <= 1000; w++) {
+                fan.append('\t').append((double) (j - w % 7));
+            }
+            fan.append('\n');
+        }
+        Path fanFile = dir.resolve("fan-F27.tsv");
+        Files.write(fanFile, fan.toString().getBytes(StandardCharsets.UTF_8));
+        double[][] paths = RiskReport.readFan(fanFile);
+        assertEquals(20, paths.length);
+        assertEquals(1000, paths[0].length);
+        Map<String, Integer> fields = Map.of("sim", 11, "cross", 5, "exact", 6);
+        int lines = 0;
+        for (String l : block(spec, "shoe-spec-ev-by-key")) {
+            if (l.startsWith("#")) {
+                continue;
+            }
+            String[] f = l.split("\t", -1);
+            assertEquals((int) fields.get(f[0]), f.length, l);
+            lines++;
+        }
+        assertEquals(4, lines);
+    }
 }

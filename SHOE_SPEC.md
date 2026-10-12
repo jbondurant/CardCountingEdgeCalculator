@@ -7,7 +7,9 @@ of the engine's code. Part A says how the engine lays out, shuffles and deals
 its 60,000 shoes, which round starts it records, how it decides which of them to value, and
 when each card enters a count, so that the simulator can deal the same shoes card for card
 (check D1). Part B gives the files of the export bundle the simulator reads, and is **the
-format `StrategyExport` must write**.
+format `StrategyExport` must write**; B9 adds how to read counting-systems.json. Part C gives the
+files the simulator writes that the engine side reads (swings, records, fans, the edge by key).
+The last section answers the simulator's open questions (`sim/QUESTIONS.md`).
 
 Part A was written on 9 October 2026 from `src/ShoeRun.java` and what it calls
 (`ConcreteRound`, `BasicStrategy`, `RoundRules`, `HouseRules`, `StateRun`, `AllStates`,
@@ -882,6 +884,10 @@ StrategyExport follows them unless this file is changed first:
    repeats its base's key.
 9. The bundle has `index.tsv`, with every file's size and each strategy file's row, penetration,
    fold and scope, so the simulator need not open a file to know what it holds.
+10. The chart's row is a states.bin section and exact.tsv lines without a strategy file (B3, B5),
+    since the simulator plays the chart's walk itself.
+11. lookups.tsv (B8), which SIM_CHECK.md section 5 named without a format: one column a strategy
+    file, the cells as text, the later lines on four cards seen.
 
 ### B7. Where each line comes from, for the exporter's author
 
@@ -1030,6 +1036,148 @@ variant takes its parameters from the strategy file whose `playcount` or `betcou
 not from this file: the registered counts are in custom-counts.json, which the simulator need not
 read.
 
+## Part C. Files the simulator writes for the engine side
+
+Beyond its summaries (SIM_CHECK.md section 12), the engine side reads four of the simulator's
+files: RiskReport the swings, the per-shoe records and the fan (PLAN_COMPUTE.md section 2), and
+the edge-by-count reader ev-by-key.tsv. Their formats are fixed here so the simulator's author
+can write them from this file alone; `test/ShoeSpecTest.java` reads the examples below, and
+records and fan files written from these words, with RiskReport's own readers. The examples'
+numbers are illustrative. B0's conventions hold (UTF-8, one tab between fields, `\n` line ends, doubles as
+`Double.toString` writes them, `#` lines skipped).
+
+**C0. Which figure, and which rounds.** Swings, records and fans are keyed by the figure ids of
+SIM_CHECK.md's registry block (section 2, the fenced `sim-registry` block, one tab-separated line
+a figure: `fig part row pen figure tests engine swings paths`), which the simulator may read. A
+figure with `swings` 1 gets C1's lines; with `paths` 1 (F27 and F29), C2's and C3's files too.
+For all three, one real strategy plays each shoe: shoe h of P3 is played by the fold-(h mod 2)
+file of the figure's row (SIM_CHECK.md section 11), the chart's row by the chart's walk, with the
+figure's plan's bets. A shoe's rounds are its round starts below the figure's cut, every round
+dealt: a round a plan sits out counts, with bet 0. X is a round's result for a one-unit bet,
+insurance included; b the bet placed; the win is b·X.
+
+**C1. swings.tsv**, one file for the run, three kinds of line:
+
+```shoe-spec-swings
+shoes	F27	38000000	-1.5E5	2.9E10	-1.1E9	6.2E12	2.3E9	1.4E11	-9.1E6
+hist	F27	8.0	-4	12345	210
+hist	F27	1.0	3	45678	0
+z	F27	P3	0.41
+z	F27	P2	-1.2
+```
+
+- `shoes	FIG	S	sumY	sumY2	sumY3	sumY4	sumN	sumN2	sumYN`, once a figure: over the S shoes of
+  P3's main run, with Y_h = Σ b·X over shoe h's rounds and N_h their number, the sums of Y, Y², Y³,
+  Y⁴, N, N² and Y·N. S is an integer; the rest are doubles.
+- `hist	FIG	BET	TWOX	COUNT	SPLITS`, once for each cell met: BET the bet in units of the rounds in
+  the cell (`0.0` for a round sat out), TWOX twice X, an integer (every result is a whole number
+  of half units; for these rules it lies in −17 to 16), COUNT the rounds in the cell, SPLITS how
+  many of them the player split in. Over the same rounds as the `shoes` line: the COUNTs add to
+  ΣN, and Σ COUNT·BET·TWOX/2 is ΣY up to rounding (RiskReport checks both).
+- `z	FIG	CHECK	Z`, one for each of the figure's tests (CHECK `P3`, and `P2` at 80%): the z of
+  SIM_CHECK.md section 6.
+
+**C2. records-FIG.tsv**, for each figure with `paths` 1: one line per shoe of P3's first two
+chunks (2,000,000 shoes), in shoe order, `Y	N	M`: Y and N as in C1 for that shoe, and M the
+lowest the shoe's running total of b·X falls to, counting 0 before its first round, so M ≤ 0 and
+M ≤ Y. N is an integer, at least 1.
+
+**C3. fan-FIG.tsv**, for each figure with `paths` 1: 20 lines, `J	W100	W200	…	W100000`, J the
+path 0 to 19 and then 1,000 cumulative wins in units, after every 100 rounds. Path 0 starts at
+P3's shoe 0; a path takes whole shoes in order until it has 100,000 rounds, stopping inside a
+shoe if it must (the rest of that shoe is dropped); path J + 1 starts at the shoe after path J's
+last (SIM_CHECK.md section 11).
+
+**C4. ev-by-key.tsv**, Hi-Lo's mean round result by bet key at 80% (SIM_CHECK.md section 9, the
+edge at each count), on the key convention of PLAN_COMPUTE.md 5.4 item 9, which is B2.2's bet key
+(the true count over the exact cards left, to nearest with ties toward zero): the key the engine's
+per-key tables (`Entry.keys`, KeyEdges) are keyed by. Rows: `Hi-Lo = Hi-Lo Lite` (first decisions,
+part 1) and `Hi-Lo = Hi-Lo Lite, full play` (part 2), each at pen 80, flat bet.
+
+```shoe-spec-ev-by-key
+# ev-by-key.tsv: SHOE_SPEC.md C4, format 1
+sim	Hi-Lo = Hi-Lo Lite	80	0	-3	38000000	1.5E7	1.2E7	-9.8E4	2.1E7	-3.9E4
+sim	Hi-Lo = Hi-Lo Lite	80	1	-3	38000000	1.5E7	1.2E7	-9.9E4	2.1E7	-4.0E4
+cross	Hi-Lo = Hi-Lo Lite	80	-3	1.9E7
+exact	Hi-Lo = Hi-Lo Lite	80	-3	2.6E5	-2.0E3
+```
+
+- `sim	ROW	PEN	FOLD	KEY	S	sumN	sumN2	sumY	sumY2	sumYN`: P3 in mode A, the fold-FOLD file
+  playing every shoe as for the figures; for each shoe h, N_h the rounds below the cut whose bet
+  key is KEY and Y_h the sum of their X; the sums over all S shoes of the run (a shoe with no such
+  round adds zeros).
+- `cross	ROW	PEN	KEY	sumY0Y1`: Σ_h Y_h0·Y_h1 at that key, so the reader can pool the folds as
+  SIM_CHECK.md section 6 pools a figure, Y_h = W_0·Y_h0 + W_1·Y_h1.
+- `exact	ROW	PEN	KEY	sumW	sumWX`: from states.bin's section for the row at 80%, over its states
+  whose `betKey` is KEY, Σ 1/q and Σ (1/q)·(rvPlay + rvInsurance).
+- Lines by row in the order above, then by key upward; for each key `sim` fold 0, `sim` fold 1,
+  `cross`, `exact`. Every key met on either side has all four; a side that never met it gives
+  zeros.
+
+## Answers to the simulator's questions
+
+`sim/QUESTIONS.md` lists twelve things the simulator's author could not settle from the sources
+they were given, each with the reading they chose. Answered here from the engine's side on 12
+October 2026, by reading ConcreteRound, ExactRound, BasicStrategy, HouseRules, CountKeys,
+SystemScorer, ScoringStates, StrategyExport and SimCheckPlan. **Confirmed** means the chosen
+reading is what the engine does; **corrected** means the simulator must change.
+
+1. **Soft 17. Confirmed.** The engine's dealer hits soft 17: `HouseRules`' Montreal rules, through
+   `RoundRules.from`, set it, A2's `rule.hits.soft.17 = true` is held to them by ShoeSpecTest, and
+   ExactRound and ConcreteRound both draw on a soft 17. The walk's totals (A8) agree under it
+   only, as the author's planted s17 run showed.
+2. **"Only java.util". Confirmed.** PLAN_COMPUTE.md 1.1 meant the JDK's own library: `java.io`,
+   `java.nio.file`, `java.security.MessageDigest` and `java.util.concurrent` are allowed; no jar
+   from outside the JDK and no class of the engine (`src/`). The test is the one-command compile,
+   `javac -d out sim/*.java` with no class path. JUnit for `sim/test/` is fine.
+3. **counting-systems.json. Corrected: write the parser now.** The simulator may read the
+   catalog; B9 gives its format and exactly how the engine turns it into entries, keys and
+   variants. Check D2 needs the parser and the comparison with keys-sample.tsv (B4).
+4. **The chart before the bundle. Confirmed.** The stand-in is for the D1 totals and the tests
+   only. Every reported run plays chart.tsv, and the engine-side reader (PLAN_COMPUTE.md 7.2 row
+   10, not yet written) is to refuse a summary whose chart fingerprint is not A2's
+   `1af534aac9abcb39`.
+5. **Insurance on a player's natural. Confirmed.** The engine values insurance on all 55 ace-up
+   deals, the natural (1, 10, ace) included (`ScoringStates.insurance`, `insuranceParts`), and
+   fits and plays it like any other deal; insuring a natural is even money, a sure +1 bet. Its key
+   is the deal's play key (A6).
+6. **The chart's row. Confirmed, and the exporter now writes it that way.** `Chart, no count,
+   flat` has no strategy file; states.bin has its section at each penetration exported (bet key 0,
+   the chart's round value, insurance 0, no plan; B3), and exact.tsv its `flat`, `play` and
+   `insurance` lines for folds 0 and 1 (B5), which pool to the reference row's figure. The round
+   trip holds them to step 7's reference row (`SystemScorer.references`); c06c061's results.ser
+   holds no chart row, and SIM_CHECK.md now names step 7 as F01 to F03's source.
+7. **lookups.tsv. Corrected: the format exists now (B8).** StrategyExport writes it from the
+   engine's own fit and the round trip holds every cell to the strategy files; write D5's reader
+   from B8.
+8. **The coin. Confirmed.** One draw a round start (P3) or a re-deal (P2) from a stream of its
+   own, shared by every plan and instance, the round played when the draw is below PLAY. The
+   engine's figures use the expected bet, UNITS × PLAY (B2.5), which is what this gives on
+   average, and sharing the draw keeps paired differences paired. A draw made when no plan needs it
+   is right too: the cards never depend on the coins.
+9. **The figures reported. Confirmed, with one addition.** Keep reporting every (row, penetration,
+   figure) under exact.tsv's names; the reader picks the registered ones. But the swings, records
+   and fan files (Part C) are keyed by the registry's figure ids, so read SIM_CHECK.md's
+   `sim-registry` block (section 2), printed by SimCheckPlan, for the ids, rows, exact.tsv names
+   and what is kept for each figure.
+10. **A missing fold file. Corrected: refuse the bundle.** The exporter writes both folds of a row
+    at a penetration or neither, with a states.bin section and exact.tsv lines for both, and its
+    round trip refuses anything else. A bundle with one fold file of a row, or a strategy file with
+    no exact.tsv lines, was not written by StrategyExport; refuse it (B0), as you refuse a bad
+    hash. The chart's row is the one row with exact.tsv lines and no file (answer 6). A registered
+    figure whose row is in no bundle is a test that cannot run, which the reader reports
+    (SIM_CHECK.md section 7).
+11. **Groups. Confirmed, and one more check holds.** The engine's groups are consecutive ranges
+    of keys (`SystemScorer.grow`): within a file `lo ≤ hi` in every group and `hi` of group g − 1
+    is below `lo` of group g, so the `hi` increase. The same for `lgroup` lines. A betting-scope file has no `first` lines, and a
+    file of scope `first` or `betting` no `lgroups`, `lgroup` or `later` lines.
+12. **Planted runs' sizes. Confirmed, and the sizes are fixed.** A planted run, and the clean
+    control beside it, go on to P2 whatever the D checks found, and are scored on SIM_CHECK.md
+    section 3's seven planted figures. Their sizes are not the caller's to choose: P3 on the first
+    chunk (1,000,000 shoes) and P2 at K = 6,000 (SimCheckPlan's `PLANTED_CHUNKS` and `PLANTED_K`).
+    Run them with `--chunks 1 --k 6000`; the engine-side reader, when it is written, is to refuse a
+    planted run of other sizes.
+
 ## How this file is held to the engine
 
 `test/ShoeSpecTest.java` (run it alone: `java -Xmx1g -jar lib/junit-platform-console-standalone-1.10.2.jar
@@ -1061,6 +1209,11 @@ ShoeSpecTest`, from the repository's root, 17 tests in about 30 seconds):
   110 contested cells in their order; B2.4's order for an unreached cell against
   `FullIndexFit.chartRanking`; and B2.4's play of split hands against `SplitPlay` on random
   tables.
+- B9's reading of counting-systems.json, transcribed with a JSON parser, against
+  `CountKeys.catalog`, `nullCount` and `bettingVariant`, and its block of side-counted systems
+  against `CountKeys.SIDE_COUNTED`.
+- Part C's swings example, and records and fan files written from C2's and C3's words, read by
+  RiskReport's own readers; the ev-by-key example's field counts.
 
 Planted by hand on 9 October 2026, one at a time, in a copy of the source or of this file (each
 copy compiled and the test run against it, the worktree untouched), to show the test fails when
