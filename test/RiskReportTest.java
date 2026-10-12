@@ -72,6 +72,11 @@ public class RiskReportTest {
         List<String> swings = RiskFixture.swings(computable(), 2000, new HashMap<>());
         boolean records = true;
         boolean fan = true;
+        /** Whether the replay's wide.ser is given (RiskFixture.writeWide). */
+        boolean replay;
+        List<String> pilot = RiskFixture.pilot();
+        /** Put before the output files' names, so one test can run twice. */
+        String tag = "";
 
         RiskReport.Outcome run() throws Exception {
             Path results = dir.resolve("results.ser");
@@ -81,21 +86,27 @@ public class RiskReportTest {
             Map<String, Path> sources = new LinkedHashMap<>();
             sources.put("c06c061", results);
             sources.put("step7", step7);
+            if (replay) {
+                Path wide = dir.resolve("wide.ser");
+                RiskFixture.writeWide(wide, RiskFixture.identity("FullIndexRun replay\nthe source's identity:\n"
+                        + "FullIndexRun joint run"));
+                sources.put("replay", wide);
+            }
             Map<String, Path> rec = new LinkedHashMap<>();
             if (records) {
                 rec.put("F27", RiskFixture.write(dir, "records-F27.tsv", RiskFixture.records(20_000, 27)));
             }
-            return RiskReport.run(sources, RiskFixture.write(dir, "pilot.txt", RiskFixture.pilot()),
+            return RiskReport.run(sources, RiskFixture.write(dir, tag + "pilot.txt", pilot),
                     RiskFixture.write(dir, "swings.tsv", swings), rec, fan ? "F27" : null,
                     fan ? RiskFixture.write(dir, "fan-F27.tsv", RiskFixture.fan()) : null, "fixture", md(), json());
         }
 
         Path md() {
-            return dir.resolve("report-risk.md");
+            return dir.resolve(tag + "report-risk.md");
         }
 
         Path json() {
-            return dir.resolve("risk.json");
+            return dir.resolve(tag + "risk.json");
         }
     }
 
@@ -366,12 +377,97 @@ public class RiskReportTest {
         refused(in, "F27: the swings file lacks its P2 test's z");
     }
 
+    /** Every row but step 8's: the fixture's engine files and the replay's wide.ser. */
+    static List<String> withWide() {
+        List<String> f = new ArrayList<>();
+        for (RiskReport.Spec s : RiskReport.ROWS) {
+            if (!s.source.equals("step8")) {
+                f.add(s.figure);
+            }
+        }
+        return f;
+    }
+
+    /**
+     * F43 to F48, the wide plans' rows, from the replay's wide.ser: mu is the plan's EV per round
+     * watched (the same schedule's for P16 and B0,8, the own rule's for X-1,8), its resamples widened
+     * as WideReport widens that plan's levels, and the scorer's E[b] and E[b^2] the plan's own. With
+     * the pilot run before --wide, every plan takes the 1-8 ratios, marked as an extrapolation; with
+     * a pilot that measured P16, Victor APC + ace takes its own P16 ratio, Hi-Lo the plan's largest,
+     * the other plans the largest for any plan, and the 1-8 rows keep the 1-8 ratios.
+     */
     @Test
-    void theReplayIsRefusedUntilWideReportsReaderIsHere() {
+    void theWidePlansRowsComeFromTheReplaysWideSer() throws Exception {
+        Inputs in = new Inputs();
+        in.replay = true;
+        in.swings = RiskFixture.swings(withWide(), 2000, new HashMap<>());
+        RiskReport.Outcome o = in.run();
+        assertTrue(o.failures.isEmpty(), o.failures.toString());
+        Document json = Document.parse(new String(Files.readAllBytes(in.json()), StandardCharsets.UTF_8));
+        String[] figures = {"F43", "F44", "F45", "F46", "F47", "F48"};
+        for (int k = 0; k < figures.length; k++) {
+            double[] want = RiskFixture.WIDE_MU.get(k < 3 ? RiskReport.HI_LO : RiskReport.VICTOR)[k % 3];
+            Document r = row(json, figures[k]);
+            assertEquals("computed", r.getString("status"), figures[k]);
+            five(want[0], r.getList("mu", Object.class).get(0), figures[k] + "'s mu");
+            five(want[1], r.getList("mean_bet", Object.class).get(1), figures[k] + "'s E[b]");
+            five(want[2], r.getList("mean_bet_sq", Object.class).get(1), figures[k] + "'s E[b^2]");
+            five(1.06, r.get("widen"), figures[k] + "'s widening");
+        }
+        WideReport.Saved wide = WideReport.read(dir.resolve("wide.ser"));
+        int p16 = SystemScorer.wideAt(SystemScorer.planIndex(wide.plans, "P16"), SystemScorer.W_SAME);
+        int k16 = -1;
+        int[] kept = SystemScorer.wideRows(wide.plans);
+        for (int k = 0; k < kept.length; k++) {
+            k16 = kept[k] == p16 ? k : k16;
+        }
+        double[] boot = wide.rows.get(0).wideBoot[2][k16];
+        double mu = RiskFixture.WIDE_MU.get(RiskReport.HI_LO)[0][0];
+        double se = sigmaEff(in.swings, "F43");
+        Document f43 = row(json, "F43");
+        five(se * se / (mu * mu), fig(json, f43, "n0").get(0), "F43's N0");
+        double[] n0 = interval(boot, 1.06, x -> x > 0 ? se * se / (x * x) : Double.POSITIVE_INFINITY);
+        five(n0[0], fig(json, f43, "n0").get(1), "F43's N0, lower end");
+        five(n0[1], fig(json, f43, "n0").get(2), "F43's N0, upper end");
+        String md = new String(Files.readAllBytes(in.md()), StandardCharsets.UTF_8);
+        // The ratio as the report prints it, in the machine's locale; the basis in words.
+        assertTrue(md.matches("(?s).*F43 1.06 \\(widened by the 1-8 ratios, an extrapolation, P16 same schedule.*"), md);
+        assertTrue(md.matches("(?s).*F48 1.06 \\(widened by the 1-8 ratios, an extrapolation, X-1.0,8 own rule.*"), md);
+
+        Inputs w = new Inputs();
+        w.replay = true;
+        w.swings = in.swings;
+        w.pilot = RiskFixture.widePilot();
+        w.tag = "wide-pilot-";
+        RiskReport.Outcome ow = w.run();
+        assertTrue(ow.failures.isEmpty(), ow.failures.toString());
+        Document jw = Document.parse(new String(Files.readAllBytes(w.json()), StandardCharsets.UTF_8));
+        five(1.20, row(jw, "F46").get("widen"), "Victor APC + ace's own P16 ratio");
+        five(1.20, row(jw, "F43").get("widen"), "Hi-Lo at P16: the plan's largest");
+        five(1.20, row(jw, "F44").get("widen"), "B0,8, not measured: the largest for any plan");
+        five(1.06, row(jw, "F27").get("widen"), "a 1-8 row is not widened by a wide plan's ratio");
+        String mdw = new String(Files.readAllBytes(w.md()), StandardCharsets.UTF_8);
+        assertTrue(mdw.matches("(?s).*F46 1.20 \\(measured, P16 same schedule.*"), mdw);
+        assertTrue(mdw.matches("(?s).*F43 1.20 \\(the largest measured for this plan, not its own, P16 same schedule.*"),
+                mdw);
+    }
+
+    /** A wide.ser without a row the figures need, or without its resamples, is refused rather than read around. */
+    @Test
+    void aWideSerLackingARowOrItsResamplesIsRefused() throws Exception {
+        Path file = dir.resolve("wide.ser");
+        RiskFixture.writeWide(file, RiskFixture.identity("FullIndexRun replay"));
         Map<String, Path> sources = new LinkedHashMap<>();
-        sources.put("replay", dir.resolve("wide.ser"));
-        Exception e = assertThrows(IllegalArgumentException.class, () -> RiskReport.readEngine(sources, null));
-        assertTrue(e.getMessage().contains("WideReport"));
+        sources.put("replay", file);
+        RiskReport.Engine e = RiskReport.readEngine(sources, RiskFixture.write(dir, "pilot.txt", RiskFixture.pilot()));
+        assertEquals(1.0 * RiskFixture.WIDE_MU.get(RiskReport.HI_LO)[2][0],
+                RiskReport.mu(e, RiskReport.spec("F45")).estimate, 0, "X-1,8 is X-1.0,8's own rule");
+        e.wide.rows.get(0).wideBoot[2] = null;
+        Exception x = assertThrows(IllegalStateException.class, () -> RiskReport.mu(e, RiskReport.spec("F43")));
+        assertTrue(x.getMessage().contains("holds no resamples"), x.getMessage());
+        e.wide.rows.remove(1);
+        x = assertThrows(IllegalStateException.class, () -> RiskReport.mu(e, RiskReport.spec("F46")));
+        assertTrue(x.getMessage().contains("0 rows named"), x.getMessage());
     }
 
     @Test

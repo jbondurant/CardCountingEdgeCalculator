@@ -27,8 +27,8 @@ import java.util.TreeMap;
  * Rows: the 25 figures SIM_CHECK.md section 3 keeps swings for (ROWS), each read from the file
  * that holds its engine figure: c06c061's results.ser, step 7's report-ceiling-97bf834.ser (the
  * chart, a reference row), step 8's results.ser (F1 and F2 at full play), or the replay's wide.ser
- * (the wide plans; its reader comes with WideReport, so until that is merged those rows are
- * reported as not computed). A row whose source is not given is reported as not computed, never
+ * (F43 to F48, Hi-Lo and Victor APC + ace at full play on the wide plans P16, B0,8 and X-1.0,8, read
+ * with WideReport.read; wideMu). A row whose source is not given is reported as not computed, never
  * filled from elsewhere.
  *
  * Uncertainty. N0, B_p, the risk of ruin at a bankroll, the trip risk and the chance of being
@@ -36,7 +36,9 @@ import java.util.TreeMap;
  * intervals (RiskMath.percentileInterval). A full-play mu holds its later plays as fitted on every
  * resample, so its resamples are first widened by its count's difference ratio from the pilot
  * (PLAN_PAGE.md 2.4's rule for a full-play level; levelRatios), and a full-play row is refused
- * without the pilot. A resample with mu at most 0 gives no upper bound; a row whose estimate is
+ * without the pilot. A wide plan's row is widened as WideReport widens that plan's levels
+ * (WideReport.Widening.of: the count's own ratio for the plan, else the plan's largest, else the
+ * largest for any plan, else the 1-8 ratios marked as an extrapolation). A resample with mu at most 0 gives no upper bound; a row whose estimate is
  * at most 0 loses, and its ruin is certain for any bankroll.
  *
  * Checks, any failure of which writes nothing:
@@ -229,7 +231,8 @@ final class RiskReport {
          * The mean square of the bets from the per-key table, sum of share x bet^2 with each key's
          * bet pooled over the folds by test weight (1 when flat). Pooling averages the two folds'
          * bets before squaring, so this is at most the mean square of the bets actually placed;
-         * the replay's figures carry that one exactly (PLAN_COMPUTE.md 3.2).
+         * the replay's figures carry that one exactly (PLAN_COMPUTE.md 3.2), and a wide plan's row
+         * (wideMu) gives that exact one here.
          */
         final double meanBetSquaredPooled;
 
@@ -251,6 +254,10 @@ final class RiskReport {
         final Map<String, List<SystemScorer.Result>> results = new LinkedHashMap<>();
         /** For step7: the reference rows. */
         List<SystemScorer.Entry> references;
+        /** For replay: the wide plans' rows, as WideReport.save wrote them. */
+        WideReport.Saved wide;
+        /** The pilot's ratios as WideReport widens the wide plans' levels by them; null without a pilot. */
+        WideReport.Widening wideWidening;
         /** Each count's difference ratio by metric name, from the pilot; null without one. */
         Map<String, Map<String, Double>> ratios;
         String pilot;
@@ -270,8 +277,8 @@ final class RiskReport {
      * Reads the sources given, by name: c06c061 and step8 through FullIndexPeek.read, step7
      * through CeilingReport.readSaved (its reference rows). Each must pair with the others: the
      * same states file, 1,000 resamples from Bootstrap.SEED. The replay's wide.ser is read by
-     * WideReport, which is not on this branch, so it is refused here rather than read some other
-     * way.
+     * WideReport.read; its identity is the replay's, which ends with the source's own, so its states
+     * and resamples lines are c06c061's.
      */
     static Engine readEngine(Map<String, Path> sources, Path pilot) throws IOException, ClassNotFoundException {
         Engine e = new Engine();
@@ -292,9 +299,12 @@ final class RiskReport {
                     e.references = saved.references;
                     break;
                 }
-                case "replay":
-                    throw new IllegalArgumentException("the replay's wide.ser is read by WideReport (branch site-wide); "
-                            + "merge it before giving --source replay");
+                case "replay": {
+                    WideReport.Saved saved = WideReport.read(file);
+                    e.identity.put(name, saved.identity);
+                    e.wide = saved;
+                    break;
+                }
                 default:
                     throw new IllegalArgumentException("no source is called " + name);
             }
@@ -302,7 +312,9 @@ final class RiskReport {
         }
         requirePaired(e);
         if (pilot != null) {
-            e.ratios = levelRatios(Files.readAllLines(pilot, StandardCharsets.UTF_8));
+            List<String> lines = Files.readAllLines(pilot, StandardCharsets.UTF_8);
+            e.ratios = levelRatios(lines);
+            e.wideWidening = new WideReport.Widening(FullIndexPilot.readRatios(lines), pilot.toString());
             e.pilot = pilot.toString();
         }
         return e;
@@ -383,7 +395,9 @@ final class RiskReport {
      * The ratio a full-play level of this count is widened by, at least 1, and how it was found:
      * its own difference ratio in the row's metric, or, for a count the pilot did not measure,
      * the largest difference ratio it measured in either metric (PLAN_PAGE.md 2.4; FULL_INDEX_PLAYS.md
-     * section 4's default for a count without its own).
+     * section 4's default for a count without its own). Either metric is flat or the 1-8 same
+     * schedule: a pilot run with --wide also prints the wide plans' tables, whose ratios widen the
+     * wide plans' rows (wideMu) and not these.
      */
     static Object[] widening(Engine e, String count, String metric) {
         Map<String, Double> by = e.ratios.get(metric);
@@ -392,8 +406,8 @@ final class RiskReport {
             return new Object[]{Math.max(1, own), "its own, " + metric + ", from " + e.pilot};
         }
         double most = 1;
-        for (Map<String, Double> m : e.ratios.values()) {
-            for (double r : m.values()) {
+        for (String m : new String[]{"1-8 same schedule", "flat"}) {
+            for (double r : e.ratios.getOrDefault(m, java.util.Collections.emptyMap()).values()) {
                 most = Math.max(most, r);
             }
         }
@@ -428,6 +442,9 @@ final class RiskReport {
 
     /** The row's win rate: estimate, resamples (widened if full play), and the scorer's bets. */
     static Mu mu(Engine e, Spec s) {
+        if (s.source.equals("replay")) {
+            return wideMu(e, s);
+        }
         Object[] f = find(e, s);
         SystemScorer.Entry x = (SystemScorer.Entry) f[0];
         int p = s.pen;
@@ -459,6 +476,79 @@ final class RiskReport {
             }
         }
         return new Mu(x.estimate[p][m], boot, widen, basis, meanBet, meanBetSquared);
+    }
+
+    /**
+     * SIM_CHECK.md's wide-plan bets as its figures name them (SimCheckPlan.Figure.metric): the plan's
+     * label in SystemScorer.WIDE_PLANS, and whether the figure is the same schedule's EV per round
+     * watched (true) or the own rule's (false). X-1,8 is the plan labelled X-1.0,8, played by the own
+     * rule, since a plan that leaves the table has no same schedule.
+     */
+    static final Map<String, Object[]> WIDE_BETS = wideBets();
+
+    private static Map<String, Object[]> wideBets() {
+        Map<String, Object[]> m = new LinkedHashMap<>();
+        m.put("P16", new Object[]{"P16", true});
+        m.put("B0,8", new Object[]{"B0,8", true});
+        m.put("X-1,8", new Object[]{"X-1.0,8", false});
+        return java.util.Collections.unmodifiableMap(m);
+    }
+
+    /**
+     * A wide plan's row from the replay's wide.ser: its EV per round watched under the plan at the
+     * row's penetration, with its 1,000 resamples (Entry.wideBoot, refitted first decisions,
+     * insurance and bets, later plays held), widened as WideReport widens that plan's full-play
+     * levels; and the plan's average bet and mean square bet per round watched, a round sat out
+     * betting 0, which the scorer counts from the bets placed, so E[b^2] here is exact rather than
+     * pooled. Refused without the pilot, as every full-play row is, and when the row, the plan or
+     * the resamples are missing.
+     */
+    static Mu wideMu(Engine e, Spec s) {
+        Object[] b = WIDE_BETS.get(s.bets);
+        if (b == null) {
+            throw new IllegalStateException(s.figure + ": no wide plan is called " + s.bets);
+        }
+        String label = (String) b[0];
+        boolean same = (Boolean) b[1];
+        WideReport.Saved w = e.wide;
+        String name = s.entry + ", full play";
+        List<WideReport.Row> found = new ArrayList<>();
+        for (WideReport.Row r : w.rows) {
+            if (r.name.equals(name) && r.scope.equals("full play")) {
+                found.add(r);
+            }
+        }
+        if (found.size() != 1) {
+            throw new IllegalStateException(s.figure + ": " + found.size() + " rows named " + name + " in the replay's "
+                    + "wide.ser, not one");
+        }
+        WideReport.Row row = found.get(0);
+        int i = SystemScorer.planIndex(w.plans, label);
+        int base = same ? SystemScorer.W_SAME : SystemScorer.W_OWN;
+        int at = SystemScorer.wideAt(i, base);
+        int p = s.pen;
+        int[] kept = SystemScorer.wideRows(w.plans);
+        int k = -1;
+        for (int x = 0; x < kept.length; x++) {
+            k = kept[x] == at ? x : k;
+        }
+        if (row.wide[p] == null || k < 0 || row.wideBoot == null || row.wideBoot[p] == null
+                || row.wideBoot[p][k].length != Bootstrap.RESAMPLES) {
+            throw new IllegalStateException(s.figure + ": the replay's wide.ser holds no resamples for " + name + " under "
+                    + label + " at " + PEN_NAMES[p] + "; a file without them is refused");
+        }
+        if (e.wideWidening == null) {
+            throw new IllegalStateException(s.figure + " is full play: its interval needs the pilot's widening (--widening)");
+        }
+        Object[] wr = e.wideWidening.of(w.plans[i], same, row.count);
+        double widen = (Double) wr[0];
+        String basis = ((WideReport.Basis) wr[1]).words + ", " + FullIndexPilot.wideName(label, same ? "same" : "own")
+                + ", from " + e.pilot;
+        double[] boot = Bootstrap.widen(row.wideBoot[p][k], widen);
+        int bet = same ? SystemScorer.W_SAME_BET : SystemScorer.W_OWN_BET;
+        int bet2 = same ? SystemScorer.W_SAME_BET2 : SystemScorer.W_OWN_BET2;
+        return new Mu(row.wide[p][at], boot, widen, basis, row.wide[p][SystemScorer.wideAt(i, bet)],
+                row.wide[p][SystemScorer.wideAt(i, bet2)]);
     }
 
     // ------------------------------------------------------------------ the simulator's side

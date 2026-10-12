@@ -29,7 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * one its settings make, a fit not finished, an item with nothing to compare with, an output in the
  * source, a tree store it could write, and registered counts on the main file. Parts and perfect
  * values planted beyond 1e-12 stop it, naming the item or the state; within 1e-12, it reports them
- * and goes on. It is never pointed at runs/full-index/full-c06c061.
+ * and goes on. With the plan's three hooks on (ReplayHooks: the wide plans, the sink, the full-play
+ * export), every item is still the run's to the bit, each hook's file holds what the replay scored,
+ * and a killed and resumed replay writes every one of them to the bit as an uninterrupted one does.
+ * It is never pointed at runs/full-index/full-c06c061.
  *
  * Planted in a scratch copy of the code on 12 October 2026, one at a time, each failed the test
  * named, which passes without it: the comparison skipping nested arrays of doubles, the replayed
