@@ -24,7 +24,8 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>{@code {{KEY}}} or {@code {{KEY|FMT}}}: a figure, printed in a data-k span (formats in
  *   SiteText). KEY may name a row by rank instead of by id: {@code full.80.s8.@best} is the
- *   published count with the highest full.80.s8 figure.</li>
+ *   published count with the highest full.80.s8 figure, {@code @least} the lowest; and
+ *   {@code full.70.s8.=full.80.s8.@best} is the same count's figure at another key.</li>
  *   <li>{@code {{name:KEY}}}, {@code {{names:KEY}}}: the display name of a key's row, or the names
  *   of a set of rows ({@code @topN}, {@code @all} for every published row, {@code @every} for every
  *   row) as a list.</li>
