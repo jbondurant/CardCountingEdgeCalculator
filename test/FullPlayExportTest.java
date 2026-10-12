@@ -36,6 +36,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * first move ranked second, a full-play round value in states.bin a billionth off where only the
  * checked section stands for the values, and a full-play row with neither values nor a checked
  * section.
+ *
+ * Planted in scratch copies of StrategyExport on 12 October 2026, one at a time, each compiled
+ * and this class run against it:
+ *
+ * | Planted | What failed |
+ * |---|---|
+ * | fold 1's full play fitted on fold 0's Hit and Split values | every test: the replay's check, F1 start at 75%, state 9's round value 1.3e-4 off |
+ * | the writer flips later cell 7 of group 0 | every test: fold 0's later cell 0 7 is not the play the last round walked |
+ * | the round trip's check of the later lines against the walked play left out | aLaterLineFlippedIsCaught: the flipped cell is refused by lookups.tsv's later lines instead, not by the check it names |
  */
 public class FullPlayExportTest {
 
