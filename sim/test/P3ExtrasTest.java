@@ -256,4 +256,35 @@ class P3ExtrasTest {
         assertEquals(List.of("shoes\tF00\t0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0", "hist\tF00\t1.0\t-17\t1\t1",
                 "hist\tF00\t1.0\t16\t1\t0"), s.lines(sums));
     }
+
+    /** D6 with everything kept on the way: the same sums and records on 1 and on several threads, and after a kill. */
+    @Test
+    void theExtrasAreTheSameToTheBitOnAnyThreadsAndAfterAResume() throws Exception {
+        Bundle b = new Bundle(BundleFixture.write(tmp.resolve("b")), Plants.NONE);
+        List<Row> rows = b.rows(true);
+        double[][] runs = new double[3][];
+        List<List<String>> records = new ArrayList<>();
+        int[] threads = {1, P3Test.THREADS, 1};
+        for (int t = 0; t < 3; t++) {
+            Path dir = tmp.resolve("run" + t);
+            Files.createDirectories(dir.resolve("parts"));
+            P3 p3 = new P3(SEED, rows, b.chart, Plants.NONE).extras(registry(), dir.resolve("parts"), 80);
+            if (t == 2) {
+                assertEquals(null, P3.chunked(p3, b, dir.resolve("p3"), "test", 3, 40, 1, 1));
+            }
+            runs[t] = P3.chunked(p3, b, dir.resolve("p3"), "test", 3, 40, threads[t], -1);
+            p3.writeRecords(dir, 40);
+            records.add(Files.readAllLines(dir.resolve("records-F18.tsv")));
+        }
+        assertEquals(java.util.Arrays.toString(runs[0]), java.util.Arrays.toString(runs[1]));
+        assertEquals(java.util.Arrays.toString(runs[0]), java.util.Arrays.toString(runs[2]));
+        assertEquals(80, records.get(0).size());
+        assertEquals(records.get(0), records.get(1));
+        assertEquals(records.get(0), records.get(2));
+        // a missing part is refused, not skipped
+        Path dir = tmp.resolve("run0");
+        Files.delete(dir.resolve("parts").resolve(String.format("records-%012d.part", 40)));
+        P3 p3 = new P3(SEED, rows, b.chart, Plants.NONE).extras(registry(), dir.resolve("parts"), 80);
+        assertThrows(IOException.class, () -> p3.writeRecords(dir, 40));
+    }
 }

@@ -6,26 +6,40 @@ Loto-Québec's published rules, without reading the engine (`src/`, `test/`) or 
 Where those sources left something open, the question is written here with the reading chosen,
 so the engine's side can answer it and either confirm the choice or say what to change.
 
+**Second session, 12 October 2026 (branch site-int-sim, off site-int-spec).** It finished D2, D5,
+mode B, the paired differences, the per-shoe records, fans and ruin paths, the swings and
+ev-by-key.tsv, from the engine side's answers now in SHOE_SPEC.md. It read: SHOE_SPEC.md (all,
+including Part C and the answers), SIM_CHECK.md (all, including the `sim-registry` block),
+PLAN_COMPUTE.md sections 1 (lines 96-349), 2.4 (423-458, for the formats), 5.4 (925-972, for
+item 9's key convention) and 7 (1079-1148), RESULTS_SITE.md, counting-systems.json, everything in
+sim/, run-tests.sh (the build script), and the earlier builder's report for site-sim. It opened
+nothing under src/ or test/ and no run's output. PLAN_COMPUTE.md has no section 11; SIM_CHECK.md's
+section 11 (the paths) is the one used.
+
+Items 1 to 12 were answered on the engine side in SHOE_SPEC.md ("Answers to the simulator's
+questions"); each now says what was done. Items 13 on are this session's.
+
 1. **Soft 17.** Loto-Québec's PDF leaves hit-or-stand on soft 17 to the sign at the table.
    *Chosen:* the dealer hits soft 17, from SHOE_SPEC.md A2 (`rule.hits.soft.17 = true`) and
    PLAN_COMPUTE.md 1.4 ("the dealer hits soft 17"). The walk's totals agree with A8 to the
    round under it (sim/test/WalkTest), and do not under the other reading: with the dealer
    standing on soft 17, planted on 9 October, the walk gives 3,210,144 round starts at 70%, not
-   3,197,853.
+   3,197,853. *Answered: confirmed.*
 
 2. **"Only java.util".** PLAN_COMPUTE.md 1.1 says the simulator uses only `java.util` and
    compiles alone. Reading files needs `java.io` and `java.nio.file`, and checking the bundle's
    `manifest.sha256` needs `java.security.MessageDigest`. *Chosen:* the JDK's own library and
    nothing else, no third-party jar and no class of the engine; `javac -d out sim/*.java` with
    no classpath still compiles it. The tests in `sim/test/` use JUnit 5 from `lib/`, and are
-   not part of that one-command compile.
+   not part of that one-command compile. *Answered: confirmed.*
 
 3. **counting-systems.json.** Check D2 has the simulator read counting-systems.json with its own
    parser, but that file is not among the sources this session was allowed to read, so its
    format is unknown here. *Chosen:* D2's parser is not written yet. The keys themselves (B2.2)
    are, and are tested on the parameters a strategy file gives (`tags`, `bettags`, `decksum`,
    `betdecksum`, `ace`, `divisor`, `mode`). A later session that may read the catalog adds the
-   parser and the keys-sample.tsv comparison.
+   parser and the keys-sample.tsv comparison. *Answered: corrected, and done:* `Catalog.java`
+   reads the file as B9 says with the simulator's own `Json.java`, and `KeysSample.java` is D2.
 
 4. **The chart before the bundle exists.** D1 plays the chart in every round of the walk, and
    chart.tsv comes from the bundle. *Chosen:* until it exists, the walk plays a stand-in chart
@@ -33,11 +47,12 @@ so the engine's side can answer it and either confirm the choice or say what to 
    and no surrender, written from general knowledge). Its walk of all 60,000 main shoes gives
    exactly A8's round starts, valued states and weights at the three cuts. Its fingerprint is not
    the engine's (unreachable cells differ, B1), so every reported run plays chart.tsv; the
-   stand-in is for the D1 totals before the bundle, and for tests.
+   stand-in is for the D1 totals before the bundle, and for tests. *Answered: confirmed;* every
+   summary now carries the chart's fingerprint (`chartFingerprint`) for the reader to refuse.
 
 5. **The deal's play key for insurance on a player's natural.** B2.4 says the player's natural is
    an ace-up deal like any other for insurance. *Chosen:* as written: the natural's deal (1, 10,
-   ace) is looked up in `insure` lines like any other deal.
+   ace) is looked up in `insure` lines like any other deal. *Answered: confirmed.*
 
 6. **How the chart's row reaches the bundle.** SIM_CHECK.md's count list names the chart row
    "Chart, no count, flat" and calls it one instance at every penetration, fitted on nothing,
@@ -47,36 +62,125 @@ so the engine's side can answer it and either confirm the choice or say what to 
    folds 0 and 1, pooled as B5 pools any row; P2 takes it from a states.bin section of that name
    at 80%. A strategy file with that row name is not played beside the walk. If the exporter
    writes the chart another way, the summary's exact side for the chart is empty until this is
-   settled.
+   settled. *Answered: confirmed, and the exporter writes it this way.*
 
 7. **D5's lookups.tsv.** SIM_CHECK.md section 5 adds `lookups.tsv` to the bundle, but neither it
    nor SHOE_SPEC.md gives its format. *Chosen:* not written. Strategy.Play exposes what D5
    compares (`keyOfDeal`, `insuredAt`, `firstMoveAt`, and `choose` for later decisions), so the
-   reader is short once the format is fixed.
+   reader is short once the format is fixed. *Answered: corrected, and done:* `Lookups.java` is
+   D5, from B8.
 
 8. **The coin.** SIM_CHECK.md section 4 asks for a coin a round in P3 and a coin a re-deal in P2,
    from a stream of its own. *Chosen:* one `nextDouble` a round start (P3) or a re-deal (P2) from
    `Xoshiro.of(seed, index, 1, 0)`, drawn whether or not any plan needs it, and shared by every
-   plan and instance on that round; a round is played when the coin is under PLAY.
+   plan and instance on that round; a round is played when the coin is under PLAY. *Answered:
+   confirmed.*
 
 9. **The figures the simulator reports.** The registry of the 52 figures is SimCheckPlan's,
    engine side, which this session did not read. *Chosen:* the simulator reports every row and
    figure it can, `flat` and `ev:LABEL` for each plan of each row's files, under exact.tsv's
    figure names, and the engine-side reader picks the registered ones (SIM_CHECK.md section 12).
-   P2 runs the rows at 80% only, as section 2 says.
+   P2 runs the rows at 80% only, as section 2 says. *Answered: confirmed, with one addition, done:*
+   `Registry.java` reads the `sim-registry` block (`--registry`, by default SIM_CHECK.md in the
+   working directory); every comparison carries its registered id (`fig`, empty for a figure the
+   registry does not list), and the swings, records and fans are keyed by it.
 
 10. **The pooling weights when a fold file is missing.** P3 pools the two folds with weights from
     exact.tsv's `flat` lines. *Chosen:* a row is played only when both its fold files are in the
-    bundle; a figure without exact.tsv lines is reported with an empty exact side.
+    bundle; a figure without exact.tsv lines is reported with an empty exact side. *Answered:
+    corrected, and done:* the bundle is refused when a row at a penetration has one fold file, or
+    a strategy file lacks its exact.tsv line for `flat` or for any of its plans' `ev:LABEL`.
 
 11. **Which groups are allowed.** B2.1 says `group g lo hi` lines come by g and B2.3 looks up the
     first group whose `hi` is at least the key. *Chosen:* the reader requires each group's `hi` to
     be above the last one's and `lo` to be at most its own `hi`, and nothing more; `lo` is for
     reading only. It refuses `first` lines in a betting-scope file, since B2.1 lists them for
-    scopes first and full only.
+    scopes first and full only. *Answered: confirmed, with one more check, done:* each group's
+    `lo` must be above the previous group's `hi` (the same for `lgroup`), and `lgroup` lines need
+    `lgroups` before them.
 
 12. **What sizes a planted run uses.** SIM_CHECK.md section 10: P3 on the first chunk and P2 at
     K = 6,000, and a planted run is reported even when an exact check fails first. *Chosen:*
     `sim.Sim p2 --plant NAME` goes on to P2 after failed D checks whenever a plant is on (and
     stops there otherwise); the sizes are the command's `--chunks` and `--k`, given by whoever runs
-    it.
+    it. *Answered: the sizes are fixed* (P3 on the first chunk, P2 at K = 6,000: `--chunks 1 --k
+    6000`), and the engine-side reader refuses a planted run of other sizes. The simulator does not
+    refuse them itself, since its tests run planted bugs at tiny sizes.
+
+13. **A registered count's bet column in keys-sample.tsv.** B9 says a column naming a registered
+    count or its betting variant takes its parameters from the strategy file whose `playcount` or
+    `betcount` names it. *Chosen:* a column some file bets with (`betcount`) takes that file's bet
+    tags, bet deck sum, ace weight, mode and divisor for its bet key; a column some file plays
+    with (`playcount`) takes that file's play tags for its play key. A column that only a
+    `betcount` names plays on its base (the file's play tags), as B4 says of betting variants; a
+    column that only a `playcount` names (the base of a count that bets on a vector of its own)
+    bets on its own play tags with no ace count.
+
+14. **The order of a colour or face count's parts.** B4 and B8 list the parts of a colour or
+    face count's cell "in the order `CountKeys.tagSums` meets them", which is the engine's code.
+    *Chosen:* D2 and D5 compare the parts by key, whatever their order: D2 requires the same set
+    of keys with each chance within 1e-12 relative, D5 the same set of keys with the same group,
+    move and insurance at each. The chances are the deal's three cards drawn without replacement
+    from the kinds left, given the deal's ranks (the cards within a rank are exchangeable, so the
+    order the three are drawn in does not matter).
+
+15. **Mode B's coins and pooled rounds.** In mode B each instance has its own round starts.
+    *Chosen:* each instance draws its coin, one a round start of its own walk, from a fresh copy
+    of the shoe's coin stream `Xoshiro.of(20261008, h, 1, 0)`, and its exits are over its own round
+    starts. Its rounds are its own; the folds are pooled shoe by shoe with exact.tsv's weights for
+    the rounds as for the results, N_h = W_0·N_h0 + W_1·N_h1, so mode B's figure is
+    Σ(W_0·Y_h0 + W_1·Y_h1) / Σ(W_0·N_h0 + W_1·N_h1). Mode B and the moving count run for the
+    registry's F26 to F29 only (SIM_CHECK.md section 9's "flat and 1-8"), on P3's first four chunks
+    (`sim.Sim variants`), each paired shoe by shoe with mode A's frozen count on the same shoes.
+
+16. **Which differences from Hi-Lo.** SIM_CHECK.md section 9 asks for "every figure less
+    Hi-Lo's at the same play, penetration and bets". *Chosen:* "the same play" is the same scope
+    (`first`, `full` or `betting`); Hi-Lo's row is the one whose `playcount` and `betcount` are
+    both `Hi-Lo = Hi-Lo Lite`; "the same bets" is the same exact.tsv figure name. The chart (no
+    scope) and Hi-Lo itself have no difference. P2 reports the same pairs at 80% and, as section 9
+    names it, Victor APC + ace less Hi-Opt II + ace at full play, each beside the engine's
+    difference on the same states. All are in the summaries' `differences`, never in the pass rule.
+
+17. **The ruin paths' formula.** SIM_CHECK.md section 11 runs the paths from "B_25%, B_5% and B_1%
+    (the formula's, at the simulator's own μ and σ_eff from the same records)" and stops them "where
+    the formula's remaining risk is under 5e-5"; the formula is in PLAN_COMPUTE.md 2.3, outside
+    this session's reading. *Chosen:* the long-run risk of ruin exp(−2μB/σ²) with σ = σ_eff, so
+    B_p = σ_eff² ln(1/p) / (2μ), and a path stops, survived, once its bankroll is above B at 5e-5.
+    μ = ΣY/ΣN and σ_eff² = S/(S − 1) · Σ(Y − μN)²/ΣN from the records. A path that draws 10 million
+    shoes without either end is counted apart as capped. The format of `ruin-FIG.tsv` is the
+    simulator's own. If RiskReport runs its own paths from records-FIG.tsv, these are a second
+    computation of the same thing, from the same seed rule.
+
+18. **Trip risk and the chance of being behind.** SIM_CHECK.md section 11 cuts the records into
+    blocks of H·r rounds; H and r are in PLAN_COMPUTE.md 2.3, outside this session's reading.
+    *Chosen:* not computed in the simulator; records-FIG.tsv holds every shoe's (Y, N, M) in shoe
+    order, which is all the blocks need, for RiskReport.
+
+19. **The records' shoes.** SHOE_SPEC.md C2 says "P3's first two chunks (2,000,000 shoes)".
+    *Chosen:* the shoes of the first two chunks, 2 × `--chunk-size` (fewer if the run has fewer),
+    so a run at another chunk size keeps its first two chunks' records. Each chunk writes its part
+    of the records before its sums, so a chunk on disk has its records on disk; records-FIG.tsv is
+    assembled in shoe order and refused if a part is missing or short.
+
+20. **Files whose format nothing fixed.** `depth.tsv` (PLAN_COMPUTE.md 1.8): a line a band of 26
+    cards dealt, `band from to rounds shoes simulated se exactWeight exact`, the simulated side the
+    chart's walk with the ratio estimator's SE over shoes, the exact side states.bin's chart
+    section at 80% weighted by 1/q. `variants.tsv`: `kind fig row pen figure what value se
+    sigmaEff rounds shoes`, an `estimate` line for mode A, the moving count and mode B and a
+    `difference` line for each variant less mode A. The summaries gain `differences` (row, the row
+    it is less, the difference, its SE, σ_eff of the per-round difference for P3, both figures and
+    the engine's difference for P2). C1 to C4's files are written as SHOE_SPEC.md gives them, the
+    records and fan files without a comment line, ev-by-key.tsv with C4's.
+
+21. **Swings in planted runs.** *Chosen:* the swings, records and fans play shoe h with the
+    fold-(h mod 2) file whatever the `other-fold` plant says (that plant swaps P3's pooling
+    weights, section 10). A round whose 2X is not whole or not inside the range derived from the
+    rules (−17 to 16 here; −18 under `insure-whole-bet`) stops the run, as PLAN_COMPUTE.md 2.4
+    asks; a bet not among the plan's units stops it too.
+
+22. **The edge by key's range.** *Chosen:* ev-by-key.tsv's keys run from −128 to 128, wider than
+    any Hi-Lo true count with 85 or more cards left; a key outside stops the run rather than being
+    dropped.
+
+23. **A bundle without keys-sample.tsv or lookups.tsv.** *Chosen:* `sim.Sim p2` reports D2 or D5
+    as not run and counts the exact checks as failed, so P2 does not start (unless a plant is on).
