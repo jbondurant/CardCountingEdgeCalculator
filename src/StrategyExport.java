@@ -173,6 +173,9 @@ final class StrategyExport {
         final SystemScorer.PlayValues[] values;
         final SystemScorer.Groups[] later;
         final boolean[][] stands;
+        /** Full play: per fold, the (group, deal) cells the scored fit ranks otherwise than the play the last round walked, and the first. */
+        final int[] rankingDiffers = new int[2];
+        final String[] firstDifference = new String[2];
 
         Refit(SystemScorer scorer, CountKeys.Count count, int p) {
             this.count = count;
@@ -200,8 +203,9 @@ final class StrategyExport {
          * for the full-play entries, with the insurance in the same groups, the moves ranked from
          * that fit, and the strategy's later groups and the later play its last round walked
          * (now). A split hand reads the ranked moves too, and the values were worked out with the
-         * ranking of the play the last round walked; a strategy whose refit ranks any deal
-         * otherwise is refused, since one file has one ranking (B2.4).
+         * ranking of the play the last round walked; the cells the refit ranks otherwise are
+         * counted (rankingDiffers), and build refuses a fold with any, since one file has one
+         * ranking (B2.4).
          */
         Refit(SystemScorer scorer, int p, FullIndexFit.Strategy[] two) {
             if (two.length != 2 || two[0] == null || two[1] == null) {
@@ -238,9 +242,11 @@ final class StrategyExport {
                 for (int g = 0; g < ranking[f].length; g++) {
                     for (int i = 0; i < Deals.COUNT; i++) {
                         if (!Deals.playerNatural(i) && !Arrays.equals(ranking[f][g][i], walked[g][i])) {
-                            throw new IllegalStateException(t + ": group " + g + ", deal " + i + " is ranked "
-                                    + Arrays.toString(ranking[f][g][i]) + " by the scored fit and "
-                                    + Arrays.toString(walked[g][i]) + " by the play its last round walked");
+                            if (rankingDiffers[f]++ == 0) {
+                                firstDifference[f] = t + ": group " + g + ", deal " + i + " is ranked "
+                                        + Arrays.toString(ranking[f][g][i]) + " by the scored fit and "
+                                        + Arrays.toString(walked[g][i]) + " by the play its last round walked";
+                            }
                         }
                     }
                 }
@@ -273,6 +279,13 @@ final class StrategyExport {
         if (e.fullPlay != rf.full()) {
             throw new IllegalArgumentException(e.name + (e.fullPlay ? " plays full: it is exported from its fold "
                     + "strategies' values (the replay's export hook)" : " plays first decisions, not the full play given"));
+        }
+        for (int f = 0; e.fullPlay && f < 2; f++) {
+            if (rf.rankingDiffers[f] > 0) {
+                throw new IllegalStateException(e.name + ", fold " + f + ": " + rf.rankingDiffers[f] + " (group, deal) cells "
+                        + "are ranked by the scored fit otherwise than the split hands were valued with, the first "
+                        + rf.firstDifference[f] + "; a file has one ranking (B2.4)");
+            }
         }
         CountKeys.Count play = rf.count;
         CountKeys.Count bet = e.count;
@@ -2181,6 +2194,8 @@ final class StrategyExport {
         ExportBundle.Section section;
         Expect expect;
         final LookupColumn[] columns = new LookupColumn[2];
+        /** Why the row could not be exported, or null: kept rather than thrown, so the replay goes on. */
+        String failure;
     }
 
     /**
@@ -2192,7 +2207,7 @@ final class StrategyExport {
      * their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds each full
      * section to the one checked on the values.
      */
-    static final class ReplayExport implements FullIndexReplay.Hook {
+    static class ReplayExport implements FullIndexReplay.Hook {
         final Path out;
         final Path states;
         /** The replay's --shoes, or -1 for every shoe the state file holds. */
@@ -2215,6 +2230,22 @@ final class StrategyExport {
             this.labels = labels.clone();
             this.seed = seed;
             this.log = log;
+        }
+
+        /** The same, the rows as entry names to penetrations 0 to 2 (as the replay's --export-row and SIM_CHECK.md's registry give them). */
+        ReplayExport(Path out, Path states, int shoes, Map<String, ? extends java.util.Set<Integer>> rows, String[] labels,
+                     long seed, PrintStream log) {
+            this(out, states, shoes, atPens(rows), labels, seed, log);
+        }
+
+        static List<String> atPens(Map<String, ? extends java.util.Set<Integer>> rows) {
+            List<String> out = new ArrayList<>();
+            for (Map.Entry<String, ? extends java.util.Set<Integer>> e : rows.entrySet()) {
+                for (int p : e.getValue()) {
+                    out.add(e.getKey() + "@" + ExportBundle.PENS[p]);
+                }
+            }
+            return out;
         }
 
         @Override
@@ -2244,18 +2275,25 @@ final class StrategyExport {
                 if (rf == null) {
                     rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
                 }
-                Built b = build(scorer, rf, e, labels);
                 RowExport x = new RowExport();
                 x.expect = Expect.of(e, item.pen);
-                Report r = checkFull(st, chartArray(), b, rf, x.expect);
-                x.section = b.section;
-                for (int f = 0; f < 2; f++) {
-                    x.text[f] = format(b.fold[f]);
-                    x.columns[f] = LookupColumn.of(b.lookup[f], st, sample, later);
+                try {
+                    Built b = build(scorer, rf, e, labels);
+                    Report r = checkFull(st, chartArray(), b, rf, x.expect);
+                    x.section = b.section;
+                    for (int f = 0; f < 2; f++) {
+                        x.text[f] = format(b.fold[f]);
+                        x.columns[f] = LookupColumn.of(b.lookup[f], st, sample, later);
+                    }
+                    log.printf("export: %s at %s checked on its values, %d values compared, largest relative difference "
+                            + "%s%n", e.name, SystemScorer.PENETRATIONS[item.pen], r.compared, r.worst);
+                } catch (RuntimeException ex) {
+                    // Kept, not thrown: one row that cannot be exported must not stop a replay of hours.
+                    x.failure = ex.getMessage();
+                    log.printf("export: %s at %s is not exported: %s%n", e.name, SystemScorer.PENETRATIONS[item.pen],
+                            x.failure);
                 }
                 kept.add(x);
-                log.printf("export: %s at %s checked on its values, %d values compared, largest relative difference %s%n",
-                        e.name, SystemScorer.PENETRATIONS[item.pen], r.compared, r.worst);
             }
             return kept.isEmpty() ? null : kept;
         }
@@ -2281,6 +2319,15 @@ final class StrategyExport {
             }
             if (kept.isEmpty()) {
                 throw new IllegalStateException("--export: no full-play row was replayed");
+            }
+            StringBuilder failed = new StringBuilder();
+            for (RowExport x : kept) {
+                if (x.failure != null) {
+                    failed.append("\n- ").append(x.expect.row).append(" at ").append(x.expect.pen).append("%: ").append(x.failure);
+                }
+            }
+            if (failed.length() > 0) {
+                throw new IllegalStateException("--export writes no bundle: rows that could not be exported" + failed);
             }
             if (st == null) {
                 // Every item was kept by an earlier start: the states are read here, as the replay read them.

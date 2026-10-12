@@ -80,9 +80,6 @@ final class FullIndexReplay {
         boolean wide;
         Path sink;
         Path export;
-        /** The export's rows as NAME@P, P 70, 75 or 80 (empty for every full-play row replayed), and its plans. */
-        final List<String> exportRows = new ArrayList<>();
-        String[] exportPlans = StrategyExport.reportPlans().toArray(new String[0]);
         /** Hooks given in code, by a test or a tool that drives the replay (the page look of 6.3), after those the options make. */
         final List<Hook> hooks = new ArrayList<>();
         /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the replay holds. */
@@ -354,11 +351,6 @@ final class FullIndexReplay {
      * are merged here their options are refused, before anything is read, rather than ignored.
      */
     static List<Hook> hooks(Options o) {
-        return hooks(o, System.out);
-    }
-
-    /** The same, the export logging to log. */
-    static List<Hook> hooks(Options o, PrintStream log) {
         if (o.wide) {
             throw new IllegalArgumentException("--wide needs the wide plans of PLAN_COMPUTE.md 3.4 (SystemScorer.wide and "
                     + "WideReport.save), which these classes do not hold");
@@ -367,17 +359,11 @@ final class FullIndexReplay {
             throw new IllegalArgumentException("--sink needs the scorer's state sink and KeyEdges.Collector of "
                     + "PLAN_COMPUTE.md 5.3, which these classes do not hold");
         }
-        if (o.export == null && (!o.exportRows.isEmpty() || !Arrays.equals(o.exportPlans,
-                StrategyExport.reportPlans().toArray(new String[0])))) {
-            throw new IllegalArgumentException("--export-row and --export-plans go with --export DIR");
-        }
-        List<Hook> out = new ArrayList<>();
         if (o.export != null) {
-            out.add(new StrategyExport.ReplayExport(o.export.toAbsolutePath().normalize(), o.states,
-                    o.shoes, o.exportRows, o.exportPlans,
-                    StrategyExport.SAMPLE_SEED, log));
+            throw new IllegalArgumentException("--export needs StrategyExport's full-play writer of PLAN_COMPUTE.md 1.2, "
+                    + "which these classes do not hold");
         }
-        out.addAll(o.hooks);
+        List<Hook> out = new ArrayList<>(o.hooks);
         List<String> names = new ArrayList<>();
         for (Hook h : out) {
             if (names.contains(h.name())) {
@@ -438,7 +424,7 @@ final class FullIndexReplay {
             throw new IllegalArgumentException(out + " is in the source's directory, " + source
                     + ", where the replay writes nothing");
         }
-        List<Hook> hooks = hooks(o, log);
+        List<Hook> hooks = hooks(o);
         FullIndexCheckpoint src = FullIndexCheckpoint.source(source);
         Path fitFile = source.resolve("fit.ckpt");
         if (!Files.isRegularFile(fitFile)) {

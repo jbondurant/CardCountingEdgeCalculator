@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The full-play export (PLAN_COMPUTE.md 1.2 and 6.1) on the replay test's tiny run: two counts
  * of our own on a 12-shoe synthetic state file at 75% and 80%, fitted at full play by FullIndexRun
- * and replayed from its fit.ckpt with --export. Never pointed at runs/.
+ * and replayed from its fit.ckpt with StrategyExport.ReplayExport given as a hook (the replay's
+ * --export option is wired on its own branch, which is to construct this hook). Never pointed at
+ * runs/.
  *
  * Two paths write the same bundle. The replay's hook (StrategyExport.ReplayExport) checks each
  * item's full-play rows on its strategies' Hit and Split values while it holds them, keeps the
@@ -93,7 +95,7 @@ public class FullPlayExportTest {
         return all;
     }
 
-    static FullIndexReplay.Options options(Path out, Path export) {
+    static FullIndexReplay.Options options(Path out, Path export, PrintStream log) {
         FullIndexReplay.Options o = new FullIndexReplay.Options();
         o.fitFrom = source;
         o.states = states;
@@ -105,8 +107,8 @@ public class FullPlayExportTest {
         o.resamples = 3;
         o.threads = 1;
         o.foldsOnly = true;
-        o.export = export;
-        o.exportPlans = LABELS.clone();
+        o.hooks.add(new StrategyExport.ReplayExport(export.toAbsolutePath().normalize(), states, -1, new ArrayList<>(),
+                LABELS, StrategyExport.SAMPLE_SEED, log));
         return o;
     }
 
@@ -119,10 +121,11 @@ public class FullPlayExportTest {
         PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
         FullIndexRun.run(settings("--out", source.toString(), "--trees", trees.toString()), "the-run's-commit", quiet, 0);
         bundle = root.resolve("export");
-        FullIndexReplay.Options o = options(root.resolve("replay"), bundle);
-        o.hooks.add(new Capture());
         ByteArrayOutputStream text = new ByteArrayOutputStream();
-        replayed = FullIndexReplay.run(o, "replay", new PrintStream(text, true, "UTF-8"));
+        PrintStream into = new PrintStream(text, true, "UTF-8");
+        FullIndexReplay.Options o = options(root.resolve("replay"), bundle, into);
+        o.hooks.add(new Capture());
+        replayed = FullIndexReplay.run(o, "replay", into);
         log = text.toString("UTF-8");
         List<CountKeys.Count> own = new ArrayList<>();
         for (CountKeys.Count c : replayed.counts) {
@@ -306,13 +309,53 @@ public class FullPlayExportTest {
         assertTrue(msg.contains("plays full and neither its values nor a section checked with them is given"), msg);
     }
 
+    /**
+     * A row that could not be exported is kept, not thrown, so the replay goes on; at its end the
+     * export writes no bundle and names the row. A row asked for that no item replayed is refused too.
+     */
+    @Test
+    public void theExportRefusesAtTheEndRatherThanStopTheReplay() throws Exception {
+        PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        Path export = root.resolve("export-failed");
+        FullIndexReplay.Options o = options(root.resolve("failed"), export, quiet);
+        o.hooks.clear();
+        o.hooks.add(new StrategyExport.ReplayExport(export, states, -1, new ArrayList<>(), LABELS,
+                StrategyExport.SAMPLE_SEED, quiet) {
+            @Override
+            public Serializable after(FullIndexReplay.Item item, SystemScorer s, SystemScorer.Result scored,
+                                      List<FullIndexFit.Strategy> two) {
+                Serializable kept = super.after(item, s, scored, two);
+                if (kept != null && item.pen == 2) {
+                    @SuppressWarnings("unchecked")
+                    List<StrategyExport.RowExport> rs = (List<StrategyExport.RowExport>) kept;
+                    rs.get(0).failure = "planted";
+                }
+                return kept;
+            }
+        });
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(o, "replay", quiet));
+        assertTrue(e.getMessage().contains("rows that could not be exported") && e.getMessage().contains("at 80%: planted"),
+                e.getMessage());
+        assertTrue(Files.isRegularFile(root.resolve("failed").resolve("replay.txt")), "the replay's own outputs are written");
+        assertFalse(Files.exists(export));
+        assertFalse(Files.exists(root.resolve("export-failed.partial")));
+
+        Path none = root.resolve("export-none");
+        FullIndexReplay.Options n = options(root.resolve("none"), none, quiet);
+        n.hooks.clear();
+        n.hooks.add(new StrategyExport.ReplayExport(none, states, -1, Arrays.asList("No such row, full play@80"), LABELS,
+                StrategyExport.SAMPLE_SEED, quiet));
+        e = assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(n, "replay", quiet));
+        assertTrue(e.getMessage().contains("is not a full-play row of any item replayed"), e.getMessage());
+    }
+
     /** A replay killed after its first item and resumed writes the same bundle as one that ran through. */
     @Test
     public void aReplayKilledAndResumedExportsTheSameBundle() throws Exception {
         Path out = root.resolve("killed");
         Path export = root.resolve("export-killed");
         PrintStream quiet = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
-        FullIndexReplay.Options a = options(out, export);
+        FullIndexReplay.Options a = options(out, export, quiet);
         a.batchBytes = 1;
         a.afterItem = n -> {
             if (n == 1) {
@@ -321,7 +364,7 @@ public class FullPlayExportTest {
         };
         assertThrows(Interrupted.class, () -> FullIndexReplay.run(a, "replay", quiet));
         assertFalse(Files.exists(export));
-        FullIndexReplay.Options again = options(out, export);
+        FullIndexReplay.Options again = options(out, export, quiet);
         again.batchBytes = 1;
         again.resume = true;
         FullIndexReplay.run(again, "replay", quiet);
