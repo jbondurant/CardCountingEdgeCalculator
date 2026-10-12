@@ -25,8 +25,19 @@ import java.util.Map;
  * Each claim is one published figure: where it is (locator), the game it is for (conditions,
  * with its unit), the value exactly as printed, how to find it again in the cached page
  * (extract), which of our figures it is set beside (ours, a key LiteratureCheck fills), and the
- * comparison rule. The verdict is then computed, never typed, as one of the kinds the page's
- * sentence counts (PLAN_PAGE.md section 1, item 9):
+ * comparison rule:
+ * <ul>
+ *   <li>within: ours less theirs (times multiply, a sign change or a deck-size scaling) no more
+ *   than the tolerance, which the claim states;</li>
+ *   <li>interval: theirs inside our 95% interval;</li>
+ *   <li>sign: our whole interval (or, with none, our figure) on the side the source states, + or -;</li>
+ *   <li>at_most: our figure, a largest gap over many cells, no more than the tolerance;</li>
+ *   <li>above, below: our figure above or below theirs, for exact figures with no sampling error;</li>
+ *   <li>check: a check LiteratureCheck ran and named, which passed;</li>
+ *   <li>none: shown for context, not compared.</li>
+ * </ul>
+ * The verdict is then computed, never typed, as one of the kinds the page's sentence counts
+ * (PLAN_PAGE.md section 1, item 9); sign, above and below give at most "agrees in direction":
  * <ul>
  *   <li>agrees: the rule holds and the conditions match;</li>
  *   <li>agrees in direction: the rule holds but the conditions differ, or the rule is only about
