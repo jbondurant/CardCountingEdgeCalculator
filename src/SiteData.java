@@ -213,10 +213,26 @@ final class SiteData {
         }
         if (m.containsKey("tables")) {
             for (Map.Entry<String, Object> e : ((Map<String, Object>) m.get("tables")).entrySet()) {
-                if (tables.containsKey(e.getKey())) {
+                Object was = tables.get(e.getKey());
+                if (was == null) {
+                    tables.put(e.getKey(), e.getValue());
+                } else if (e.getKey().equals("rows") && was instanceof List && e.getValue() instanceof List) {
+                    // The rows table is the one table several inputs add to: the catalog's rows from
+                    // one run, the searched and perfect rows from another. An id may come only once.
+                    List<Object> all = new ArrayList<>((List<Object>) was);
+                    for (Object add : (List<Object>) e.getValue()) {
+                        Object id = ((Map<String, Object>) add).get("id");
+                        for (Object p : all) {
+                            if (id.equals(((Map<String, Object>) p).get("id"))) {
+                                throw new IllegalArgumentException(name + ": row " + id + " is given by two inputs");
+                            }
+                        }
+                        all.add(add);
+                    }
+                    tables.put("rows", all);
+                } else {
                     throw new IllegalArgumentException(name + ": table " + e.getKey() + " is given by two inputs");
                 }
-                tables.put(e.getKey(), e.getValue());
             }
         }
     }
@@ -432,17 +448,19 @@ final class SiteData {
     }
 
     /**
-     * A value as results.json stores it in the grid: rounded to 8 decimals, which keeps the file in
-     * its budget, unless the rounding would change how the value prints at 0 to 6 decimals (a value
-     * whose dropped digits sit just under a half), in which case it is kept whole. So a figure prints
-     * the same from results.json as from the run that made it.
+     * A value as results.json stores it in the grid: rounded to 6 decimals, two more than the page
+     * ever prints (SiteText's formats stop at 4), which keeps the file within its budget at the
+     * plan's largest grid; unless the rounding would change how the value prints at 0 to 4
+     * decimals (a value whose dropped digits sit just under a half), in which case it is kept
+     * whole. So a figure prints the same from results.json as from the run that made it. Full
+     * precision stays in runs/site and in the saved results.
      */
     static Object compact(double x) {
         if (Double.isNaN(x)) {
             return null;
         }
-        double r = new java.math.BigDecimal(x).setScale(8, java.math.RoundingMode.HALF_EVEN).doubleValue();
-        for (int p = 0; p <= 6; p++) {
+        double r = new java.math.BigDecimal(x).setScale(6, java.math.RoundingMode.HALF_EVEN).doubleValue();
+        for (int p = 0; p <= SiteText.MAX_PLACES; p++) {
             String f = "%." + p + "f";
             if (!String.format(java.util.Locale.ROOT, f, r).equals(String.format(java.util.Locale.ROOT, f, x))) {
                 return x;
@@ -479,8 +497,9 @@ final class SiteData {
         a.put("intervals", "se is the bootstrap standard error over resampled shoes; ci is the 95% interval. "
                 + "Full-play intervals are widened as FULL_INDEX_PLAYS.md section 4 says (widen gives the ratio).");
         a.put("figures", "Each figure: value, se, ci, fmt (how the page prints it), src (the artifact it was read "
-                + "from), at (where in that artifact), commit (the commit that made the artifact), file (main = "
-                + "the main state file; search = the second file the searched count was chosen on).");
+                + "from), at (where in that artifact; the key itself when left out), commit (the commit that made the "
+                + "artifact), file (main, the main state file, when left out; search, the second file the searched "
+                + "count was chosen on). A figure that is also a grid cell is given once, in the grid.");
         a.put("grid", "The figures the page's controls switch among, one row per count: _layout names the four "
                 + "numbers of a cell; _sources gives each row and scope's input (an index into inputs) and "
                 + "whether its intervals were widened. A cell's key is SCOPE.PEN.SPREAD.ROW and its at is that key.");
@@ -505,6 +524,9 @@ final class SiteData {
         root.put("names", new LinkedHashMap<>(names));
         Map<String, Object> figs = new LinkedHashMap<>();
         for (Figure f : figures.values()) {
+            if (inGrid(f)) {
+                continue;
+            }
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("value", f.value);
             if (!Double.isNaN(f.se)) {
@@ -515,9 +537,13 @@ final class SiteData {
             }
             m.put("fmt", f.fmt);
             m.put("src", f.src);
-            m.put("at", f.at);
+            if (!f.at.equals(f.key)) {
+                m.put("at", f.at);
+            }
             m.put("commit", f.commit);
-            m.put("file", f.file);
+            if (!f.file.equals("main")) {
+                m.put("file", f.file);
+            }
             if (f.widen != 1) {
                 m.put("widen", f.widen);
             }
@@ -559,6 +585,25 @@ final class SiteData {
         return root;
     }
 
+    /**
+     * Whether a figure is also a grid cell that prints the same in its own format, so results.json
+     * need not hold it twice: the merge has already held the two to one value, and the page prints
+     * it from the grid. Its resamples and widening ratio stay in runs/site, where the guards use them.
+     */
+    boolean inGrid(Figure f) {
+        String[] p = f.key.split("\\.");
+        if (p.length != 4 || !SCOPES.contains(p[0]) || !grid.containsKey(p[3])) {
+            return false;
+        }
+        Map<String, Map<String, double[]>> sc = grid.get(p[3]).get(p[0]);
+        double[] v = sc == null || sc.get(p[1]) == null ? null : sc.get(p[1]).get(p[2]);
+        if (v == null || !f.fmt.equals("s4")) {
+            return false;
+        }
+        String file = gridSource.get(p[3] + "/" + p[0]).source.getOrDefault("file", "main").toString();
+        return file.equals(f.file);
+    }
+
     /** results.json's text: each figure, grid row and table on a line of its own. */
     String write(String version, String date) {
         return Json.write(toJson(version, date), 3);
@@ -589,8 +634,9 @@ final class SiteData {
                     optional(m, "se", e.getKey()),
                     ci == null ? Double.NaN : Json.num(ci.get(0), e.getKey()),
                     ci == null ? Double.NaN : Json.num(ci.get(1), e.getKey()),
-                    (String) m.get("fmt"), (String) m.get("src"), (String) m.get("at"), (String) m.get("commit"),
-                    (String) m.get("file"), m.containsKey("widen") ? Json.num(m.get("widen"), e.getKey()) : 1,
+                    (String) m.get("fmt"), (String) m.get("src"), m.containsKey("at") ? (String) m.get("at") : e.getKey(),
+                    (String) m.get("commit"), m.containsKey("file") ? (String) m.get("file") : "main",
+                    m.containsKey("widen") ? Json.num(m.get("widen"), e.getKey()) : 1,
                     Boolean.TRUE.equals(m.get("widened")), null));
         }
         Map<String, Object> g = (Map<String, Object>) root.get("grid");
@@ -631,22 +677,14 @@ final class SiteData {
     String version;
     String date;
 
-    /** The results.csv text: one line per figure and grid cell, with its source. */
-    String csv() {
+    /**
+     * The results.csv text: one line for each figure the page prints, with its source. The grid's
+     * other cells, which only the controls switch to, are in results.json; written out here they
+     * would put the CSV over its budget (PLAN_COMPUTE.md section 0) to repeat what the JSON holds.
+     */
+    String csv(java.util.Collection<String> cited) {
         StringBuilder b = new StringBuilder("key,value,se,lo,hi,src,at,commit,file\n");
-        List<String> keys = new ArrayList<>(figures.keySet());
-        for (Map.Entry<String, Map<String, Map<String, Map<String, double[]>>>> row : grid.entrySet()) {
-            for (Map.Entry<String, Map<String, Map<String, double[]>>> sc : row.getValue().entrySet()) {
-                for (Map.Entry<String, Map<String, double[]>> pen : sc.getValue().entrySet()) {
-                    for (String sp : pen.getValue().keySet()) {
-                        String k = sc.getKey() + "." + pen.getKey() + "." + sp + "." + row.getKey();
-                        if (!figures.containsKey(k)) {
-                            keys.add(k);
-                        }
-                    }
-                }
-            }
-        }
+        List<String> keys = new ArrayList<>(new java.util.TreeSet<>(cited));
         Collections.sort(keys);
         for (String k : keys) {
             Figure f = resolve(k);

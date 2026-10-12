@@ -1,0 +1,133 @@
+/* The results page's styles. Every colour is a token (var(--…)): the site's five come from
+   jbondurant.github.io/index.html at build time, --c1 and --c2 from SiteBuild.PAGE_TOKENS, each
+   with a dark value, so the page switches with the reader's setting. No colour is written here;
+   SiteBuild refuses a build whose CSS or SVG writes one. Orange (--c2) never colours text. */
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.65 Charter, Georgia, "Times New Roman", serif;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 6rem;
+}
+h1 { font-size: 1.7rem; margin: 1.2rem 0 .2rem; letter-spacing: -.01em; line-height: 1.25; }
+.tagline { color: var(--mute); margin: 0 0 2rem; font-size: .96rem; }
+h2 {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--mute); font-weight: 600; margin: 3rem 0 1rem;
+  padding-bottom: .4rem; border-bottom: 1px solid var(--rule);
+}
+h3 { font-size: 1rem; margin: 2rem 0 .5rem; }
+p { margin: 0 0 1.1rem; }
+a { color: var(--link); text-decoration: none; border-bottom: 1px solid var(--rule); }
+a:hover { border-bottom-color: currentColor; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.crumbs { font-size: .85rem; color: var(--mute); }
+.headline { font-size: 1.2rem; font-weight: 600; line-height: 1.5; }
+.headline.sub { font-size: 1rem; font-weight: 400; color: var(--fg); }
+.prov, .status { font-size: .9rem; color: var(--mute); }
+.status { border-left: 3px solid var(--rule); padding-left: .8rem; }
+code, .hash { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; word-break: break-all; }
+.pending { color: var(--mute); font-style: italic; }
+.box { border: 1px solid var(--rule); padding: .8rem 1rem; margin: 1.2rem 0; }
+.box h3 { margin-top: 0; }
+.fixture { border: 2px dashed var(--c2); padding: .8rem 1rem; margin: 0 0 1.5rem; font-weight: 600; }
+details { margin: 0 0 1.1rem; }
+summary { cursor: pointer; color: var(--link); }
+
+/* The words box and the summary for quoting. */
+dl.words, .quote dl, dl.gloss { margin: 0 0 1.5rem; display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; }
+dl.words { font-size: .92rem; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: .6rem 0; }
+dl dt { font-weight: 600; }
+dl dd { margin: 0; }
+.quote h2 { margin-top: 1.5rem; }
+@media (max-width: 30rem) {
+  dl.words, .quote dl, dl.gloss { grid-template-columns: 1fr; }
+  dl dd { margin-bottom: .5rem; }
+}
+
+/* Contents: in the text column, and in the left margin on wide screens. */
+.toc ol { padding-left: 1.4rem; font-size: .92rem; }
+@media (min-width: 75rem) {
+  .toc { position: fixed; top: 2rem; left: calc(50% - 20rem - 15rem); width: 13rem; }
+  .toc h2 { margin-top: 0; }
+}
+
+/* Steps of the method, with arrows that read the same at any width. */
+ol.steps { list-style: none; padding: 0; counter-reset: step; }
+ol.steps li { border: 1px solid var(--rule); padding: .4rem .7rem; margin: 0 0 1.2rem; position: relative; }
+ol.steps li:not(:last-child)::after { content: "↓"; position: absolute; left: 50%; bottom: -1.25rem; color: var(--mute); font: 14px/1 system-ui, sans-serif; }
+
+/* Figures and tables: system-ui at 14px with figures that line up. */
+figure { margin: 1.5rem 0; }
+figure.wide { margin-left: auto; margin-right: auto; }
+@media (min-width: 60rem) { figure.wide { width: 56rem; margin-left: calc(50% - 28rem); } }
+figcaption { font-size: .9rem; color: var(--mute); margin-top: .5rem; }
+table { border-collapse: collapse; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+th, td { padding: .25rem .5rem; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+thead th { font-weight: 600; color: var(--mute); }
+td.num { text-align: right; white-space: nowrap; }
+.tw, .ct-wrap { overflow-x: auto; max-width: 100%; margin: 0 0 1rem; }
+.tw table, .ct-wrap table { min-width: 100%; }
+.tw th[scope=row], .ct-wrap th[scope=row] { position: sticky; left: 0; background: var(--bg); }
+tr.lane th { font-weight: 600; color: var(--fg); padding-top: .8rem; }
+.pm { color: var(--mute); font-size: .85em; white-space: nowrap; }
+
+/* Chart-tables: marks placed on one shared scale in the mark cell. */
+.ct .ax, .ct .mk { position: relative; min-width: 12rem; width: 40%; }
+.ct .tks { position: relative; display: block; height: 1.2rem; }
+.ct .tk { position: absolute; transform: translateX(-50%); font-weight: 400; font-size: 12px; }
+.ct .mk { height: 1.6rem; }
+.ct .zero { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--mute); }
+.ct .iv { position: absolute; top: calc(50% - 2px); height: 4px; background: var(--fg); opacity: .18; }
+.ct .dot { position: absolute; top: calc(50% - 4px); width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--fg); border: 2px solid var(--fg); }
+.ct .dot.ho { background: var(--bg); }
+.ct .c1.dot { background: var(--c1); border-color: var(--c1); }
+.ct .c1.dot.ho, .ct .c2.dot.ho, .ct .ref.dot.ho { background: var(--bg); }
+.ct .c2.dot { background: var(--c2); border-color: var(--c2); border-radius: 1px; transform: rotate(45deg); }
+.ct .ref.dot { background: var(--mute); border-color: var(--mute); }
+.ct .bd.dot { border-style: dashed; }
+.ct .bd.iv { background: none; border-top: 2px dashed var(--mute); opacity: .7; }
+
+/* Line panels, 320 units wide, shown at 260 to 400px, wrapping in a grid. */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+svg.panel { width: 100%; max-width: 400px; height: auto; display: block; font: 11px system-ui, sans-serif; }
+svg.panel .gl { stroke: var(--rule); stroke-width: 1; }
+svg.panel .zl { stroke: var(--mute); stroke-width: 1; }
+svg.panel .tl { fill: var(--mute); }
+svg.panel .ln { fill: none; stroke-width: 2; stroke: var(--fg); }
+svg.panel .ln.c1 { stroke: var(--c1); }
+svg.panel .ln.c2 { stroke: var(--c2); }
+svg.panel .ln.ref { stroke: var(--mute); }
+svg.panel .ln.bd { stroke-dasharray: 5 4; }
+.legend { list-style: none; padding: 0; margin: .4rem 0; font: 13px/1.5 system-ui, sans-serif; }
+.legend li { display: inline-block; margin-right: 1rem; }
+.sw { display: inline-block; width: 1.4rem; height: 0; border-top: 2px solid var(--fg); vertical-align: middle; margin-right: .3rem; }
+.sw.c1 { border-top-color: var(--c1); }
+.sw.c2 { border-top-color: var(--c2); }
+.sw.ref { border-top-color: var(--mute); }
+.sw.bd { border-top-style: dashed; }
+table.vals { font-size: 12px; }
+
+/* The shoe: one thin tick per card, drawn from --cards, with the cut-card places marked. */
+.shoe { position: relative; height: 2.6rem; margin: 2rem 0 .5rem;
+  background: repeating-linear-gradient(90deg, var(--mute) 0 1px, transparent 1px calc(100% / var(--cards))); opacity: .9; }
+.shoe .cut { position: absolute; top: -1.6rem; bottom: 0; border-left: 2px solid var(--fg); padding-left: .2rem;
+  font: 12px/1 system-ui, sans-serif; color: var(--fg); background: none; }
+
+/* Tag tables: the value in the cell, a bar of colour as a second cue. */
+table.tags td { position: relative; text-align: center; }
+table.tags td.tp::before, table.tags td.tn::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+table.tags td.tp::before { background: var(--c1); }
+table.tags td.tn::before { background: var(--c2); }
+
+/* Sortable tables: buttons only once the script has run. */
+table.sortable th button { all: unset; cursor: default; }
+html.js table.sortable th button { cursor: pointer; text-decoration: underline dotted; }
+html.js table.sortable th[aria-sort=ascending] button::after { content: " ↑"; }
+html.js table.sortable th[aria-sort=descending] button::after { content: " ↓"; }
+table.files code.hash { font-size: 11px; }
+
+footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .85rem; color: var(--mute); }
+@media print { .toc, button, nav.crumbs { display: none; } body { max-width: none; } }

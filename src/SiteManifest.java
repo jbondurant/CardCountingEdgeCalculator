@@ -25,11 +25,14 @@ final class SiteManifest {
     final String json;
     final String sums;
     final String md;
+    /** The artifacts as listed, for the page's files table. */
+    final List<Map<String, Object>> artifacts;
 
-    private SiteManifest(String json, String sums, String md) {
+    private SiteManifest(String json, String sums, String md, List<Map<String, Object>> artifacts) {
         this.json = json;
         this.sums = sums;
         this.md = md;
+        this.artifacts = artifacts;
     }
 
     /** The SHA-256 of manifest.json, which the page shows. */
@@ -120,7 +123,7 @@ final class SiteManifest {
             md.append("| ").append(a.get("path")).append(" | ").append(a.getOrDefault("bytes", "")).append(" | `")
                     .append(a.getOrDefault("sha256", "")).append("` | ").append(a.get("commit")).append(" |\n");
         }
-        return new SiteManifest(json, sums.toString(), md.toString());
+        return new SiteManifest(json, sums.toString(), md.toString(), new ArrayList<>(artifacts.values()));
     }
 
     /**

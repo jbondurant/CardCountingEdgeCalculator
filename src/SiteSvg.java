@@ -204,7 +204,9 @@ final class SiteSvg {
                         .append(l.label).append("</th></tr>\n");
             }
             for (Row r : l.rows) {
-                b.append("<tr id=\"").append(esc(id + "-" + r.id)).append("\"").append(r.project() ? " class=\"proj\"" : "")
+                // A row's id names its scope too, since a lane per scope may show the same count.
+                String scope = r.keys.get(0).substring(0, r.keys.get(0).indexOf('.'));
+                b.append("<tr id=\"").append(esc(id + "-" + scope + "-" + r.id)).append("\"").append(r.project() ? " class=\"proj\"" : "")
                         .append("><th scope=\"row\">").append(name(d, r.id));
                 if (r.project()) {
                     b.append(" <span class=\"pm\">◆ ").append(project).append("</span>");

@@ -40,7 +40,10 @@ final class SiteText {
 
     static final char MINUS = '−';
 
-    private static final Pattern FMT = Pattern.compile("(s|d|a|ci|se|pct)[0-6]|n|usd|e|w:[^:|}]+:[^:|}]+");
+    /** The most decimals any format prints; results.json's compact grid relies on it (SiteData.compact). */
+    static final int MAX_PLACES = 4;
+
+    private static final Pattern FMT = Pattern.compile("(s|d|a|ci|se|pct)[0-" + MAX_PLACES + "]|n|usd|e|w:[^:|}]+:[^:|}]+");
 
     static void checkFormat(String fmt, String key) {
         if (fmt == null || !FMT.matcher(fmt).matches()) {
@@ -154,14 +157,16 @@ final class SiteText {
      * The digits page text may hold without a source, each for a reason that is not a result:
      * the name of the hash (SHA-256, SHA256SUMS); a date in words (a correction's date, "since
      * August 2026" in the AI statement), which says when, not what was found; and the Java version a
-     * reader needs to rebuild the classes. Nothing else. A new entry needs a reason of the same
+     * reader needs to rebuild the classes; and "soft 17", the name of a rule, the same in every game
+     * (whether the dealer hits it comes from the game block). Nothing else. A new entry needs a reason of the same
      * kind, written here; the list is never edited for one run.
      */
     static final List<Pattern> ALLOWED = List.of(
             Pattern.compile("SHA-?256(SUMS)?"),
             Pattern.compile("\\b\\d{1,2} " + MONTHS + " \\d{4}\\b"),
             Pattern.compile("\\b" + MONTHS + " \\d{4}\\b"),
-            Pattern.compile("\\bJava \\d{2}\\b"));
+            Pattern.compile("\\bJava \\d{2}\\b"),
+            Pattern.compile("\\bsoft 17\\b"));
 
     /** A figure-like number: what may never sit in the template's prose outside a placeholder. */
     static final Pattern TYPED_FIGURE = Pattern.compile("[+\u2212-]?\\d+\\.\\d{2,}");

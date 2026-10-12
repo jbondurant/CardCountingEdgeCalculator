@@ -37,9 +37,12 @@ import java.util.regex.Pattern;
  *   the else branch says "Not yet computed".</li>
  *   <li>Blocks: {@code {{dots:ID …}}} a chart-table, {@code {{lines:ID …}}} an SVG panel,
  *   {@code {{rows:ID …}}} a sortable table of every count (see the methods below).</li>
- *   <li>{@code {{style}}}, {@code {{jsonld}}}, {@code {{fixture}}}: the style sheet with the site's
- *   colour tokens, the JSON-LD block, and the fixture banner.</li>
+ *   <li>{@code {{style}}}, {@code {{jsonld}}}: the style sheet with the site's colour tokens, and the
+ *   JSON-LD block.</li>
  * </ul>
+ * A build from any fixture input is marked by the code, not the template: a banner opens the
+ * page, the title, the JSON-LD's name, results.json and the manifest all say FIXTURE, and the
+ * build refuses to write into the website's tree. A template cannot leave the mark out.
  */
 final class SiteBuild {
 
@@ -154,16 +157,23 @@ final class SiteBuild {
         throw new IllegalArgumentException("no row " + id + " in the rows table");
     }
 
-    private static final Pattern ALIAS = Pattern.compile("@(best|top([0-9]+)|all|every)");
+    private static final Pattern ALIAS = Pattern.compile("@(best|least|top([0-9]+)|all|every)");
 
     /**
      * The keys a key pattern names. A pattern's last part may be an alias in place of a row id:
      * {@code @best} (the published row with the highest figure under the rest of the key),
+     * {@code @least} (the lowest),
      * {@code @topN} (the N highest, highest first), {@code @all} (every published row that has the
      * figure, highest first) or {@code @every} (every row, of any kind, that has it). Ranking is by
      * point estimate only; a sentence that calls one row better than another needs a guard besides.
      */
     static List<String> expand(String pattern, SiteData d) {
+        int same = pattern.indexOf(".=");
+        if (same >= 0) {
+            // PREFIX.=OTHER: the figure under PREFIX for the row OTHER names, for "the same count at
+            // another penetration" (full.70.s8.=full.80.s8.@best).
+            return List.of(pattern.substring(0, same + 1) + SiteSvg.rowOf(one(pattern.substring(same + 2), d)));
+        }
         int dot = pattern.lastIndexOf('.');
         String last = pattern.substring(dot + 1);
         Matcher m = ALIAS.matcher(last);
@@ -182,7 +192,11 @@ final class SiteBuild {
             int c = Double.compare(d.resolve(prefix + b).value, d.resolve(prefix + a).value);
             return c != 0 ? c : a.compareTo(b);
         });
-        int n = m.group(1).equals("best") ? 1 : m.group(2) != null ? Integer.parseInt(m.group(2)) : ids.size();
+        if (m.group(1).equals("least")) {
+            java.util.Collections.reverse(ids);
+        }
+        int n = m.group(1).equals("best") || m.group(1).equals("least") ? 1
+                : m.group(2) != null ? Integer.parseInt(m.group(2)) : ids.size();
         if (ids.size() < n) {
             throw new IllegalArgumentException(pattern + " needs " + n + " rows with " + prefix + "ROW; there are " + ids.size());
         }
@@ -476,7 +490,10 @@ final class SiteBuild {
 
     /**
      * Resolves {{#if …}} blocks: "has:P1,P2" holds when the data has a figure or table under every
-     * prefix, "fixture" when the build is a fixture. Blocks do not nest.
+     * prefix, "fixture" when the build is a fixture, and "guard: …" when that claim guard holds on
+     * the inputs (it is evaluated here, on the inputs' resamples, and recorded). Blocks do not
+     * nest. This runs on the inputs, before results.json is written, since only they hold the
+     * resamples.
      */
     static String conditionals(String template, SiteData d) {
         Matcher m = IF.matcher(template);
@@ -489,6 +506,13 @@ final class SiteBuild {
             boolean holds;
             if (c.equals("fixture")) {
                 holds = d.fixture();
+            } else if (c.startsWith("guard:")) {
+                // A sentence chosen by the data: the branch whose guard holds is printed, and the
+                // guard is recorded in results.json like every other.
+                String text = expandGuard(c.substring(6), d);
+                Map<String, Object> rec = SiteGuards.evaluate(text, d);
+                d.guards.add(rec);
+                holds = Boolean.TRUE.equals(rec.get("holds"));
             } else if (c.startsWith("has:")) {
                 holds = true;
                 for (String p : c.substring(4).split(",")) {
@@ -524,6 +548,21 @@ final class SiteBuild {
                 if (!Boolean.TRUE.equals(rec.get("holds"))) {
                     failed.add(text + "  " + Json.compact(rec));
                 }
+            } else if (p.startsWith("range:")) {
+                String pat = p.substring(6, p.indexOf('|') < 0 ? p.length() : p.indexOf('|')).trim();
+                List<String> keys = expandList(pat, in);
+                double lo = Double.POSITIVE_INFINITY;
+                double hi = Double.NEGATIVE_INFINITY;
+                for (String k : keys) {
+                    lo = Math.min(lo, in.resolve(k).value);
+                    hi = Math.max(hi, in.resolve(k).value);
+                }
+                String key = rangeKey(pat);
+                if (!in.figures.containsKey(key)) {
+                    in.figures.put(key, new SiteData.Figure(key, hi - lo, Double.NaN, Double.NaN, Double.NaN, "s4",
+                            "computed by SiteBuild", "the highest less the lowest of " + String.join(", ", keys), "", "main",
+                            1, false, null));
+                }
             } else if (p.startsWith("pairs:")) {
                 List<String> keys = expandList(p.substring(p.indexOf('|') + 1), in);
                 String g = "pairs: " + String.join(", ", keys);
@@ -537,6 +576,15 @@ final class SiteBuild {
             }
         }
         return failed;
+    }
+
+    /**
+     * The key of a range figure: the highest less the lowest of a set of rows, a figure no run
+     * prints, computed here on the inputs and written to results.json like any other, so the page
+     * prints it from there. Its "at" names the keys it was taken over.
+     */
+    static String rangeKey(String pattern) {
+        return "range." + pattern.replace("@", "").replace(".", "_");
     }
 
     static Map<String, Object> guardRecord(SiteData d, String text) {
@@ -626,6 +674,16 @@ final class SiteBuild {
         if (p.startsWith("pairs:")) {
             return pairsText(p, d);
         }
+        if (p.startsWith("range:")) {
+            int bar = p.indexOf('|');
+            String pat = p.substring(6, bar < 0 ? p.length() : bar).trim();
+            String at = String.join(", ", expandList(pat, d));
+            SiteData.Figure f = d.resolve(rangeKey(pat));
+            if (!f.at.equals("the highest less the lowest of " + at)) {
+                throw new IllegalArgumentException("the rows of " + pat + " differ between the inputs and results.json");
+            }
+            return SiteSvg.fig(d, rangeKey(pat), bar < 0 ? null : p.substring(bar + 1).trim());
+        }
         if (p.startsWith("names:")) {
             List<String> out = new ArrayList<>();
             for (String k : expandList(p.substring(6), d)) {
@@ -644,22 +702,99 @@ final class SiteBuild {
             }
             return "<span data-s=\"" + SiteSvg.esc(k) + "\">" + SiteSvg.esc(strings.get(k)) + "</span>";
         }
+        if (p.startsWith("link:")) {
+            String k = p.substring(5).trim();
+            if (!strings.containsKey("commit." + k)) {
+                throw new IllegalArgumentException("no input named " + k + " to link the commit of");
+            }
+            return "<a href=\"" + REPO + "/commit/" + SiteSvg.esc(strings.get("commit." + k)) + "\"><code data-s=\"short."
+                    + SiteSvg.esc(k) + "\">" + SiteSvg.esc(strings.get("short." + k)) + "</code></a>";
+        }
+        if (p.startsWith("tags:")) {
+            return tags(SiteGuards.keys(p.substring(5) + ","), d);
+        }
+        if (p.startsWith("files:")) {
+            return files(bars(p.substring(6)), strings);
+        }
         switch (p) {
+            case "shoe":
+                return shoe(d);
             case "style":
                 return "<style>\n" + tokens.css() + css + "</style>";
             case "jsonld":
                 return JSONLD_MARK;
-            case "fixture":
-                return "";
             default:
         }
         int bar = p.indexOf('|');
         String key = (bar < 0 ? p : p.substring(0, bar)).trim();
         String fmt = bar < 0 ? null : p.substring(bar + 1).trim();
-        if (!SiteData.KEY.matcher(key.replace("@", "")).matches()) {
+        if (!SiteData.KEY.matcher(key.replace("@", "").replace(".=", ".")).matches()) {
             throw new IllegalArgumentException("not a placeholder this generator knows");
         }
         return SiteSvg.fig(d, one(key, d), fmt);
+    }
+
+    /**
+     * The shoe (PLAN_PAGE.md section 2 of the page): a bar of the shoe's cards as thin ticks, drawn
+     * by CSS from the card count, with each cut-card place marked and labelled from the game block.
+     */
+    static String shoe(SiteData d) {
+        StringBuilder b = new StringBuilder("<div class=\"shoe\" role=\"img\" aria-labelledby=\"shoe-cap\" style=\"--cards:")
+                .append(Math.round(d.resolve("game.cards").value)).append("\">");
+        for (String k : d.figures.keySet()) {
+            if (k.startsWith("game.pen.")) {
+                b.append("<span class=\"cut\" style=\"left:").append(SiteSvg.pct(d.resolve(k).value)).append("\">")
+                        .append(SiteSvg.fig(d, k, "n")).append("%</span>");
+            }
+        }
+        return b.append("</div>").toString();
+    }
+
+    /**
+     * A tag table: one column per rank, named from the names block (r1 is the ace, r10 the ten-valued
+     * cards), one row per count, each cell the figure tags.ID.rN, signed.
+     */
+    static String tags(List<String> ids, SiteData d) {
+        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"tags\"><thead><tr><th scope=\"col\"></th>");
+        for (int r = 1; r <= 10; r++) {
+            b.append("<th scope=\"col\">").append(SiteSvg.name(d, "r" + r)).append("</th>");
+        }
+        b.append("</tr></thead><tbody>");
+        for (String id : ids) {
+            b.append("<tr><th scope=\"row\">").append(SiteSvg.name(d, id)).append("</th>");
+            for (int r = 1; r <= 10; r++) {
+                String k = "tags." + id + ".r" + r;
+                double v = d.resolve(k).value;
+                b.append("<td class=\"num ").append(v > 0 ? "tp" : v < 0 ? "tn" : "t0").append("\">")
+                        .append(SiteSvg.fig(d, k, null)).append("</td>");
+            }
+            b.append("</tr>");
+        }
+        return b.append("</tbody></table></div>").toString();
+    }
+
+    /**
+     * The files table of the downloads section, from the manifest the build just wrote: each file's
+     * name, size and SHA-256, all as data-s strings. head gives the four headings.
+     */
+    static String files(List<String> head, Map<String, String> strings) {
+        if (head.size() != 4) {
+            throw new IllegalArgumentException("files: needs four headings");
+        }
+        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"files\"><thead><tr>");
+        for (String h : head) {
+            b.append("<th scope=\"col\">").append(h).append("</th>");
+        }
+        b.append("</tr></thead><tbody>");
+        for (int k = 0; strings.containsKey("file." + k + ".path"); k++) {
+            String f = "file." + k;
+            b.append("<tr><td><code data-s=\"").append(f).append(".path\">").append(SiteSvg.esc(strings.get(f + ".path")))
+                    .append("</code></td><td class=\"num\"><span data-s=\"").append(f).append(".bytes\">")
+                    .append(strings.get(f + ".bytes")).append("</span></td><td><code class=\"hash\" data-s=\"").append(f)
+                    .append(".sha\">").append(strings.get(f + ".sha")).append("</code></td><td><code data-s=\"").append(f)
+                    .append(".by\">").append(SiteSvg.esc(strings.get(f + ".by"))).append("</code></td></tr>");
+        }
+        return b.append("</tbody></table></div>").toString();
     }
 
     /** The plain text of the element with this id, tags taken out and spaces closed up. */
@@ -718,6 +853,11 @@ final class SiteBuild {
 
     // ---- the build ----
 
+    static final String FIXTURE_TITLE = "FIXTURE, NOT RESULTS: ";
+    static final String FIXTURE_BANNER = "<div class=\"fixture\" role=\"note\"><strong>Fixture build, not results.</strong> "
+            + "Every number on this page is made up by a test fixture to exercise the page generator. None of it is "
+            + "a finding about card counting.</div>";
+
     /** What a build makes: every file under card-counting/, the data it rendered from, and its problems. */
     static final class Output {
         final Map<String, byte[]> files = new TreeMap<>();
@@ -755,9 +895,28 @@ final class SiteBuild {
         SiteData d = SiteData.fromJson(results);
         Output o = new Output();
         o.data = d;
+        // The CSV holds the figures the page prints, so the page is rendered once to learn which
+        // they are; the manifest's hash, which the page shows, does not change which they are.
+        Map<String, String> draft = new TreeMap<>();
+        draft.put("version", version);
+        draft.put("date", date);
+        draft.put("manifest", "");
+        draft.put("commit.generator", generator);
+        for (SiteData.Input i : d.inputs) {
+            draft.put("commit." + i.what(), i.commit());
+            draft.put("short." + i.what(), i.commit());
+        }
+        for (int k = 0; k < 64; k++) {
+            fileStrings(draft, k, "", 0, "", "");
+        }
+        java.util.Set<String> cited = new java.util.TreeSet<>();
+        Matcher dk = Pattern.compile("data-k=\"([^\"]+)\"").matcher(render(t, d, draft, tokens, css));
+        while (dk.find()) {
+            cited.add(dk.group(1));
+        }
         Map<String, byte[]> served = new LinkedHashMap<>();
         served.put("data/results.json", utf8(results));
-        served.put("data/results.csv", utf8(d.csv()));
+        served.put("data/results.csv", utf8(d.csv(cited)));
         SiteManifest man = SiteManifest.of(in, served, version, date);
         Map<String, String> strings = new TreeMap<>();
         strings.put("version", version);
@@ -768,8 +927,19 @@ final class SiteBuild {
             strings.put("commit." + i.what(), i.commit());
             strings.put("short." + i.what(), i.commit().length() > 7 ? i.commit().substring(0, 7) : i.commit());
         }
+        int fk = 0;
+        for (Map.Entry<String, byte[]> e : served.entrySet()) {
+            fileStrings(strings, fk++, e.getKey(), e.getValue().length, SiteData.sha256(e.getValue()), "SiteBuild " + generator);
+        }
+        for (Map<String, Object> art : man.artifacts) {
+            fileStrings(strings, fk++, (String) art.get("path"), art.get("bytes") == null ? -1 : ((Number) art.get("bytes")).longValue(),
+                    String.valueOf(art.get("sha256")), String.valueOf(art.get("commit")));
+        }
         o.strings = strings;
         String page = render(t, d, strings, tokens, css);
+        if (d.fixture()) {
+            page = page.replaceFirst("<title>", "<title>" + FIXTURE_TITLE).replaceFirst("<body>", "<body>\n" + FIXTURE_BANNER);
+        }
         page = page.replace(JSONLD_MARK, jsonld(page, d, strings, served));
         o.files.put("index.html", utf8(page));
         o.files.putAll(served);
@@ -779,6 +949,13 @@ final class SiteBuild {
         o.files.put("assets/page.js", utf8(js));
         o.problems.addAll(check(o, css));
         return o;
+    }
+
+    private static void fileStrings(Map<String, String> s, int k, String path, long bytes, String sha, String by) {
+        s.put("file." + k + ".path", path);
+        s.put("file." + k + ".bytes", bytes < 0 ? "not recorded" : SiteText.grouped(bytes));
+        s.put("file." + k + ".sha", sha);
+        s.put("file." + k + ".by", by);
     }
 
     /** External links the page may carry (PLAN_PAGE.md 2.6): the site, its repos, and the cited sources. */
@@ -793,7 +970,10 @@ final class SiteBuild {
         List<String> p = new ArrayList<>();
         String page = o.text("index.html");
         p.addAll(SiteText.checkPage(page, o.data, o.strings));
-        if (page.contains("{{") || page.contains("}}")) {
+        if (o.data.fixture() && (!page.contains(FIXTURE_BANNER) || !page.contains("<title>" + FIXTURE_TITLE))) {
+            p.add("a fixture build without its banner and title mark");
+        }
+        if (page.contains("{{")) {
             p.add("a placeholder is left unresolved");
         }
         Matcher svg = Pattern.compile("<svg\\b.*?</svg>", Pattern.DOTALL).matcher(page);
@@ -874,12 +1054,14 @@ final class SiteBuild {
 
     /**
      * java -cp build/classes SiteBuild --inputs runs/site --site site --index ../jbondurant.github.io/index.html
-     *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--check]
+     *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--check] [--draft DIR]
      *
      * --site is the directory holding template.html, page.css and page.js. --out receives
      * card-counting/'s files; with --check nothing is written, and the build is compared byte for
      * byte with what --out already holds (PLAN_PAGE.md 3.4, depth 1, step 6). A fixture build is
      * refused anywhere inside the website's working tree, so made-up numbers cannot be copied there.
+     * --draft DIR writes a page that fails its checks to DIR, for a person to look at, and still
+     * exits with failure; --out is written only by a build that passes.
      */
     public static void main(String[] args) throws IOException {
         Map<String, String> a = new TreeMap<>();
@@ -920,6 +1102,18 @@ final class SiteBuild {
             System.out.println(diff.isEmpty() ? "SiteBuild --check: every file matches a fresh build"
                     : "SiteBuild --check: differs from a fresh build: " + diff);
             System.exit(diff.isEmpty() && o.problems.isEmpty() ? 0 : 1);
+        }
+        if (!o.problems.isEmpty() && a.containsKey("draft")) {
+            System.err.println("SiteBuild: DRAFT written to " + a.get("draft") + " for inspection; it fails its checks:");
+            for (String p : o.problems) {
+                System.err.println("  " + p);
+            }
+            for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
+                Path f = Paths.get(a.get("draft")).resolve(e.getKey());
+                Files.createDirectories(f.getParent());
+                Files.write(f, e.getValue());
+            }
+            System.exit(1);
         }
         if (!o.problems.isEmpty()) {
             System.err.println("SiteBuild: the page fails its checks; nothing written:");

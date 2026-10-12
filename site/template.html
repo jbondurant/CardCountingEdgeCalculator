@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What card counting is worth at the Casino de Montréal's blackjack</title>
+<meta name="description" content="Every published card count scored exactly on the Casino de Montréal's blackjack rules, with intervals, the method, the published literature beside it, and files to check it.">
+<link rel="alternate" type="application/json" href="data/results.json">
+{{style}}
+{{jsonld}}
+</head>
+<body>
+<nav class="crumbs"><a href="https://justinbondurantdavid.com/">Home</a> · Card counting</nav>
+
+<header>
+<h1 id="title">What card counting is worth at the Casino de Montréal's blackjack</h1>
+<p class="tagline">Justin Bondurant-David · version {{s:version}}, {{s:date}}</p>
+</header>
+
+<p class="headline" id="answer">At the Casino de Montréal's blackjack, played with {{game.decks|n}} decks, a player who counts without mistakes, bets from one unit up to {{game.spread_max|n}} units and plays every decision by the count {{full.80.s8.@best|w:wins:loses}} about {{full.80.s8.@best|a2}}% of the minimum bet per round with the count that scored highest here ({{name:full.80.s8.@best}}), and {{full.80.s8.hi_lo|w:wins:loses}} about {{full.80.s8.hi_lo|a2}}% with {{name:hi_lo}}, the most common count, when the dealer puts the cut card {{game.pen.80|n}}% of the way into the shoe. With bets averaging {{avgbet.80.s8|d1}} units, that is about {{perbet.full.80.s8.@best|a2}}% and {{perbet.full.80.s8.hi_lo|a2}}% of the money bet. At {{game.pen.70|n}}%, the shallowest of the three places studied, {{name:hi_lo}} {{full.70.s8.hi_lo|w:wins:loses}} {{full.70.s8.hi_lo|a2}}% and {{name:full.80.s8.@best}} {{full.70.s8.=full.80.s8.@best|w:wins:loses}} {{full.70.s8.=full.80.s8.@best|a2}}%. I have not measured where Montreal's dealers put the cut card. Someone who plays the standard strategy chart without counting {{bet.80.s1.null|w:wins:loses}} {{bet.80.s1.null|a2}}% of the first bet of each round.{{#if has:risk.}} At {{risk.unit_usd|usd}} a unit, that is about {{risk.per100.80.s8.best|usd}} per {{risk.rounds|n}} rounds, against a swing of ±{{risk.sd100.80.s8.best|usd}} over the same rounds.{{/if}}</p>
+
+<p class="headline sub" id="conditions">Every decision is played from a table of index plays the program worked out for this game, not from the authors' published index lists; published estimates for a six-deck game say a short list captures less (see <a href="#prior">Prior work</a>). "One to {{game.spread_max|n}} units" means the same bet sizes for every count, averaging {{avgbet.80.s8|d1}} units, handed out in the order of each count's own estimate of the advantage.</p>
+
+<dl class="words" id="words">
+<dt><a href="#g-unit">Unit</a></dt><dd>The player's smallest bet; every figure here is in units, per round.</dd>
+<dt><a href="#g-spread">Spread</a></dt><dd>How much the bet grows when the count is high. Every count gets the same bet sizes, handed out in the order of its own estimate of the advantage.</dd>
+<dt><a href="#g-pen">Cut card</a></dt><dd>The card the dealer puts in the shoe to mark where to reshuffle; how deep it sits is the penetration.</dd>
+<dt><a href="#g-chart">The chart</a></dt><dd>Basic strategy: the best play for each hand with no count at all.</dd>
+<dt><a href="#g-fitted">Played by the count</a></dt><dd>Plays taken from index tables this program fitted for this game.</dd>
+<dt><a href="#g-points">Points</a></dt><dd>Percentage points of the minimum bet per round, used when two results are compared.</dd>
+</dl>
+
+<section class="quote" aria-labelledby="quote-h">
+<h2 id="quote-h">A summary for quoting</h2>
+<dl>
+<dt>Headline</dt><dd>{{name:full.80.s8.@best}}: {{full.80.s8.@best|s2}}% of the minimum bet per round ({{perbet.full.80.s8.@best|s2}}% of the amount bet), {{method.ci|n}}% interval {{full.80.s8.@best|ci2}}. {{name:hi_lo}}: {{full.80.s8.hi_lo|s2}}% per round, interval {{full.80.s8.hi_lo|ci2}}.</dd>
+<dt>Rules</dt><dd>The Casino de Montréal's blackjack, {{game.decks|n}} decks; the full rules are under <a href="#game">The game</a>.</dd>
+<dt>Penetration</dt><dd>The cut card at {{game.pen.80|n}}% of the shoe, the most favourable of the three places studied; at {{game.pen.70|n}}%, {{name:hi_lo}} scores {{full.70.s8.hi_lo|s2}}.</dd>
+<dt>Spread</dt><dd>The same bet schedule for every count, one to {{game.spread_max|n}} units, average bet {{avgbet.80.s8|d1}} units.</dd>
+<dt>Play</dt><dd>Every decision played from index tables fitted for this game, not published lists; the highest row keeps a side count of aces.</dd>
+<dt>Player</dt><dd>One player alone at the table, counting without mistakes.</dd>
+<dt>Version</dt><dd>{{s:version}}, {{s:date}}.</dd>
+</dl>
+</section>
+
+<p class="prov" id="provenance">Version {{s:version}}, {{s:date}}. Figures from the commits {{link:results}} (scores) and {{link:ceiling}} (searched and perfect rows), built by SiteBuild. Manifest SHA-256: <code class="hash">{{s:manifest}}</code>. <a href="#hash">What a hash proves, and what it doesn't</a>.</p>
+
+<p class="status">These results come from code written mostly by AI coding agents under my direction (see <a href="#ai">How AI was used</a>). Nobody else has reproduced them yet.</p>
+
+<nav class="toc" id="contents" aria-label="Contents">
+<h2>Contents</h2>
+<ol>
+<li><a href="#question">The question</a></li>
+<li><a href="#game">The game</a></li>
+<li><a href="#counting">How counting works</a></li>
+<li><a href="#method">How it was computed</a></li>
+<li><a href="#results">Results</a></li>
+<li><a href="#better">Is there a better count?</a></li>
+<li><a href="#table">What it means at a table</a></li>
+<li><a href="#second">A second program</a></li>
+<li><a href="#prior">Prior work</a></li>
+<li><a href="#checks">How it was checked</a></li>
+<li><a href="#ai">How AI was used</a></li>
+<li><a href="#limits">Limits</a></li>
+<li><a href="#downloads">Downloads, reproducing, citing</a></li>
+<li><a href="#glossary">Glossary</a></li>
+</ol>
+</nav>
+
+<main>
+<section id="question">
+<h2>The question</h2>
+<p class="headline">I wanted to know which counting system is worth the most at a table I can actually play at, measured carefully enough that the differences between systems are bigger than the measurement's own uncertainty.</p>
+<p>Card counting books rank their systems by correlations computed from small tables, or by simulations of games with other rules. Neither tells me what each count is worth at the casino in my own city, with its rules, its shoe and its cut card, under one bet schedule that treats every count the same.</p>
+</section>
+
+<section id="game">
+<h2>The game</h2>
+<p class="headline">The rules are the Casino de Montréal's: {{game.decks|n}} decks; the dealer {{game.h17|w:hits:stands}} on soft 17 and {{game.peek|w:checks:does not check}} for blackjack; blackjack pays {{game.bj_num|n}} to {{game.bj_den|n}}; you may split up to {{game.split_hands|n}} hands, you {{game.hit_split_aces|w:may:may not}} hit split aces, and you {{game.das|w:may:may not}} double after a split; surrender {{game.surrender|w:is:is not}} offered.</p>
+<p>The rules sentence is printed from the rules object the program ran with, not written by hand, so this page cannot describe a game the code did not play.</p>
+<figure>
+{{shoe}}
+<figcaption id="shoe-cap">The {{game.cards|n}} cards of the shoe, with the three places the cut card was put. The data: {{data.shoes|n}} shuffled shoes, {{data.rounds.80|n}} rounds dealt at {{game.pen.80|n}}%, and {{data.states|n}} moments sampled from them.</figcaption>
+</figure>
+</section>
+
+<section id="counting">
+<h2>How counting works</h2>
+<p class="headline">A count gives each card a small number, its tag. Adding up the tags of every card you have seen tells you roughly whether the cards still to come favour you or the dealer.</p>
+<p>The <a href="#g-running">running count</a> is that sum. The <a href="#g-true">true count</a> is the running count divided by the decks left, so that the same surplus of small cards means more near the end of the shoe. A count is <a href="#g-balanced">balanced</a> when its tags add up to zero over a full deck. Its <a href="#g-level">level</a> is its largest tag. An <a href="#g-index">index play</a> is a departure from the chart when the count passes a number; a <a href="#g-side">side count</a> is a second count kept of one rank, here aces. <a href="#g-insurance">Insurance</a> is the side bet on the dealer's blackjack, worth taking only when the count says enough ten-valued cards are left. Every result is an <a href="#g-ev">expected value</a>, always written as % of a unit per round.</p>
+<p>The box under the answer gave six words a line each; here they are more fully. Penetration is how deep the cut card sits. The unit is the smallest bet, and the spread is how far the bet grows from it. "The same bet schedule" means every count gets the same bet sizes, handed out in the order of its own estimate of the advantage, so a count is credited only for how well it orders the rounds. The chart is basic strategy. Fitted plays are the index tables this program chose from the data. Points are percentage points of the minimum bet per round.</p>
+<figure>
+{{tags:hi_lo,zen_count}}
+<figcaption>The tags of {{name:hi_lo}} and {{name:zen_count}}, from the catalog of published counts.</figcaption>
+</figure>
+</section>
+
+<section id="method">
+<h2>How it was computed</h2>
+<p class="headline">Instead of playing millions of hands and averaging what happened, the program took {{data.states|n}} moments from {{data.shoes|n}} shuffled shoes and worked out exactly what every possible first move was worth from each one.</p>
+<p>A worked example, computed while this page was built: off the top of a fresh shoe, a hard {{example.total|n}} against the dealer's {{example.up|n}}: standing is worth {{example.stand|s4}} of the bet, hitting {{example.hit|s4}}.</p>
+<p>The program chose each count's plays and bets from the data, picking on half of the shoes the move and the bet that did best at each count, then graded those choices on the other half. That is what "fitted" means here.</p>
+<ol class="steps">
+<li>A shoe, shuffled from a recorded seed.</li>
+<li>Dealt with the chart down to the cut card.</li>
+<li>A moment in that shoe: the cards left, called a state.</li>
+<li>Kept with chance q and weighted by the inverse of q, so the sample stays fair.</li>
+<li>The {{method.deals|n}} possible deals from it (two player cards and the dealer's up card), each with its legal first moves.</li>
+<li>The exact value of each move over every way the round can finish, about {{method.values_per_state|n}} numbers per state.</li>
+<li>Each count's plays and bets fitted on half the shoes and scored on the other half.</li>
+<li>{{method.resamples|n}} bootstrap resamples of the shoes, the same ones for every count.</li>
+</ol>
+<h3>Why exact values, not a simulation</h3>
+{{#if has:sim.}}<p>The best counts differ by a few hundredths of a percent. A simulation that plays two counts on the same rounds cancels most of the luck they share, but it still needs about {{sim.rounds_needed|n}} rounds to tell them apart as finely as this study does. Exact values remove what is left: the luck of the card order within each moment. What remains is the luck of which shoes came up, the same for every count.</p>{{else}}<p>The best counts differ by a few hundredths of a percent. Exact values remove the luck of the card order within each moment; what remains is the luck of which shoes came up, the same for every count. <span class="pending">Not yet computed: how many simulated rounds would be needed instead, from the second program's run.</span></p>{{/if}}
+<h3>First decisions and full play</h3>
+<p>Every count was scored twice: once using the count only for the bet, insurance and the first decision on the two cards dealt, and once for every decision in the round, including later cards and split hands. Across the published counts at {{game.pen.80|n}}% and one to {{game.spread_max|n}} units, using the count everywhere adds between {{gain.80.s8.@least|s3}} and {{gain.80.s8.@best|s3}} points (percentage points of the minimum bet per round).</p>
+<details><summary>What a bootstrap is</summary><p>The shoes are redrawn with replacement {{method.resamples|n}} times and every figure recomputed; the spread of those answers is the figure's uncertainty.</p></details>
+</section>
+
+<section id="results">
+<h2>Results</h2>
+<h3 id="headline">The headline</h3>
+{{guard: leader-tied: full.80.s8.@top5}}{{guard: each > 0: full.80.s8.@top5 - full.80.s8.hi_lo}}
+<p class="headline">At {{game.pen.80|n}}% and one to {{game.spread_max|n}} units, the five counts that scored highest here ({{names:full.80.s8.@top5}}) are within {{range:full.80.s8.@top5|s3}} points of each other. This data cannot say which of them is best: it cannot separate {{pairs:unseparated|full.80.s8.@top5}}. It does rank {{pairs:ranked|full.80.s8.@top5}}. Each of the five beats {{name:hi_lo}}.</p>
+<p>The pairs are not written by hand: every pairwise difference among the five is taken resample by resample, widened for the later plays held as fitted, and given one multiplier over all of them, so the pairs called separate are separate together, not one at a time.</p>
+
+<h3 id="ladder">The ladder</h3>
+<figure class="wide">
+{{dots:ladder-80
+head Row | Value | Interval
+cols 1:s3 | 1:ci3
+project this project
+lane Betting only, with the chart for play
+row bet.80.s8.null
+row bet.80.s8.hi_lo
+row bet.80.s8.@best
+row bet.80.s8.perfect | ref bound
+lane First decisions
+row fd.80.s8.hi_lo
+row fd.80.s8.@best
+row fd.80.s8.f1
+row fd.80.s8.perfect | ref bound
+lane Full play
+row full.80.s8.hi_lo
+row full.80.s8.@best
+row full.80.s8.f1
+row full.80.s8.perfect | ref bound
+}}
+<figcaption>At {{game.pen.80|n}}% and one to {{game.spread_max|n}} units: the null count, which tags every card zero, against {{name:hi_lo}}, the highest published count, the searched count and the perfect bound, for each way of using the count. Using the count for every decision takes {{name:full.80.s8.@best}} to {{full.80.s8.@best|s3}}.</figcaption>
+</figure>
+
+<h3 id="every">Every count</h3>
+<figure class="wide">
+{{dots:every-80
+head Count | First decisions | Full play | Full-play interval
+cols 1:s3 | 2:s3 | 2:ci3
+project this project
+each fd.80.s8.@every + full.80.s8.@every
+}}
+<figcaption>Every count at {{game.pen.80|n}}% and one to {{game.spread_max|n}} units: hollow dots for first decisions, filled for full play. {{name:full.80.s8.@best}} is highest at {{full.80.s8.@best|s3}}; {{name:hi_lo}} scores {{full.80.s8.hi_lo|s3}}.</figcaption>
+</figure>
+{{rows:counts
+head Count | Level | Balanced | Side count | First decisions | Full play | Full-play interval | Gain from full play
+kinds published searched reference
+order full.80.s8.ROW
+col @level
+col @balanced|yes|no
+col @side
+col fd.80.s8.ROW|s3
+col full.80.s8.ROW|s3
+col full.80.s8.ROW|ci3
+col gain.80.s8.ROW|s3
+}}
+
+<h3 id="penetration">Penetration</h3>
+{{guard: (fd.80.s8.hi_lo - fd.70.s8.hi_lo) - (fd.80.s8.@best - fd.80.s8.hi_lo) > 0}}
+<p class="headline">Where the dealer puts the cut card matters more than which count you use. {{name:hi_lo}} goes from {{fd.70.s8.hi_lo|s3}} at {{game.pen.70|n}}% to {{fd.80.s8.hi_lo|s3}} at {{game.pen.80|n}}% (first decisions, one to {{game.spread_max|n}} units), a bigger change than the gap between {{name:hi_lo}} and the highest count.</p>
+
+<h3 id="spread">Spread</h3>
+<p class="headline">With flat bets, even perfect knowledge of the first move {{fd.80.s1.perfect|w:wins:loses}} {{fd.80.s1.perfect|a2}}% a round. The edge comes from betting more when the count is high.</p>
+<div class="panels">
+<figure>
+{{lines:spread-80
+title Full play against spread, deepest cut card studied
+desc One line per row, expected value per round against the bet spread; the values are in the table below.
+x s1 s2 s3 s4 s5 s6 s7 s8
+fmt s2
+project this project
+series full.80.{x}.null
+series full.80.{x}.hi_lo
+series full.80.{x}.@best
+series full.80.{x}.f1
+series full.80.{x}.perfect
+}}
+<figcaption>At {{game.pen.80|n}}%: {{name:hi_lo}} goes from {{full.80.s1.hi_lo|s2}} with flat bets to {{full.80.s8.hi_lo|s2}} at one to {{game.spread_max|n}} units.</figcaption>
+</figure>
+<figure>
+{{lines:spread-70
+title Full play against spread, shallowest cut card studied
+desc One line per row, expected value per round against the bet spread; the values are in the table below.
+x s1 s2 s3 s4 s5 s6 s7 s8
+fmt s2
+project this project
+series full.70.{x}.null
+series full.70.{x}.hi_lo
+series full.70.{x}.@best
+series full.70.{x}.f1
+series full.70.{x}.perfect
+}}
+<figcaption>At {{game.pen.70|n}}%: {{name:hi_lo}} reaches {{full.70.s8.hi_lo|s2}} at one to {{game.spread_max|n}} units.</figcaption>
+</figure>
+</div>
+{{#if has:wide.}}<p>Wonging means sitting out rounds when the count is low; its rows say how many rounds are skipped.</p>{{else}}<p><span class="pending">Not yet computed: spreads past one to {{game.spread_max|n}} units, and wonging (sitting out rounds when the count is low), from the wide-plan scoring.</span></p>{{/if}}
+</section>
+
+<section id="better">
+<h2>Is there a better count?</h2>
+{{#if guard: fd.80.s8.f1 - fd.80.s8.@best > 0}}<p class="headline">The best count of this kind (one number added per card, like {{name:hi_lo}}'s tags) that a computer search found, with tags not designed for a person to keep, scores {{fd.80.s8.f1|s3}} at {{game.pen.80|n}}% and one to {{game.spread_max|n}} units, at first decisions, above the highest published count, while perfect knowledge of the first move would score {{fd.80.s8.perfect|s3}}.</p>{{else}}<p class="headline">The best count of this kind (one number added per card, like {{name:hi_lo}}'s tags) that a computer search found scores {{fd.80.s8.f1|s3}} at {{game.pen.80|n}}% and one to {{game.spread_max|n}} units, at first decisions; this data cannot show it above the highest published count. Perfect knowledge of the first move would score {{fd.80.s8.perfect|s3}}.</p>{{/if}}
+<p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it. <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span> Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
+{{#if has:ledger.}}<div class="box" id="registration"></div>{{else}}<p><span class="pending">Not yet computed: the registration box, printed from the ledger once the registered counts have been scored.</span></p>{{/if}}
+<figure>
+{{tags:f1,f2,zen_count,hi_lo}}
+<figcaption>The searched counts' tags beside {{name:zen_count}}'s and {{name:hi_lo}}'s. The values are printed in the cells; the colour is a second cue.</figcaption>
+</figure>
+</section>
+
+<section id="table">
+<h2>What it means at a table</h2>
+{{#if has:risk.}}<p class="headline">The win is small next to the swings.</p>{{else}}<p><span class="pending">Not yet computed: swings, money per hour and risk of ruin, from the risk computation.</span></p>{{/if}}
+</section>
+
+<section id="second">
+<h2>A second program</h2>
+<p>An AI agent wrote this program too (see <a href="#ai">How AI was used</a>).</p>
+{{#if has:sim.}}<p class="headline">A second program, a plain simulator written separately from the same rules document by an AI agent that did not read the engine's code, played {{sim.rounds|n}} rounds with the strategies and bets the engine exported.</p>{{else}}<p><span class="pending">Not yet computed: the independent simulation and its agreement with the exact values.</span></p>{{/if}}
+<p>What this check cannot catch: a rule both programs misread; an export bug both share; conventions both follow by choice (cards taken by the chart's play, the count frozen in split hands); the chart itself; whether each fitted play is the best one; the fitting and the bootstrap intervals; the catalog's tags; and differences smaller than its limits.</p>
+</section>
+
+<section id="prior">
+<h2>Prior work</h2>
+{{#if has:lit.}}<p class="headline">Of the published figures I compared with mine, the counts by verdict are in the table below.</p>{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
+<p>Published "player advantage" figures are per amount bet, so they are set beside this page's per-amount-bet figures, not its per-round ones. Six-deck simulation figures from other games are shown only marked as a different game.</p>
+</section>
+
+<section id="checks">
+<h2>How it was checked</h2>
+<p>AI agents wrote the code, the tests and the reviews this section reports (see <a href="#ai">How AI was used</a>).</p>
+{{#if has:evidence.}}<div id="evidence"></div>{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
+<div class="box" id="hash">
+<h3>What a hash proves, and what it doesn't</h3>
+<p>A SHA-256 hash proves that the file you downloaded is, byte for byte, the file listed here. That these commits produced it is my statement. You can test it by reproducing the file (see <a href="#downloads">Downloads</a>): the states file byte for byte, the saved results only to within {{repro.ser_tolerance|e}}. For the first segment of the states file and for the search file, the build that made them is inferred, not recorded. A hash says nothing about whether the code is right; a bug is hashed just as faithfully. The checks above are the evidence that the code is right, and they are evidence, not proof.</p>
+</div>
+</section>
+
+<section id="ai">
+<h2>How AI was used</h2>
+<p>I started this repository in May 2022 with a Monte Carlo simulator I wrote myself. Since August 2026, most of the code, including the exact engine, the scorer, the count search and the second program, has been written by AI coding agents (Claude Code, from Anthropic) working from my questions and design decisions. I chose what to compute and read the designs and the results. AI agents ran the tests, looked up the published figures and compared them with mine. I did not write most of the Java myself. The reviews in <a href="#checks">How it was checked</a> were also done by AI agents, from the same families of models, so they are less independent than a human expert's review would be, and no human expert has reviewed this work. The design notes and this page were drafted with the same tools and edited by me. Weigh the checks with all of that in mind.</p>
+</section>
+
+<section id="limits">
+<h2>Limits</h2>
+<p class="headline">These results are for one player alone at the table, counting without mistakes and seeing every card, at one casino's rules. They say nothing about being noticed, about other players at the table, or about other games.</p>
+<ul>
+<li>The authors' own index numbers and true-count divisors are not used, so each row is the best those tags can do here.</li>
+<li>The count does not move within a split hand, so full play is a lower bound.</li>
+<li>The study rests on {{data.states|n}} valued states.</li>
+<li>Full-play intervals are widened by ratios a pilot measured, each count's own where the pilot measured it and otherwise the largest the pilot saw; a full-play level's interval is widened by its count's difference ratio, a rule chosen here.</li>
+</ul>
+</section>
+
+<section id="downloads">
+<h2>Downloads, reproducing, citing</h2>
+{{files: File | Bytes | SHA-256 | Made by}}
+<p>Check every download at once with <code>shasum -a 256 -c SHA256SUMS</code>. The data behind this page is in <a href="data/results.json">results.json</a> and <a href="data/results.csv">results.csv</a>, and the manifest in <a href="data/manifest.json">manifest.json</a> and <a href="data/MANIFEST.md">MANIFEST.md</a>. Reproducing needs Java 25.</p>
+<p>To cite: Justin Bondurant-David, card counting at the Casino de Montréal's blackjack, version {{s:version}}, {{s:date}}, {{link:results}}.</p>
+<p>Corrections: none yet.</p>
+</section>
+
+<section id="glossary">
+<h2>Glossary</h2>
+<dl class="gloss">
+<dt id="g-unit">Unit</dt><dd>The player's smallest bet. Every expected value here is in percent of a unit per round.</dd>
+<dt id="g-spread">Spread</dt><dd>The range of bets from the smallest to the largest, in units. Here every count gets the same bet sizes, handed out in the order of its own estimate of the advantage.</dd>
+<dt id="g-pen">Penetration, cut card</dt><dd>How far into the shoe the dealer puts the cut card, which marks where to reshuffle, in percent of the shoe.</dd>
+<dt id="g-chart">The chart (basic strategy)</dt><dd>The best play for each hand with no count at all.</dd>
+<dt id="g-fitted">Fitted plays</dt><dd>Index tables this program chose from the data on half of the shoes and scored on the other half.</dd>
+<dt id="g-points">Points</dt><dd>Percentage points of the minimum bet per round, used when two results are compared.</dd>
+<dt id="g-running">Running count</dt><dd>The sum of the tags of every card seen so far.</dd>
+<dt id="g-true">True count</dt><dd>The running count divided by the decks left.</dd>
+<dt id="g-balanced">Balanced</dt><dd>A count whose tags add up to zero over a full deck.</dd>
+<dt id="g-level">Level</dt><dd>The largest tag a count uses.</dd>
+<dt id="g-index">Index play</dt><dd>A departure from the chart when the count passes a number.</dd>
+<dt id="g-side">Side count</dt><dd>A second count kept of one rank, here aces.</dd>
+<dt id="g-insurance">Insurance</dt><dd>The side bet on the dealer's blackjack.</dd>
+<dt id="g-ev">Expected value</dt><dd>The average result per round over every way the cards can fall, written as % of a unit per round.</dd>
+</dl>
+</section>
+</main>
+
+<footer>Source: <a href="https://github.com/jbondurant/CardCountingEdgeCalculator">github.com/jbondurant/CardCountingEdgeCalculator</a>. All rights reserved until a licence is chosen.</footer>
+<script src="assets/page.js" defer></script>
+</body>
+</html>
