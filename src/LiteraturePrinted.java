@@ -3,9 +3,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Reads this repository's own printed reports as LiteratureCheck needs them: a markdown table
@@ -30,21 +28,25 @@ final class LiteraturePrinted {
         return Files.readAllLines(file, StandardCharsets.UTF_8);
     }
 
-    /** One markdown table: the header's cells, and each row as header cell to its own cell. */
+    /**
+     * One markdown table: its header's cells and its rows' cells, in order. Rows are kept as lists,
+     * not maps, because report-final's headline tables name two columns "95% CI" (the estimate's
+     * and the difference's), so a column is found by its name and which occurrence of that name.
+     */
     static final class Table {
         final String heading;
         final List<String> header = new ArrayList<>();
-        final List<Map<String, String>> rows = new ArrayList<>();
+        final List<List<String>> rows = new ArrayList<>();
 
         Table(String heading) {
             this.heading = heading;
         }
 
         /** The row whose first cell is exactly first, refusing none or two. */
-        Map<String, String> row(String first) {
-            Map<String, String> found = null;
-            for (Map<String, String> r : rows) {
-                if (r.get(header.get(0)).equals(first)) {
+        List<String> row(String first) {
+            List<String> found = null;
+            for (List<String> r : rows) {
+                if (r.get(0).equals(first)) {
                     if (found != null) {
                         throw new IllegalArgumentException("\"" + heading + "\" has two rows " + first);
                     }
@@ -57,18 +59,48 @@ final class LiteraturePrinted {
             return found;
         }
 
-        String cell(String first, String column) {
-            String c = row(first).get(column);
-            if (c == null) {
-                throw new IllegalArgumentException("\"" + heading + "\" has no column " + column + " (it has " + header + ")");
+        boolean has(String first) {
+            for (List<String> r : rows) {
+                if (r.get(0).equals(first)) {
+                    return true;
+                }
             }
-            return c;
+            return false;
+        }
+
+        /** The index of the occurrence-th column (from 1) named column. */
+        int column(String column, int occurrence) {
+            int seen = 0;
+            for (int k = 0; k < header.size(); k++) {
+                if (header.get(k).equals(column) && ++seen == occurrence) {
+                    return k;
+                }
+            }
+            throw new IllegalArgumentException("\"" + heading + "\" has no column " + column
+                    + (occurrence > 1 ? " (occurrence " + occurrence + ")" : "") + "; it has " + header);
+        }
+
+        String cell(String first, String column) {
+            return cell(first, column, 1);
+        }
+
+        String cell(String first, String column, int occurrence) {
+            return row(first).get(column(column, occurrence));
+        }
+
+        /** The first cell of every row, in order. */
+        List<String> firsts() {
+            List<String> out = new ArrayList<>();
+            for (List<String> r : rows) {
+                out.add(r.get(0));
+            }
+            return out;
         }
     }
 
     /**
      * The first table after the line whose text, with its leading #s and spaces removed, is exactly
-     * heading. A table is a run of lines starting "|", the second its separator. Refuses a heading
+     * heading (or starts with it, when heading ends in *: report-final's subheadings carry figures). A table is a run of lines starting "|", the second its separator. Refuses a heading
      * found twice or not at all, or no table before the next heading.
      */
     static Table table(List<String> lines, String heading) {
@@ -105,7 +137,9 @@ final class LiteraturePrinted {
         int at = -1;
         for (int i = from; i < to; i++) {
             String l = lines.get(i);
-            if (l.startsWith("#") && l.replaceFirst("^#+\\s*", "").equals(heading)) {
+            String text = l.replaceFirst("^#+\\s*", "");
+            if (l.startsWith("#") && (heading.endsWith("*") ? text.startsWith(heading.substring(0, heading.length() - 1))
+                    : text.equals(heading))) {
                 if (at >= 0) {
                     throw new IllegalArgumentException("the heading \"" + heading + "\" is in the report twice");
                 }
@@ -139,11 +173,7 @@ final class LiteraturePrinted {
                 throw new IllegalArgumentException("a row of \"" + heading + "\" has " + c.size() + " cells, not "
                         + t.header.size() + ": " + lines.get(i));
             }
-            Map<String, String> row = new LinkedHashMap<>();
-            for (int k = 0; k < c.size(); k++) {
-                row.put(t.header.get(k), c.get(k));
-            }
-            t.rows.add(row);
+            t.rows.add(c);
         }
         return t;
     }

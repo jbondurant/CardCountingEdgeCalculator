@@ -318,6 +318,17 @@ final class LiteratureClaims {
                     throw new IllegalArgumentException(at + ": rule check needs ours");
                 }
                 break;
+            case "at_most":
+                if (Double.isNaN(c.tolerance) || c.ours == null) {
+                    throw new IllegalArgumentException(at + ": rule at_most needs ours and a tolerance");
+                }
+                break;
+            case "above":
+            case "below":
+                if (c.printed == null || c.ours == null) {
+                    throw new IllegalArgumentException(at + ": rule " + c.rule + " needs printed and ours");
+                }
+                break;
             case "none":
                 break;
             default:
@@ -384,6 +395,19 @@ final class LiteratureClaims {
                         + (c.sign.equals("+") ? "above" : "below") + " zero throughout, the direction published";
                 break;
             }
+            case "at_most":
+                pass = ours.value <= c.tolerance;
+                how = String.format(Locale.ROOT, "the largest gap %.3g is %s the tolerance %.3g", ours.value,
+                        pass ? "within" : "outside", c.tolerance);
+                break;
+            case "above":
+            case "below": {
+                double t = c.theirs();
+                pass = c.rule.equals("above") ? ours.value > t : ours.value < t;
+                how = String.format(Locale.ROOT, "ours %.6g is %s theirs %.6g", ours.value, ours.value > t ? "above"
+                        : ours.value < t ? "below" : "equal to", t);
+                break;
+            }
             case "check":
                 if (ours.pass == null) {
                     throw new IllegalArgumentException(c.id + ": rule check but " + ours.key + " ran no check");
@@ -395,7 +419,7 @@ final class LiteratureClaims {
                 throw new IllegalStateException(c.rule);
         }
         if (pass) {
-            if (c.rule.equals("sign")) {
+            if (c.rule.equals("sign") || c.rule.equals("above") || c.rule.equals("below")) {
                 return new Outcome(Verdict.DIRECTION, how);
             }
             return c.sameGame ? new Outcome(Verdict.AGREES, how)
