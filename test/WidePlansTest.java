@@ -16,11 +16,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * the same to the bit with the plans on; the plans' properties; and the lowest key so far against
  * shoes dealt again.
  *
- * Planted by hand in SystemScorer on 9 October 2026, one at a time, each failing the test named:
+ * The bugs of PLAN_COMPUTE.md 3.5, check 5, and one more, planted on 12 October 2026 one at a
+ * time in a scratch copy of SystemScorer or AllStates (none is left in), each failing the tests
+ * named and no plant passing all of them:
  *
  * | Planted | What failed |
  * |---|---|
- * | (filled in below as each plant is run) | |
+ * | a round exactly at a plan's entry sat out (Plan.bet: a <= enter) | the naive split |
+ * | the exit key taken where the fitted advantage first exceeds the exit, not reaches it (keyFrom: >) | the naive split |
+ * | a player at the exit key counted as gone (Wide.add: minKey <= from) | the naive split; the exit plan on real shoes |
+ * | the own rule's entry tested on each state's chart advantage, not its key's fitted one | the naive split; the exit plan on real shoes; P8 (the plant also sums by state, which moves own(8) in the last bits) |
+ * | the exit tested on the state's own key, not the lowest of its shoe so far | the naive split; the exit plan on real shoes |
+ * | the mean square bet taken as the integral of g squared, not from the bets placed | the naive split |
+ * | the block at a back-counting plan's entry played every round at its average, a bet under a unit, not at random | the naive split |
+ * | floor and cap swapped (Plan.bet: max(cap, min(1, a / unit))) | the naive split; the exit plan on real shoes; P8 |
+ * | a block boundary off by one (planIntegral: next < blocks - 1, so the last block's bets fall into the one before) | the naive split; the properties; P8 |
+ * | the share played integrated on the bets, not on 1[g > 0] | the naive split; the properties |
+ * | the lowest key so far not reset at a new shoe (AllStates.minKey) | the shoes dealt again |
  */
 public class WidePlansTest {
 

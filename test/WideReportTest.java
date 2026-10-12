@@ -17,6 +17,17 @@ import static org.junit.jupiter.api.Assertions.*;
  * file written only when the checks pass, and then holding the scorer's own figures; differences
  * from Hi-Lo paired resample by resample; full-play intervals widened by the rule its class comment
  * gives, from a pilot's printed tables, and not given at all without a pilot.
+ *
+ * Planted on 12 October 2026 one at a time in a scratch copy of the sources (none is left in),
+ * each failing the tests named:
+ *
+ * | Planted | What failed |
+ * |---|---|
+ * | a full-play interval left unwidened (figures: the resamples as held) | the report holds the scorer's figures |
+ * | a full-play row's difference taken from Hi-Lo at first decisions | the report holds the scorer's figures (its null-count check, added for this plant) |
+ * | the check that every count's same-schedule average bet agrees left out | a failed check writes nothing |
+ * | readRatios one column to the left | both tests reading ratios: the row's cell count is refused |
+ * | readRatios taking the jackknife SE for the ratio and the ratio for its SE | the report holds the scorer's figures; FullIndexPilotTest's --wide test |
  */
 public class WideReportTest {
 
