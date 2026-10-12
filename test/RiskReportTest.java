@@ -452,6 +452,34 @@ public class RiskReportTest {
                 mdw);
     }
 
+    /**
+     * The wide rows' plans and rules are SIM_CHECK.md's: each of F43 to F48 names, in SimCheckPlan's
+     * registry, a metric that begins with its bets and says the same schedule or the own rule as
+     * WIDE_BETS does, on a plan SystemScorer.WIDE_PLANS holds; and the registry sources them from
+     * the replay, as ROWS does.
+     */
+    @Test
+    void theWideRowsPlansAreSimChecks() {
+        int n = 0;
+        for (RiskReport.Spec s : RiskReport.ROWS) {
+            if (!s.source.equals("replay")) {
+                continue;
+            }
+            SimCheckPlan.Figure f = null;
+            for (SimCheckPlan.Figure x : SimCheckPlan.figures()) {
+                f = x.id.equals(s.figure) ? x : f;
+            }
+            assertNotNull(f, s.figure);
+            assertEquals("replay", f.source, s.figure);
+            assertEquals(s.bets, f.bets, s.figure);
+            Object[] b = RiskReport.WIDE_BETS.get(s.bets);
+            assertTrue(f.metric().startsWith(s.bets + ", " + ((Boolean) b[1] ? "same schedule" : "own rule")), f.metric());
+            SystemScorer.planIndex(SystemScorer.WIDE_PLANS, (String) b[0]);
+            n++;
+        }
+        assertEquals(6, n);
+    }
+
     /** A wide.ser without a row the figures need, or without its resamples, is refused rather than read around. */
     @Test
     void aWideSerLackingARowOrItsResamplesIsRefused() throws Exception {
