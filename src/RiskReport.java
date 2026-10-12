@@ -104,7 +104,7 @@ final class RiskReport {
      * this share of their mean of each other; fixed here before any swing was measured.
      */
     static final double SAME_SWINGS = 0.05;
-    /** The fan: points kept every this many rounds, of the simulator's every 100. */
+    /** The fan: points kept every this many rounds, of the simulator's every 100, each to the nearest unit. */
     static final int FAN_STEP = 1000;
 
     // ------------------------------------------------------------------ the rows
@@ -354,7 +354,8 @@ final class RiskReport {
                 metric = m.group(1);
                 continue;
             }
-            if (!line.startsWith("| ")) {
+            if (!line.startsWith("|")) {
+                // A line of words between tables ends the one being read; a blank line does not.
                 if (!line.isEmpty()) {
                     metric = null;
                 }
@@ -798,9 +799,11 @@ final class RiskReport {
             row.swing = sw;
             if (!sw.z.containsKey("P3") || (s.pen == 2 && !sw.z.containsKey("P2"))) {
                 o.failures.add(s.figure + ": the swings file lacks its " + (sw.z.containsKey("P3") ? "P2" : "P3") + " test's z");
+                row.status = "failed its checks";
                 continue;
             }
             if (checkHistogram(o, s, sw)) {
+                row.status = "failed its checks";
                 continue;
             }
             for (Map.Entry<String, Double> z : sw.z.entrySet()) {
@@ -1197,7 +1200,10 @@ final class RiskReport {
 
     // ------------------------------------------------------------------ the data file
 
-    /** A number for the data file: six significant digits, null for NaN or an infinity (an open end). */
+    /**
+     * A number for the data file: five significant digits, more than the page prints; null for NaN
+     * or an infinity (an open end).
+     */
     static String num(double x) {
         if (Double.isNaN(x) || Double.isInfinite(x)) {
             return "null";
@@ -1205,7 +1211,24 @@ final class RiskReport {
         if (x == 0) {
             return "0";
         }
-        return new java.math.BigDecimal(x).round(new java.math.MathContext(6)).stripTrailingZeros().toString();
+        return new java.math.BigDecimal(x).round(new java.math.MathContext(5)).stripTrailingZeros().toString();
+    }
+
+    /**
+     * A probability for the data file, to four decimal places: the page prints a chance to at most
+     * three, and smaller ones as under 0.001. Keeps the file within its budget.
+     */
+    static String prob(double x) {
+        if (Double.isNaN(x)) {
+            return "null";
+        }
+        java.math.BigDecimal d = new java.math.BigDecimal(x).setScale(4, java.math.RoundingMode.HALF_EVEN).stripTrailingZeros();
+        return d.signum() == 0 ? "0" : d.toPlainString();
+    }
+
+    /** Whether a figure of the layout is a probability. */
+    static boolean isProbability(String key) {
+        return key.startsWith("ror.") || key.startsWith("behind.") || key.startsWith("trip.");
     }
 
     static String str(String s) {
@@ -1231,8 +1254,11 @@ final class RiskReport {
     }
 
     /** A figure: its value alone when it has no interval, else [value, lower, upper] with null for no upper bound. */
-    private static String figure(double[] f) {
-        return Double.isNaN(f[1]) ? num(f[0]) : arr(f);
+    private static String figure(double[] f, boolean probability) {
+        if (!probability) {
+            return Double.isNaN(f[1]) ? num(f[0]) : arr(f);
+        }
+        return Double.isNaN(f[1]) ? prob(f[0]) : "[" + prob(f[0]) + "," + prob(f[1]) + "," + prob(f[2]) + "]";
     }
 
     /**
@@ -1280,7 +1306,7 @@ final class RiskReport {
             if (r.figures != null) {
                 b.append(",\"f\":[");
                 for (int k = 0; k < r.figures.length; k++) {
-                    b.append(k > 0 ? "," : "").append(figure(r.figures[k]));
+                    b.append(k > 0 ? "," : "").append(figure(r.figures[k], isProbability(LAYOUT.get(k))));
                 }
                 b.append(']');
             }
@@ -1344,7 +1370,7 @@ final class RiskReport {
             for (int j = 0; j < o.fan.length; j++) {
                 b.append(j > 0 ? ",[" : "[");
                 for (int k = 0; k < o.fan[j].length; k++) {
-                    b.append(k > 0 ? "," : "").append(String.format(Locale.ROOT, "%.1f", o.fan[j][k]));
+                    b.append(k > 0 ? "," : "").append(Math.round(o.fan[j][k]));
                 }
                 b.append(']');
             }
