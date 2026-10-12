@@ -491,4 +491,79 @@ public class CeilingResultsTest {
         out.addAll(Arrays.asList(more));
         return out.toArray(new String[0]);
     }
+
+    /**
+     * optimism on a synthetic twin beside a real CeilingReport run of a synthetic main-seed-free
+     * file: each custom row's optimism is (row - Zen) on the twin less (row - Zen) in the save and
+     * the stored rows, worked out here again; the twin gain is the row less the best plain row on
+     * the twin; the control is written. A recorded objective one ulp off the twin's figure is refused
+     * (check 6) and nothing is written.
+     */
+    @Test
+    public void optimismOnTheTwin(@TempDir Path dir) throws Exception {
+        Path file = ComparisonReportTest.syntheticRun(dir, 73, 73, 12);
+        ScoringStates st = FullIndexPilot.load(file, StateStore.shoesDone(file));
+        SystemScorer sc = new SystemScorer(st, new Bootstrap(st.shoes, CeilingReportTest.RESAMPLES, Bootstrap.SEED),
+                SystemScorer.M_PLAY);
+        Path ser = CeilingReportTest.results(dir, file, st, CeilingReportTest.published(sc));
+        String json = CeilingReportTest.withCells(CustomCountsTest.CELLS);
+        Path counts = CustomCountsTest.write(dir, "candidates.json", json);
+        Path save = dir.resolve("ceiling.ser");
+        PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        CeilingReport.run(file, ser, null, counts, save, CeilingReportTest.RESAMPLES, 1, "test", nowhere);
+
+        Path twin = ComparisonReportTest.syntheticRun(dir, CustomCounts.TWIN_SEED, CustomCounts.TWIN_SEED, 10);
+        ScoringStates tst = FullIndexPilot.load(twin, StateStore.shoesDone(twin));
+        SystemScorer tsc = new SystemScorer(tst, new Bootstrap(tst.shoes, 0, Bootstrap.SEED), SystemScorer.M_PLAY);
+        CustomCounts.Listing listing = CustomCounts.read(counts);
+        CountKeys.Count f1 = listing.entries.get(0).count;
+        CountKeys.Count f2 = listing.entries.get(1).count;
+        double f1Twin = tsc.estimate(f1, null, P)[0][S8];
+        double f2Twin = tsc.estimate(f2, CountKeys.bettingVariant(f2), P)[2][S8];
+        String registered = json.replace("\"name\": \"F1 start\",", "\"name\": \"F1 start\", \"objective\": " + f1Twin
+                + ",").replace("\"name\": \"F2 start\",", "\"name\": \"F2 start\", \"objective\": " + f2Twin + ",");
+        Path withObjectives = CustomCountsTest.write(dir, "registered.json", registered);
+        Path out = dir.resolve("optimism.properties");
+        String[] args = {"optimism", "--twin", twin.toString(), "--counts", withObjectives.toString(), "--stored",
+                ser.toString(), "--saved", save.toString(), "--out", out.toString()};
+        CeilingResults.run(args, "test", nowhere);
+        java.util.Properties p = new java.util.Properties();
+        try (java.io.Reader r = Files.newBufferedReader(out)) {
+            p.load(r);
+        }
+        assertEquals(Double.toString(f1Twin), p.getProperty("objective.F1"));
+        CeilingReport.Published stored = CeilingReport.read(ser);
+        CeilingReport.Saved saved = CeilingReport.readSaved(save);
+        double zenTwin = tsc.estimate(CountSearch.catalogCount("Zen Count"), null, P)[0][S8];
+        double zenMain = stored.of("Zen Count").entries.get(0).estimate[P][S8];
+        double f1Main = saved.custom.get(0).entries.get(0).estimate[P][S8];
+        assertEquals((f1Twin - zenTwin) - (f1Main - zenMain), Double.parseDouble(p.getProperty("optimism.F1.80.s8")), 0);
+        double bestPlain = Double.NEGATIVE_INFINITY;
+        for (SystemScorer.Result r : stored.results) {
+            if (!r.count.systems.isEmpty()) {
+                bestPlain = Math.max(bestPlain, tsc.estimate(r.count, null, P)[0][S8]);
+            }
+        }
+        assertEquals(f1Twin - bestPlain, Double.parseDouble(p.getProperty("twinGain.F1.80.s8")), 0);
+        assertNotNull(p.getProperty("control.optimism.Hi-Opt_II_ace.80.s8"));
+        assertNotNull(p.getProperty("optimism.F1r_start.70.flat"), "every custom row, at every penetration");
+        assertNull(p.getProperty("optimism.Hi_Opt_II_at_grain_500_10000.80.s8"), "controls are not custom rows");
+        assertTrue(Files.exists(dir.resolve("optimism.md")));
+
+        Path off = CustomCountsTest.write(dir, "off.json", registered.replace("\"objective\": " + f1Twin,
+                "\"objective\": " + Math.nextUp(f1Twin)));
+        Path out2 = dir.resolve("optimism-2.properties");
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingResults.run(new String[]{
+                "optimism", "--twin", twin.toString(), "--counts", off.toString(), "--stored", ser.toString(), "--saved",
+                save.toString(), "--out", out2.toString()}, "test", nowhere));
+        assertTrue(e.getMessage().contains("check 6") && e.getMessage().contains("F1 start"), e.getMessage());
+        assertFalse(Files.exists(out2));
+        assertFalse(Files.exists(dir.resolve("optimism-2.md")));
+        // The main state file is refused as the twin.
+        Path main = ComparisonReportTest.syntheticRun(dir, 81, CustomCounts.MAIN_SEED, 4);
+        e = assertThrows(IllegalStateException.class, () -> CeilingResults.run(new String[]{"optimism", "--twin",
+                main.toString(), "--counts", withObjectives.toString(), "--stored", ser.toString(), "--saved",
+                save.toString(), "--out", dir.resolve("o3.properties").toString()}, "test", nowhere));
+        assertTrue(e.getMessage().contains("main state file"), e.getMessage());
+    }
 }
