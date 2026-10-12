@@ -125,9 +125,10 @@ final class LiteratureOutput {
         }
         out.println("## Snapshots that would need a request");
         out.println();
-        out.println("Every source checked or read on the web that has no Internet Archive snapshot yet. Asking the Archive to "
-                + "make one (Save Page Now) sends a request to a third party, so this list goes on the push list "
-                + "(PLAN_PAGE.md section 5, SiteManifest --push-list) and waits for Justin's yes. None has been requested.");
+        out.println("Every source checked or read on the web with no snapshot recorded in claims.json. Some may already have "
+                + "one: looking one up is a read, like fetching the page, and comes first. Asking the Archive to make a new "
+                + "one (Save Page Now) sends a request to a third party, so this list goes on the push list (PLAN_PAGE.md "
+                + "section 5, SiteManifest --push-list) and waits for Justin's yes. None has been requested.");
         out.println();
         for (LiteratureClaims.Source s : snapshotsNeeded(l)) {
             out.printf("- %s: %s%n", s.id, s.url);
