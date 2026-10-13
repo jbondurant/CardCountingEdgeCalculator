@@ -20,14 +20,16 @@ mkdir -p lib build/classes build/test-classes build/sim-classes build/sim-test-c
   https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.10.2/junit-platform-console-standalone-1.10.2.jar
 
 javac -nowarn -d build/classes -cp "$MONGO_JAR" src/*.java
-javac -nowarn -d build/test-classes -cp "build/classes:$MONGO_JAR:$JUNIT_JAR" test/*.java
 # The clean-room simulator (package sim) compiles alone, with no class of the engine on its
-# class path, and its tests run in a JVM of their own for the same reason.
+# class path, and its tests run in a JVM of their own for the same reason. The engine's tests
+# may use its classes (SiteSimTest writes summaries with the simulator's own writer); the
+# simulator never sees the engine's.
 javac -nowarn -d build/sim-classes sim/*.java
+javac -nowarn -d build/test-classes -cp "build/classes:build/sim-classes:$MONGO_JAR:$JUNIT_JAR" test/*.java
 javac -nowarn -d build/sim-test-classes -cp "build/sim-classes:$JUNIT_JAR" sim/test/*.java
 status=0
 java -jar "$JUNIT_JAR" \
-  --class-path "build/classes:build/test-classes:$MONGO_JAR" \
+  --class-path "build/classes:build/test-classes:build/sim-classes:$MONGO_JAR" \
   --scan-class-path --details=summary --disable-ansi-colors || status=$?
 java -jar "$JUNIT_JAR" \
   --class-path "build/sim-classes:build/sim-test-classes" \
