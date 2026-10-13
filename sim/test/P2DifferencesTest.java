@@ -18,6 +18,10 @@ class P2DifferencesTest {
         StatesFixture f = new StatesFixture(8);
         f.rows.add("Other count");
         f.plans = new ArrayList<>(List.of("same-8", "X-1,8"));
+        // the engine's side differs by row, so the engine's difference is not zero
+        f.filler = (row, pen, i) -> row.equals("Other count")
+                ? new double[]{0, -0.003 + i * 1e-6, 0.002, 2 + i % 3, 1}
+                : new double[]{0, -0.005, i % 4 == 0 ? 0.01 : 0, 1 + i % 5, 3};
         States states = f.read();
         Strategy[] hl = {BundleFixture.hiLo("first", 0).read(), BundleFixture.hiLo("first", 1).read()};
         Strategy[] ot = {P3ExtrasTest.other(0), P3ExtrasTest.other(1)};

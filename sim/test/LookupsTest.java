@@ -109,6 +109,9 @@ class LookupsTest {
         assertEquals("2:1:36:S", cell(row("later", 1, 2, 3, 4, "10", f, s), 1));
         assertEquals("2:1:41:S", cell(row("later", 1, 2, 3, 4, "1", f, s), 1), "an ace makes soft 16");
         assertEquals("2:1:-:H", cell(row("later", 1, 2, 3, 4, "3", f, s), 1), "hard 8: the chart hits");
+        // the hit card is counted: a full shoe, (2, 3) against a 4 and a 5 hit, four cards seen,
+        // round(52 · 4 / 412) = 1 and later group 1 (with three cards seen it would be 0, group 0)
+        assertEquals("1:1:-:H", cell(row("later", 0, 2, 3, 4, "5", f, s), 1));
         assertEquals("1:1:-:-", cell(row("later", 1, 10, 10, 5, "2", f, s), 1), "22 busts");
         assertEquals("1:1:-:S", cell(row("later", 1, 10, 10, 5, "1", f, s), 1), "21 stands");
         assertEquals("-", cell(row("later", 1, 2, 3, 4, "10", f, s), 0), "not a full-play file");

@@ -119,11 +119,13 @@ class P3ExtrasTest {
             if (h < 100) {
                 records.add(y + "\t" + one.n + "\t" + one.low);
             }
+            TreeMap<Integer, double[]> fold1 = walk(hl.folds[1], b.chart, h).byKey;
             walk(hl.folds[0], b.chart, h).byKey.forEach((k, v) -> {
-                double[] t = key0.computeIfAbsent(k, z -> new double[3]);
+                double[] t = key0.computeIfAbsent(k, z -> new double[4]);
                 t[0] += v[0];
                 t[1] += v[0] * v[0];
                 t[2] += v[1];
+                t[3] += v[1] * fold1.get(k)[1];
             });
         }
         List<String> lines = f18.lines(sums);
@@ -160,6 +162,9 @@ class P3ExtrasTest {
             assertEquals(e.getValue()[0], Double.parseDouble(f[6]), 1e-9);
             assertEquals(e.getValue()[1], Double.parseDouble(f[7]), 1e-9);
             assertEquals(e.getValue()[2], Double.parseDouble(f[8]), 1e-9);
+            String cross = evLines.stream().filter(l -> l.startsWith("cross\tHi-Lo = Hi-Lo Lite\t80\t" + e.getKey() + "\t"))
+                    .findFirst().orElseThrow();
+            assertEquals(e.getValue()[3], Double.parseDouble(cross.split("\t")[4]), 1e-9, "Σ Y0·Y1 at key " + e.getKey());
         }
         assertEquals(4 * key0.size(), evLines.size(), "four lines a key, both folds meeting the same keys");
     }
