@@ -17,7 +17,8 @@ import java.util.Map;
  * report's: units of the minimum bet or dollars at its unit_usd, rounds for n0. An interval with
  * no upper end (a resample whose win rate is at most 0) is left out, and said so in the figure's
  * at. A full-play row's figures carry the ratio its win rate's resamples were widened by.
- * A row RiskReport did not compute, or held back, is listed with its status and gets no figure.
+ * A row RiskReport did not compute, or held back, is listed with its status and gets no figure; a
+ * figure the file gives as null (N0 of a row that loses) is left out.
  */
 final class SiteRisk {
 
@@ -124,6 +125,10 @@ final class SiteRisk {
 
     /** One figure: a value alone, or [value, lower, upper] with null for no upper end. */
     static void figure(SiteInput in, String key, Object v, String fmt, double widen, String at) {
+        if (v == null || (v instanceof List && ((List<?>) v).get(0) == null)) {
+            // A figure the row does not have (N0 of a row that loses): left out, as the file leaves it.
+            return;
+        }
         if (v instanceof List) {
             List<?> t = (List<?>) v;
             Map<String, Object> m = in.figure(key, SiteAdapt.num(t.get(0), key), fmt);
