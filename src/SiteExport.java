@@ -42,7 +42,10 @@ import java.util.regex.Pattern;
  *
  * java -cp build/classes:lib/mongo-java-driver-3.12.14.jar SiteExport --stored RESULTS.ser
  *      --widening PILOT.txt --template site/template.html --out runs/site/results-COMMIT.json
- *      [--states STATES] [--catalog counting-systems.json]
+ *      [--states STATES] [--catalog counting-systems.json] [--saved STEP7.ser [--counts custom-counts.json]
+ *      [--fullplay-run STEP8/results.ser --fullplay-counts custom-counts-fullplay.json]]
+ * With step 7's save it also writes the bound rows and, with the registrations, the registered
+ * counts at every spread (ceilingRows).
  */
 final class SiteExport {
 
@@ -346,6 +349,13 @@ final class SiteExport {
         Map<String, Map<String, Object>> catalog;
         /** The state file, read for its header only, to deal its shoes again for the rounds dealt; null leaves them out. */
         Path states;
+        /** Step 7's save and its registration, step 8's run and its registration (ceilingRows); null leaves them out. */
+        Path saved;
+        String savedShown;
+        Path counts;
+        Path fullplay;
+        String fullplayShown;
+        Path fullplayCounts;
     }
 
     /** The input SiteData reads, from a run's results.ser. */
@@ -367,30 +377,14 @@ final class SiteExport {
             in.names.put(r.id, r.name);
             table.add(r.record);
             for (String scope : SCOPES) {
-                SystemScorer.Entry e = r.in(scope);
-                if (e == null) {
-                    continue;
-                }
-                for (int p = 0; p < PENS.length; p++) {
-                    if (e.estimate[p] == null) {
-                        continue;
-                    }
-                    for (int s = 1; s <= SystemScorer.SPREADS; s++) {
-                        int m = metric(s);
-                        double w = ratio(o.widening, r, scope, s);
-                        Bootstrap.Interval iv = interval(e, p, m, w);
-                        in.cell(r.id, scope, PENS[p], "s" + s, new double[]{SiteInput.pct(iv.estimate),
-                                SiteInput.pct(iv.se), SiteInput.pct(iv.lo), SiteInput.pct(iv.hi)});
-                        if (named(guards, scope, PENS[p], "s" + s, r.id)) {
-                            Map<String, Object> f = in.figure(scope + "." + PENS[p] + ".s" + s + "." + r.id, iv, "s4", w);
-                            f.put("boot", SiteInput.boot(e.boot[p][m]));
-                            SiteInput.at(f, null, e.name + ", " + SystemScorer.PENETRATIONS[p] + ", metric " + m);
-                        }
-                    }
+                if (r.in(scope) != null) {
+                    final Row row = r;
+                    cells(in, r.id, scope, r.in(scope), s -> ratio(o.widening, row, scope, s), guards);
                 }
             }
             gains(in, r, o.widening);
         }
+        ceilingRows(in, run, o, guards);
         in.grid.put("_widened", List.of("full"));
         in.tables.put("rows", table);
         perBet(in, rows, o.widening);
@@ -399,6 +393,105 @@ final class SiteExport {
         method(in);
         tags(in, rows, o.catalog);
         return in;
+    }
+
+    /**
+     * One row's grid cells in one scope at every penetration and spread, each widened by the ratio
+     * given for its spread; with the resamples, as a figure too, where a guard names it.
+     */
+    static void cells(SiteInput in, String id, String scope, SystemScorer.Entry e,
+                      java.util.function.IntToDoubleFunction ratio, Set<String> guards) {
+        for (int p = 0; p < PENS.length; p++) {
+            if (e.estimate[p] == null) {
+                continue;
+            }
+            for (int s = 1; s <= SystemScorer.SPREADS; s++) {
+                int m = metric(s);
+                double w = ratio.applyAsDouble(s);
+                Bootstrap.Interval iv = interval(e, p, m, w);
+                in.cell(id, scope, PENS[p], "s" + s, new double[]{SiteInput.pct(iv.estimate), SiteInput.pct(iv.se),
+                        SiteInput.pct(iv.lo), SiteInput.pct(iv.hi)});
+                if (named(guards, scope, PENS[p], "s" + s, id)) {
+                    Map<String, Object> f = in.figure(scope + "." + PENS[p] + ".s" + s + "." + id, iv, "s4", w);
+                    f.put("boot", SiteInput.boot(e.boot[p][m]));
+                    SiteInput.at(f, null, e.name + ", " + SystemScorer.PENETRATIONS[p] + ", metric " + m);
+                }
+            }
+        }
+    }
+
+    /** The bound rows of step 7's save, by name, as the page's row perfect in each scope. */
+    static final Map<String, String> BOUNDS = Map.of(
+            "Chart play and perfect insurance, bet on its own value", "bet",
+            "Perfect first move and insurance, bet on its own value", "fd",
+            "Perfect play of the dealt hand and insurance, bet on its own value", "full");
+
+    /**
+     * The rows the page draws beside the published ones, from the ceiling count's files, at every
+     * spread (CeilingResults' data file has only flat and 1-8): the bound rows of step 7's save as
+     * the row perfect (betting only: the chart's play with perfect insurance; first decisions: the
+     * perfect first move; full play: perfect play of the dealt hand; each bet on its own value and
+     * fitted on nothing, so not widened), and each registered headline count by its family: step
+     * 7's save at first decisions and betting only, step 8's run at full play, widened as any count
+     * the pilot did not measure. Grid cells only: their names and rows-table records are the
+     * ceiling adapter's (SiteCeiling), so one input describes each row, and where both give a
+     * figure the generator holds the two to one value. Refuses a save made beside other stored
+     * rows, a registration of other counts, and a run that does not pair.
+     */
+    static void ceilingRows(SiteInput in, CeilingReport.Published run, Options o, Set<String> guards) throws Exception {
+        if (o.saved == null) {
+            return;
+        }
+        CeilingReport.Saved saved = CeilingReport.readSaved(o.saved);
+        String of = CeilingResults.line(saved.identity, "stored rows of ");
+        if (of == null || !of.equals(run.line("commit "))) {
+            throw new IllegalStateException("the save was made beside the stored rows of " + of + ", not of "
+                    + run.line("commit "));
+        }
+        in.artifact(o.saved, o.savedShown);
+        for (SystemScorer.Entry e : saved.bounds) {
+            if (BOUNDS.containsKey(e.name)) {
+                cells(in, "perfect", BOUNDS.get(e.name), e, s -> 1, guards);
+            }
+        }
+        if (o.counts == null) {
+            return;
+        }
+        CustomCounts.Listing counts = CustomCounts.read(o.counts);
+        if (saved.custom.size() != counts.entries.size()) {
+            throw new IllegalStateException("the save holds " + saved.custom.size() + " counts, the registration "
+                    + counts.entries.size());
+        }
+        CeilingReport.Published full = o.fullplay == null ? null : CeilingReport.read(o.fullplay);
+        CustomCounts.Listing fullCounts = full == null ? null : CustomCounts.read(o.fullplayCounts);
+        if (full != null) {
+            CeilingResults.requireSameRun(run, full);
+            in.artifact(o.fullplay, o.fullplayShown);
+        }
+        for (int k = 0; k < counts.entries.size(); k++) {
+            CustomCounts.Entry ce = counts.entries.get(k);
+            SystemScorer.Result r = saved.custom.get(k);
+            if (!r.count.name.equals(ce.count.name)) {
+                throw new IllegalStateException("the save's count " + k + " is " + r.count.name + ", the registration's "
+                        + ce.count.name);
+            }
+            if (!"headline".equals(ce.role) || ce.family == null) {
+                continue;
+            }
+            String id = SiteAdapt.part(ce.family);
+            SystemScorer.Entry first = CeilingReport.row(r);
+            cells(in, id, "fd", first, s -> 1, guards);
+            for (SystemScorer.Entry e : r.entries) {
+                if (e.bettingOnly && e.count == first.count) {
+                    cells(in, id, "bet", e, s -> 1, guards);
+                }
+            }
+            int j = fullCounts == null ? -1 : fullCounts.indexOf(ce.count.name);
+            if (j >= 0) {
+                SystemScorer.Entry e = CeilingResults.fullRow(full.results.get(j));
+                cells(in, id, "full", e, s -> o.widening.level(e.count, s), guards);
+            }
+        }
     }
 
     /** The gain from full play at each penetration, flat and 1-8, widened by the count's gain ratio. */
@@ -597,7 +690,9 @@ final class SiteExport {
         for (String need : new String[]{"stored", "template", "out"}) {
             if (!a.containsKey(need)) {
                 throw new IllegalArgumentException("usage: SiteExport --stored RESULTS.ser --widening PILOT.txt "
-                        + "--template site/template.html --out FILE [--states STATES] [--catalog counting-systems.json]");
+                        + "--template site/template.html --out FILE [--states STATES] [--catalog counting-systems.json] "
+                        + "[--saved STEP7.ser [--counts custom-counts.json] [--fullplay-run STEP8/results.ser "
+                        + "--fullplay-counts custom-counts-fullplay.json]]");
             }
         }
         Options o = new Options();
@@ -607,6 +702,19 @@ final class SiteExport {
         o.template = new String(Files.readAllBytes(Paths.get(a.get("template"))), StandardCharsets.UTF_8);
         o.catalog = catalog(Paths.get(a.getOrDefault("catalog", "counting-systems.json")));
         o.states = a.containsKey("states") ? Paths.get(a.get("states")) : null;
+        if (a.containsKey("saved")) {
+            o.saved = Paths.get(a.get("saved"));
+            o.savedShown = a.get("saved");
+            o.counts = a.containsKey("counts") ? Paths.get(a.get("counts")) : null;
+        }
+        if (a.containsKey("fullplay-run")) {
+            if (o.counts == null || !a.containsKey("fullplay-counts")) {
+                throw new IllegalArgumentException("--fullplay-run needs --saved, --counts and --fullplay-counts");
+            }
+            o.fullplay = Paths.get(a.get("fullplay-run"));
+            o.fullplayShown = a.get("fullplay-run");
+            o.fullplayCounts = Paths.get(a.get("fullplay-counts"));
+        }
         SiteInput in = export(o);
         if (o.widening != null) {
             in.artifact(Paths.get(o.widening.from), o.widening.from);
