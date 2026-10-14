@@ -1056,4 +1056,172 @@ public class ShoeSpecTest {
             }
         }
     }
+
+    // ------------------------------------------------------------------ B9: the catalog as the simulator reads it
+
+    /**
+     * B9's words, transcribed with a JSON parser and nothing of the engine's reading: the
+     * catalog's systems turned into tags by kind and a scale, merged into entries, and the null
+     * count and the ace side-count variants made; every one equal to what CountKeys makes of the
+     * same file (name, mode, scale, tags, divisor, bet tags and ace weight), and the list of
+     * side-counted systems in the spec's block equal to CountKeys.SIDE_COUNTED.
+     */
+    @Test
+    public void b9TheCatalogAsTheSpecReadsIt() throws Exception {
+        org.bson.Document doc = org.bson.Document.parse(new String(Files.readAllBytes(Paths.get("counting-systems.json")),
+                StandardCharsets.UTF_8));
+        List<String> names = new ArrayList<>();
+        List<List<String>> systems = new ArrayList<>();
+        List<int[]> tags = new ArrayList<>();
+        List<Integer> scales = new ArrayList<>();
+        List<Boolean> modes = new ArrayList<>();
+        String[] rank13 = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+        int read = 0;
+        for (org.bson.Document d : doc.getList("systems", org.bson.Document.class)) {
+            read++;
+            String mode = d.getString("count");
+            assertTrue(mode.equals("true") || mode.equals("running"), mode);
+            double[] t = new double[ShoeRun.KINDS];
+            org.bson.Document perRank = (org.bson.Document) d.get("tags");
+            for (int k = 0; k < t.length; k++) {
+                t[k] = ((Number) perRank.get(k / 2 >= 9 ? "T" : rank13[k / 2])).doubleValue();
+            }
+            org.bson.Document card = (org.bson.Document) d.get("cardTags");
+            if (card != null) {
+                for (String key : card.keySet()) {
+                    String rank = key.replaceFirst("(red|black)$", "");
+                    int r = Arrays.asList(rank13).indexOf(rank);
+                    assertTrue(r >= 0, key);
+                    for (int colour = 0; colour < 2; colour++) {
+                        if (key.equals(rank) || key.endsWith(colour == 1 ? "red" : "black")) {
+                            t[2 * r + colour] = ((Number) card.get(key)).doubleValue();
+                        }
+                    }
+                }
+            }
+            int scale = 1;
+            while (true) {
+                boolean whole = true;
+                for (double x : t) {
+                    whole &= Math.abs(scale * x - Math.rint(scale * x)) <= 1e-9;
+                }
+                if (whole) {
+                    break;
+                }
+                scale++;
+                assertTrue(scale <= 100);
+            }
+            int[] w = new int[t.length];
+            for (int k = 0; k < t.length; k++) {
+                w[k] = (int) Math.rint(scale * t[k]);
+            }
+            int at = -1;
+            for (int e = 0; e < tags.size(); e++) {
+                if (at < 0 && Arrays.equals(tags.get(e), w) && modes.get(e) == mode.equals("true")) {
+                    at = e;
+                }
+            }
+            if (at < 0) {
+                systems.add(new ArrayList<>());
+                tags.add(w);
+                scales.add(scale);
+                modes.add(mode.equals("true"));
+                at = tags.size() - 1;
+            }
+            systems.get(at).add(d.getString("name"));
+        }
+        for (List<String> x : systems) {
+            names.add(String.join(" = ", x));
+        }
+        assertEquals(35, read);
+        List<CountKeys.Count> catalog = CountKeys.catalog();
+        assertEquals(30, names.size());
+        assertEquals(names.size(), catalog.size());
+        List<String> sideCounted = block(spec, "shoe-spec-side-counted");
+        assertEquals(CountKeys.SIDE_COUNTED, sideCounted);
+        int variants = 0;
+        for (int e = 0; e < names.size(); e++) {
+            CountKeys.Count c = catalog.get(e);
+            assertEquals(names.get(e), c.name);
+            assertEquals(modes.get(e), c.trueCounted, c.name);
+            assertEquals((int) scales.get(e), c.scale, c.name);
+            assertArrayEquals(tags.get(e), c.tag, c.name);
+            assertArrayEquals(tags.get(e), c.betTags(), c.name);
+            assertEquals(1, c.divisor(), c.name);
+            assertEquals(0, c.aceSideCount, c.name);
+            boolean listed = systems.get(e).stream().anyMatch(sideCounted::contains);
+            CountKeys.Count v = CountKeys.bettingVariant(c);
+            assertEquals(listed, v != null, c.name);
+            if (listed) {
+                variants++;
+                assertEquals(c.name + " + ace side count", v.name);
+                assertTrue(v.trueCounted);
+                assertArrayEquals(c.tag, v.tag);
+                assertArrayEquals(c.tag, v.betTags());
+                assertEquals(c.scale, v.scale);
+                assertEquals(Math.abs(tags.get(e)[18]), v.aceSideCount, v.name);
+            }
+        }
+        assertEquals(8, variants);
+        CountKeys.Count none = CountKeys.nullCount();
+        assertEquals("Null count (no count)", none.name);
+        assertArrayEquals(new int[ShoeRun.KINDS], none.tag);
+        assertFalse(none.trueCounted);
+        assertEquals(1, none.scale);
+        assertEquals(1, none.divisor());
+    }
+
+    // ------------------------------------------------------------------ Part C: the simulator's files
+
+    /**
+     * Part C's formats as RiskReport reads them: the swings example read by readSwings (sums,
+     * cells and both tests of the figure), a records file and a fan file written from C2's and
+     * C3's words read by readRecords and readFan, and the ev-by-key example's lines of the field
+     * counts C4 gives.
+     */
+    @Test
+    public void partCIsWhatRiskReportReads(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Map<String, RiskReport.Swing> swings = RiskReport.readSwings(block(spec, "shoe-spec-swings"));
+        assertEquals(java.util.Collections.singleton("F27"), swings.keySet());
+        RiskReport.Swing f27 = swings.get("F27");
+        assertNotNull(f27.sums);
+        assertEquals(38_000_000L, f27.sums.shoes);
+        assertEquals(2, f27.counts().length);
+        assertEquals(-4, f27.twoXs()[0]);
+        assertEquals(java.util.Set.of("P3", "P2"), f27.z.keySet());
+        StringBuilder records = new StringBuilder();
+        double[][] shoe = {{-3.5, 62, -12.0}, {8.0, 58, 0.0}, {-1.0, 61, -4.5}};
+        for (double[] h : shoe) {
+            records.append(h[0]).append('\t').append((int) h[1]).append('\t').append(h[2]).append('\n');
+        }
+        Path rec = dir.resolve("records-F27.tsv");
+        Files.write(rec, records.toString().getBytes(StandardCharsets.UTF_8));
+        RiskMath.Records r = RiskReport.readRecords(rec);
+        assertArrayEquals(new double[]{-3.5, 8.0, -1.0}, r.y);
+        assertArrayEquals(new int[]{62, 58, 61}, r.n);
+        StringBuilder fan = new StringBuilder();
+        for (int j = 0; j < 20; j++) {
+            fan.append(j);
+            for (int w = 1; w <= 1000; w++) {
+                fan.append('\t').append((double) (j - w % 7));
+            }
+            fan.append('\n');
+        }
+        Path fanFile = dir.resolve("fan-F27.tsv");
+        Files.write(fanFile, fan.toString().getBytes(StandardCharsets.UTF_8));
+        double[][] paths = RiskReport.readFan(fanFile);
+        assertEquals(20, paths.length);
+        assertEquals(1000, paths[0].length);
+        Map<String, Integer> fields = Map.of("sim", 11, "cross", 5, "exact", 6);
+        int lines = 0;
+        for (String l : block(spec, "shoe-spec-ev-by-key")) {
+            if (l.startsWith("#")) {
+                continue;
+            }
+            String[] f = l.split("\t", -1);
+            assertEquals((int) fields.get(f[0]), f.length, l);
+            lines++;
+        }
+        assertEquals(4, lines);
+    }
 }

@@ -69,6 +69,7 @@ public class StrategyExportTest {
     static List<CountKeys.Count> counts;
     static List<SystemScorer.Result> results;
     static Path bundle;
+    static StrategyExport.ChartRow chartRow;
     static StrategyExport.Report report;
     static String log;
 
@@ -171,9 +172,11 @@ public class StrategyExportTest {
             results.add(scorer.score(c, CountKeys.bettingVariant(c)));
         }
         bundle = shared.resolve("export-test");
+        chartRow = new StrategyExport.ChartRow(scorer.references().get(0), 0, 1, 2);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        report = StrategyExport.export(bundle, scorer, header, everyRow(), StrategyExport.reportPlans().toArray(new String[0]),
-                keyColumns(), StrategyExport.SAMPLE_SEED, new PrintStream(out, true, "UTF-8"));
+        report = StrategyExport.export(bundle, scorer, header, everyRow(), chartRow,
+                StrategyExport.reportPlans().toArray(new String[0]), keyColumns(), StrategyExport.SAMPLE_SEED,
+                new PrintStream(out, true, "UTF-8"));
         log = out.toString("UTF-8");
     }
 
@@ -191,8 +194,8 @@ public class StrategyExportTest {
             rows += r.entries.size();
         }
         assertEquals(16, rows, "two counts with a betting variant and four without, each also betting only");
-        // Every row at three penetrations: two files each, and six other files.
-        assertEquals(3 * rows * 2 + 6, Files.list(bundle).count());
+        // Every row at three penetrations: two files each, and seven other files (the chart's row has none).
+        assertEquals(3 * rows * 2 + 7, Files.list(bundle).count());
         assertTrue(report.worst <= StrategyExport.RELATIVE, report.worst + "");
         assertTrue(st.size > 200, st.size + " states");
         int figures = 0;
@@ -204,6 +207,9 @@ public class StrategyExportTest {
             }
         }
         assertEquals(3 * rows, figures, log);
+        for (String pen : new String[]{"70", "75", "80"}) {
+            assertTrue(log.contains("Chart, no count, flat at " + pen + "%: "), log);
+        }
         assertTrue(log.contains("round trip passed"), log);
         assertTrue(log.matches("(?s).*bundle: \\d+ files, \\d+ bytes.*"), log);
     }
@@ -240,6 +246,9 @@ public class StrategyExportTest {
             for (int p : w.pens) {
                 out.add(StrategyExport.Expect.of(w.entry, p));
             }
+        }
+        for (int p : chartRow.pens) {
+            out.add(StrategyExport.Expect.of(chartRow.entry, p));
         }
         return out;
     }
@@ -430,18 +439,25 @@ public class StrategyExportTest {
 
     private static final int[] decksum = new int[1];
 
-    /** One round value in states.bin a billionth off. */
+    /** One round value in states.bin a billionth off, in a counted row's section or in the chart's. */
     @Test
     public void aRoundValueInStatesBinIsCaught() throws Exception {
-        Path dir = copy("rv");
-        ExportBundle.States s = ExportBundle.readStates(dir.resolve("states.bin"));
-        ExportBundle.Section sec = s.sections.get(0);
-        sec.rvPlay[sec.rvPlay.length / 2] *= 1 + 1e-9;
-        Files.delete(dir.resolve("states.bin"));
-        StrategyExport.writeStates(dir.resolve("states.bin"), header, st, s.sections);
-        reseal(dir);
-        String msg = refusal(dir);
-        assertTrue(msg.contains("round value under its fold's play"), msg);
+        for (boolean chart : new boolean[]{false, true}) {
+            Path dir = copy(chart ? "rv-chart" : "rv");
+            ExportBundle.States s = ExportBundle.readStates(dir.resolve("states.bin"));
+            ExportBundle.Section sec = null;
+            for (ExportBundle.Section x : s.sections) {
+                if (sec == null && x.row.equals(StrategyExport.CHART_ROW) == chart) {
+                    sec = x;
+                }
+            }
+            sec.rvPlay[sec.rvPlay.length / 2] *= 1 + 1e-9;
+            Files.delete(dir.resolve("states.bin"));
+            StrategyExport.writeStates(dir.resolve("states.bin"), header, st, s.sections);
+            reseal(dir);
+            String msg = refusal(dir);
+            assertTrue(msg.contains(chart ? "round value under chart.tsv" : "round value under its fold's play"), msg);
+        }
     }
 
     /** One of exact.tsv's sums a billionth off. */
@@ -576,6 +592,122 @@ public class StrategyExportTest {
         assertTrue(differ > 10, differ + " states where the ace side count moves Hi-Opt II's bet key");
     }
 
+    /**
+     * lookups.tsv (SHOE_SPEC.md B8): a column for every strategy file in path order, a first line
+     * for every play line of keys-sample.tsv in its order, no later line without a full-play file;
+     * moves off the chart, insurance taken, a betting row playing the chart, Red Seven's cells
+     * listing every key its deal can have, and '-' for the states a 70% file does not play.
+     */
+    @Test
+    public void theLookupsAreTheEnginesAnswers() throws Exception {
+        ExportBundle.Lookups lk = ExportBundle.readLookups(bundle.resolve("lookups.tsv"));
+        ExportBundle.KeysSample ks = ExportBundle.readKeysSample(bundle.resolve("keys-sample.tsv"));
+        assertEquals(16 * 3 * 2, lk.files.length);
+        List<String> sorted = new ArrayList<>(Arrays.asList(lk.files));
+        sorted.sort(null);
+        assertEquals(sorted, Arrays.asList(lk.files));
+        List<ExportBundle.KeyLine> plays = new ArrayList<>();
+        for (ExportBundle.KeyLine l : ks.lines) {
+            if (!l.bet) {
+                plays.add(l);
+            }
+        }
+        assertEquals(plays.size(), lk.lines.size());
+        List<String> names = Arrays.asList(lk.files);
+        int hiLo = names.indexOf(hiLoFile(80, 0));
+        int hiLo70 = names.indexOf(hiLoFile(70, 0));
+        int betting = names.indexOf(ExportBundle.Strategy.fileName(results.get(0).entries.get(1).name, 80, 0));
+        int red = names.indexOf(ExportBundle.Strategy.fileName(results.get(3).entries.get(0).name, 80, 0));
+        int[] chart = ScoringStates.chartMoves(RULES);
+        int offChart = 0;
+        int insured = 0;
+        int spreads = 0;
+        int outside = 0;
+        for (int n = 0; n < plays.size(); n++) {
+            ExportBundle.LookupLine l = lk.lines.get(n);
+            assertFalse(l.later);
+            assertEquals(plays.get(n).state, l.state);
+            assertEquals(plays.get(n).p1 + " " + plays.get(n).p2 + " " + plays.get(n).up, l.p1 + " " + l.p2 + " " + l.up);
+            int i = Deals.index(l.p1, l.p2, l.up);
+            String[] cell = l.cells[hiLo].split(":");
+            assertEquals(4, cell.length, l.cells[hiLo]);
+            if (!Deals.playerNatural(i)) {
+                offChart += ExportBundle.MOVE_LETTERS.indexOf(cell[2]) != chart[i] ? 1 : 0;
+                String[] b = l.cells[betting].split(":");
+                assertEquals(String.valueOf(ExportBundle.MOVE_LETTERS.charAt(chart[i])), b[2], l.cells[betting]);
+            }
+            insured += cell[3].equals("1") ? 1 : 0;
+            spreads += l.cells[red].contains(";") ? 1 : 0;
+            outside += l.cells[hiLo70].equals("-") ? 1 : 0;
+        }
+        assertTrue(offChart > 100, offChart + " first moves off the chart");
+        assertTrue(insured > 0, "no insurance taken");
+        assertTrue(spreads > 100, spreads + " Red Seven cells with more than one key");
+        assertTrue(outside > 0, "every state of the sample is played at 70%");
+    }
+
+    /** One cell of lookups.tsv as text, changed by f; the file's column found by name. */
+    static Path plantedLookup(String name, String file, int skip, UnaryOperator<String> f) throws IOException {
+        int[] col = {-1};
+        int[] seen = {0};
+        boolean[] done = {false};
+        return planted(name, "lookups.tsv", t -> lines(t, l -> {
+            String[] x = l.split("\t", -1);
+            if (x[0].equals("line")) {
+                col[0] = Arrays.asList(x).indexOf(file);
+                return l;
+            }
+            if (done[0] || !x[0].equals("first") || col[0] < 0 || x[col[0]].equals("-")) {
+                return l;
+            }
+            String changed = f.apply(x[col[0]]);
+            if (changed.equals(x[col[0]]) || seen[0]++ < skip) {
+                return l;
+            }
+            done[0] = true;
+            x[col[0]] = changed;
+            return String.join("\t", x);
+        }));
+    }
+
+    /** The engine's first move written as the deal's next legal one: not what the file plays there. */
+    @Test
+    public void aLookupMoveChangedIsCaught() throws Exception {
+        String msg = refusal(plantedLookup("lookup-move", hiLoFile(80, 1), 3, c -> c.contains(":-:") ? c
+                : c.replaceFirst(":([SHDP]):", c.contains(":S:") ? ":H:" : ":S:")));
+        assertTrue(msg.contains("lookups.tsv line") && msg.contains(hiLoFile(80, 1)), msg);
+    }
+
+    /** Insurance turned on where the engine's fit does not insure. */
+    @Test
+    public void aLookupInsuranceFlippedIsCaught() throws Exception {
+        String msg = refusal(plantedLookup("lookup-insure", hiLoFile(75, 0), 0, c -> c.endsWith(":0") ? c.substring(0,
+                c.length() - 1) + "1" : c));
+        assertTrue(msg.contains("lookups.tsv line") && msg.contains(hiLoFile(75, 0)), msg);
+    }
+
+    /** The other fold's answers in a fold's column: the engine looked up the strategy the state is not played by. */
+    @Test
+    public void theOtherFoldsLookupsAreCaught() throws Exception {
+        String mine = hiLoFile(80, 0);
+        String other = hiLoFile(80, 1);
+        String msg = refusal(planted("lookup-fold", "lookups.tsv", t -> {
+            String[] l = t.split("\n", -1);
+            List<String> head = Arrays.asList(l[2].split("\t", -1));
+            int a = head.indexOf(mine);
+            int b = head.indexOf(other);
+            for (int n = 3; n < l.length; n++) {
+                String[] x = l[n].split("\t", -1);
+                if (x.length == head.size()) {
+                    x[a] = x[b];
+                    l[n] = String.join("\t", x);
+                }
+            }
+            return String.join("\n", l);
+        }));
+        assertTrue(msg.contains(mine), msg);
+    }
+
     /** A full-play row and a row betting on its own value are refused, and so is a bundle directory that exists. */
     @Test
     public void whatCannotBeExportedIsRefused() throws Exception {
@@ -608,6 +740,12 @@ public class StrategyExportTest {
             o.writeObject(scored);
             o.writeObject(new double[0]);
         }
+        Path saved = shared.resolve("ceiling.ser");
+        writeSaved(saved, "CeilingReport\ncommit test\n" + FullIndexRun.stateFile(states) + "\ncounts none\nresamples 0",
+                published.references());
+        Path elsewhere = shared.resolve("ceiling-elsewhere.ser");
+        writeSaved(elsewhere, "CeilingReport\ncommit test\nstates /another/file, 1 bytes, modified 0\ncounts none",
+                published.references());
         Path out = shared.resolve("export-cli");
         PrintStream was = System.out;
         ByteArrayOutputStream text = new ByteArrayOutputStream();
@@ -615,13 +753,18 @@ public class StrategyExportTest {
         try {
             StrategyExport.main(new String[]{states.toString(), "--published", ser.toString(), "--out", out.toString(),
                     "--row", catalog("Hi-Opt II").name + " + ace side count@80", "--row", "Hi-Lo = Hi-Lo Lite, betting only@70,80",
-                    "--plans", "same-2,same-8,own-8,played-8"});
+                    "--chart-from", saved + "@70,80", "--plans", "same-2,same-8,own-8,played-8"});
         } finally {
             System.setOut(was);
         }
         String log = text.toString("UTF-8");
         assertTrue(log.contains("round trip passed"), log);
-        assertEquals(3 * 2 + 6, Files.list(out).count());
+        assertTrue(log.contains("Chart, no count, flat at 70%: ") && log.contains("Chart, no count, flat at 80%: ")
+                && !log.contains("Chart, no count, flat at 75%"), log);
+        assertEquals(3 * 2 + 7, Files.list(out).count());
+        IllegalStateException other = assertThrows(IllegalStateException.class, () -> StrategyExport.chartRow(
+                CeilingReport.readSaved(elsewhere), states, new int[]{2}));
+        assertTrue(other.getMessage().contains("were not scored on"), other.getMessage());
         ExportBundle.KeysSample ks = ExportBundle.readKeysSample(out.resolve("keys-sample.tsv"));
         assertEquals(CountKeys.catalog().size() + 1 + 8, ks.counts.length, Arrays.toString(ks.counts));
         ExportBundle.Strategy s = ExportBundle.readStrategy(out.resolve(ExportBundle.Strategy.fileName(
@@ -693,5 +836,19 @@ public class StrategyExportTest {
         s.plans.add(new ExportBundle.Plan("X-1.0,8", "own", -1, new int[]{-3, 0, 4}, new double[]{0, 1, 8},
                 new double[]{0, 0.25, 1}));
         return s;
+    }
+
+    /** A CeilingReport save as CeilingReport.save writes one, holding only these reference rows. */
+    static void writeSaved(Path file, String identity, List<SystemScorer.Entry> references) throws IOException {
+        try (java.io.ObjectOutputStream o = new java.io.ObjectOutputStream(Files.newOutputStream(file))) {
+            o.writeUTF(identity + "\n");
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeObject(new ArrayList<>());
+            o.writeDouble(0);
+            o.writeObject(new ArrayList<>(references));
+            o.writeObject(new java.util.LinkedHashMap<>());
+        }
     }
 }
