@@ -160,7 +160,7 @@ public class SiteBuildTest {
                                 List<Object> v = (List<Object>) c.getValue();
                                 double[] d = new double[4];
                                 for (int k = 0; k < 4; k++) {
-                                    d[k] = ((Number) v.get(k)).doubleValue();
+                                    d[k] = v.get(k) == null ? Double.NaN : ((Number) v.get(k)).doubleValue();
                                 }
                                 out.put(sc.getKey() + "." + pen.getKey() + "." + c.getKey() + "." + row.getKey(), d);
                             }
@@ -172,7 +172,7 @@ public class SiteBuildTest {
         return out;
     }
 
-    static final Pattern SPAN = Pattern.compile("<(span|code|text|title|td)\\b([^>]*)\\bdata-(k|name|s|tick|t)=\"([^\"]*)\"([^>]*)>(.*?)</\\1>",
+    static final Pattern SPAN = Pattern.compile("<(span|code|text|title|td)\\b([^>]*)\\bdata-(k|name|s|tick|t|q)=\"([^\"]*)\"([^>]*)>(.*?)</\\1>",
             Pattern.DOTALL);
 
     /**
@@ -183,9 +183,30 @@ public class SiteBuildTest {
      * out, no digit is left in the page's text except in the allowlist's few phrases and in code.
      */
     @Test
-    public void everyNumberOnThePageTracesToAnInputField() throws IOException {
-        Map<String, double[]> in = inputFields(small);
-        String p = html();
+    public void everyNumberOnThePageTracesToAnInputField() throws Exception {
+        assertTrue(trace(small, page) > 200, "the page prints over 200 figures");
+    }
+
+    /**
+     * The route of everyNumberOnThePageTracesToAnInputField on any page and the inputs it was built
+     * from; the number of figures traced. A run of a committed paragraph's words (data-q) must be
+     * that run of the words the input's ceiling_paragraphs table holds for its cell, and those words
+     * the paragraph of the table's letter in CEILING_RESULT_PARAGRAPHS.md as committed before the
+     * look, read here from git at its commit.
+     */
+    @SuppressWarnings("unchecked")
+    static int trace(Path inputs, SiteBuild.Output page) throws Exception {
+        Map<String, double[]> in = inputFields(inputs);
+        Map<String, Object> paragraphs = null;
+        try (java.util.stream.Stream<Path> s = Files.list(inputs)) {
+            for (Path f : (Iterable<Path>) s::iterator) {
+                Object t = ((Map<String, Object>) json(f).getOrDefault("tables", Map.of())).get("ceiling_paragraphs");
+                if (t != null) {
+                    paragraphs = (Map<String, Object>) t;
+                }
+            }
+        }
+        String p = page.text("index.html");
         Matcher m = SPAN.matcher(p);
         int figures = 0;
         StringBuffer rest = new StringBuffer();
@@ -214,11 +235,21 @@ public class SiteBuildTest {
                 assertEquals(SiteText.format(fig, fmt), text, key + " in " + fmt);
             } else if (kind.equals("name")) {
                 assertEquals(page.data.names.get(key), text);
+            } else if (kind.equals("q")) {
+                String[] at = key.split("/");
+                assertNotNull(paragraphs, "a committed paragraph is printed but no input holds one");
+                Map<String, Object> cell = (Map<String, Object>) paragraphs.get(at[1]);
+                String words = (String) cell.get("words");
+                CeilingParagraphs.Texts committed = CeilingParagraphs.parse(CeilingParagraphsTest.committed(),
+                        CeilingParagraphs.BLOB);
+                char letter = ((String) cell.get("letter")).charAt(0);
+                assertEquals((at[1].equals("flat") ? committed.flat : committed.paragraphs).get(letter), words,
+                        "the " + at[1] + " cell's words are paragraph " + letter + " as committed");
+                assertEquals(words.split("\\[[A-Z_]+\\]", -1)[Integer.parseInt(at[2])], text, key);
             }
             m.appendReplacement(rest, " ");
         }
         m.appendTail(rest);
-        assertTrue(figures > 200, "the page prints " + figures + " figures");
         String t = rest.toString().replaceAll("(?s)<script\\b.*?</script>|<style\\b.*?</style>", " ")
                 .replaceAll("(?s)<code\\b[^>]*>.*?</code>", " ").replaceAll("<[^>]*>", " ");
         t = SiteText.decode(t);
@@ -227,6 +258,7 @@ public class SiteBuildTest {
         }
         Matcher d = Pattern.compile(".{0,40}\\d.{0,40}").matcher(t);
         assertFalse(d.find(), () -> "a digit with no source: " + d.group());
+        return figures;
     }
 
     @Test
@@ -417,9 +449,12 @@ public class SiteBuildTest {
             assertTrue(p.contains("Not yet computed: " + what), what);
         }
         Path withRisk = copy("with-risk");
+        // The answer names the money of the row ranked first, by its own key (SiteRisk's keys).
+        String best = SiteSvg.rowOf(SiteBuild.one("full.80.s8.@best", page.data));
         Files.write(withRisk.resolve("risk-fixture.json"), ("{\"_source\":{\"what\":\"risk\",\"commit\":\"fixture\",\"fixture\":true},"
                 + "\"figures\":{\"risk.unit_usd\":{\"value\":25,\"fmt\":\"usd\"},\"risk.rounds\":{\"value\":100,\"fmt\":\"n\"},"
-                + "\"risk.per100.80.s8.best\":{\"value\":12,\"fmt\":\"usd\"},\"risk.sd100.80.s8.best\":{\"value\":280,\"fmt\":\"usd\"}}}")
+                + "\"risk.ev_per100_usd.full.80.s8." + best + "\":{\"value\":12,\"fmt\":\"usd\"},"
+                + "\"risk.sd_per100_usd.full.80.s8." + best + "\":{\"value\":280,\"fmt\":\"usd\"}}}")
                 .getBytes(StandardCharsets.UTF_8));
         SiteBuild.Output o = build(withRisk, template);
         assertEquals(List.of(), o.problems);

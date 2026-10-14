@@ -316,7 +316,10 @@ final class SiteBuild {
         return "searched".equals(kind) ? "c2" : "perfect".equals(kind) || "reference".equals(kind) ? "ref" : "fg";
     }
 
-    /** {{dots:ID …}}: a chart-table (SiteSvg.dots). */
+    /**
+     * {{dots:ID …}}: a chart-table (SiteSvg.dots). A row line draws one row; an each line one row
+     * for every row its first key's alias names that has every figure the line names.
+     */
     static String dots(String id, String body, SiteData d) {
         List<String> head = null;
         List<SiteSvg.Column> cols = new ArrayList<>();
@@ -350,6 +353,12 @@ final class SiteBuild {
                         for (int j = 1; j < keys.length; j++) {
                             String p = keys[j].trim();
                             ks.add(p.substring(0, p.lastIndexOf('.') + 1) + rid);
+                        }
+                        if (l[0].equals("each") && !ks.stream().allMatch(d::has)) {
+                            // An each line draws the rows that have every figure it names, as a rows
+                            // table lists those that have its order figure: a registered count scored
+                            // at first decisions but not at full play (F1 flat) is not drawn half.
+                            continue;
                         }
                         Map<String, Object> r = row(d, rid);
                         boolean b = bound || "perfect".equals(r.get("kind"));
@@ -714,6 +723,9 @@ final class SiteBuild {
         if (p.startsWith("tags:")) {
             return tags(SiteGuards.keys(p.substring(5) + ","), d);
         }
+        if (p.startsWith("para:")) {
+            return paragraph(p.substring(5).trim(), d);
+        }
         if (p.startsWith("files:")) {
             return files(bars(p.substring(6)), strings);
         }
@@ -749,6 +761,67 @@ final class SiteBuild {
             }
         }
         return b.append("</div>").toString();
+    }
+
+    /** The table of committed paragraphs SiteCeiling writes, and the source of every data-q span. */
+    static final String PARAGRAPHS = "ceiling_paragraphs";
+
+    /**
+     * A paragraph whose words were committed before its figures were known (the ceiling count's
+     * result, CEILING_RESULT_PARAGRAPHS.md, picked by SiteCeiling): its words printed as they are,
+     * each run between two brackets in a data-q span that the page check holds to the table's
+     * words (SiteText), each bracket as the figure or name the table fills it with, a "%" after a
+     * figure the paragraphs file prints one after. A paragraph a figure is missing for says it is
+     * not yet computed and prints no bracket.
+     */
+    @SuppressWarnings("unchecked")
+    static String paragraph(String cell, SiteData d) {
+        Object all = d.tables.get(PARAGRAPHS);
+        Map<String, Object> t = all == null ? null : (Map<String, Object>) ((Map<String, Object>) all).get(cell);
+        if (t == null) {
+            throw new IllegalArgumentException("no paragraph " + cell + " in the table " + PARAGRAPHS);
+        }
+        if (t.get("pending") != null) {
+            return "<span class=\"pending\">Not yet computed: " + SiteSvg.esc((String) t.get("pending")) + ".</span>";
+        }
+        String words = (String) t.get("words");
+        Map<String, Object> fill = (Map<String, Object>) t.get("fill");
+        List<Object> percent = (List<Object>) t.get("percent_after");
+        Matcher m = CeilingParagraphs.PLACEHOLDER.matcher(words);
+        StringBuilder b = new StringBuilder();
+        int at = 0;
+        int n = 0;
+        while (m.find()) {
+            b.append(quoted(cell, n++, words.substring(at, m.start())));
+            String f = (String) fill.get(m.group(1));
+            if (f == null) {
+                throw new IllegalArgumentException("paragraph " + cell + " has nothing to fill [" + m.group(1) + "] with");
+            }
+            b.append(f.startsWith("name:") ? SiteSvg.name(d, f.substring(5)) : SiteSvg.fig(d, f, null));
+            if (percent.contains(m.group(1))) {
+                b.append('%');
+            }
+            at = m.end();
+        }
+        b.append(quoted(cell, n, words.substring(at)));
+        return b.toString();
+    }
+
+    private static String quoted(String cell, int n, String words) {
+        return words.isEmpty() ? "" : "<span data-q=\"" + PARAGRAPHS + "/" + SiteSvg.esc(cell) + "/" + n + "\">"
+                + SiteSvg.esc(words) + "</span>";
+    }
+
+    /** The n-th run of words between brackets of a committed paragraph, as the table holds it (data-q's source). */
+    @SuppressWarnings("unchecked")
+    static String quotedWords(SiteData d, String ref) {
+        String[] p = ref.split("/");
+        if (p.length != 3 || !p[0].equals(PARAGRAPHS)) {
+            throw new IllegalArgumentException("data-q=\"" + ref + "\" names no committed paragraph");
+        }
+        Map<String, Object> t = (Map<String, Object>) ((Map<String, Object>) d.tables.get(PARAGRAPHS)).get(p[1]);
+        String[] runs = CeilingParagraphs.PLACEHOLDER.split((String) t.get("words"), -1);
+        return runs[Integer.parseInt(p[2])];
     }
 
     /**

@@ -316,7 +316,11 @@ final class SiteData {
             throw new IllegalArgumentException(from + ": " + f.key + " prints as " + b.trim() + " here but as "
                     + a.trim() + " from " + was.src + "; one number must have one value");
         }
-        if (!figures.containsKey(f.key)) {
+        Figure kept = figures.get(f.key);
+        if (kept == null || (kept.boot == null && f.boot != null)) {
+            // The two print as one value; the one with resamples is kept, whichever input came first,
+            // so a guard can be met on a figure another input also gives (the ceiling adapter's
+            // reading of c06c061's rows beside SiteExport's).
             figures.put(f.key, f);
         }
     }

@@ -28,8 +28,10 @@ import java.util.regex.Pattern;
  * element that says where it came from, and then the element's whole text must be exactly what
  * that source gives: data-k (a figure, printed in its format from results.json), data-name (a
  * display name from results.json's names, such as "Revere 14"), data-s (a string the build
- * computed, such as a commit or the manifest's hash) or data-tick (an axis label SiteSvg wrote,
- * holding its own value). Otherwise it must match the allowlist below, kept short and in code.
+ * computed, such as a commit or the manifest's hash), data-tick (an axis label SiteSvg wrote,
+ * holding its own value) or data-q (a run of a paragraph's words committed before its figures were
+ * known, which must be the table's run exactly: SiteBuild.paragraph). Otherwise it must match the
+ * allowlist below, kept short and in code.
  * Text inside script and style is not page text and is skipped; text inside code is allowed
  * digits, since commands hold them, but never a decimal figure.
  */
@@ -191,7 +193,7 @@ final class SiteText {
 
         boolean sourced() {
             return attrs.containsKey("data-k") || attrs.containsKey("data-name") || attrs.containsKey("data-s")
-                    || attrs.containsKey("data-tick") || attrs.containsKey("data-t");
+                    || attrs.containsKey("data-tick") || attrs.containsKey("data-t") || attrs.containsKey("data-q");
         }
     }
 
@@ -429,6 +431,18 @@ final class SiteText {
             }
             if (!want.equals(got)) {
                 problems.add("data-t=\"" + e.attrs.get("data-t") + "\" prints \"" + got + "\" but the rows table gives \"" + want + "\"");
+            }
+        } else if (e.attrs.containsKey("data-q")) {
+            String want;
+            try {
+                want = SiteBuild.quotedWords(d, e.attrs.get("data-q"));
+            } catch (RuntimeException x) {
+                problems.add("data-q=\"" + e.attrs.get("data-q") + "\": " + x.getMessage());
+                return;
+            }
+            if (!want.equals(got)) {
+                problems.add("data-q=\"" + e.attrs.get("data-q") + "\" prints \"" + got + "\" but the committed words are \""
+                        + want + "\"");
             }
         } else if (e.attrs.containsKey("data-tick")) {
             if (!e.attrs.get("data-tick").equals(got) || !got.matches("[" + MINUS + "]?\\d+(\\.\\d+)?%?")) {
