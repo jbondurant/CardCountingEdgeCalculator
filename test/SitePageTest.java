@@ -98,8 +98,9 @@ public class SitePageTest {
 
     /**
      * Every section an input gives data for is printed, not marked as not yet computed; the parts
-     * no computation writes yet (the simulator's paired rounds, the ledger's box, the evidence
-     * table) still say so. The risk sentence names the money of the row ranked first, by its key.
+     * no input here gives (the simulator's paired rounds, the ledger's box, the evidence table, the
+     * search file's scores) still say so. The literature's verdicts are in their table, and the
+     * risk sentence names the money of the row ranked first, by its key.
      */
     @Test
     public void everySectionWithItsDataIsPrinted() throws Exception {
@@ -109,8 +110,12 @@ public class SitePageTest {
             assertFalse(p.contains("Not yet computed: " + done), done);
         }
         for (String pending : List.of("how many simulated rounds would be needed", "the registration box",
-                "the evidence table")) {
+                "the evidence table", "the searched counts' scores on the search file")) {
             assertTrue(p.contains("Not yet computed: " + pending), pending);
+        }
+        for (String k : List.of("lit.agree", "lit.direction", "lit.tested", "lit.untested", "lit.unexplained",
+                "lit.not_compared", "lit.compared", "sim.rounds")) {
+            assertTrue(p.contains("data-k=\"" + k + "\""), k);
         }
         String best = SiteSvg.rowOf(SiteBuild.one("full.80.s8.@best", page.data));
         assertEquals("victor_advanced_point_count_ace", best, "the world's highest row at full play");

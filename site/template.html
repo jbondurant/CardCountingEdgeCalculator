@@ -217,7 +217,7 @@ series full.70.{x}.perfect
 <h2>Is there a better count?</h2>
 {{#if has:ceiling_paragraphs}}<p class="headline">{{para:same}}</p>
 <p>{{para:flat}}</p>{{else}}<p><span class="pending">Not yet computed: the searched count's result, picked from the ceiling count's figures by the rule committed before they were read.</span></p>{{/if}}
-<p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it.{{#if has:search.}} <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span>{{/if}} Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
+<p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it.{{#if has:search.}} <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span>{{else}} <span class="pending">Not yet computed: the searched counts' scores on the search file.</span>{{/if}} Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
 {{#if has:ledger.}}<div class="box" id="registration"></div>{{else}}<p><span class="pending">Not yet computed: the registration box, printed from the ledger once the registered counts have been scored.</span></p>{{/if}}
 <figure>
 {{tags:f1,f2,zen_count,hi_lo}}
@@ -239,7 +239,18 @@ series full.70.{x}.perfect
 
 <section id="prior">
 <h2>Prior work</h2>
-{{#if has:lit.}}<p class="headline">Of the published figures I compared with mine, the counts by verdict are in the table below.</p>{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
+{{#if has:lit.}}<p class="headline">Of the published figures I compared with mine, the counts by verdict are in the table below. The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>
+<div class="tw"><table id="verdicts">
+<thead><tr><th scope="col">Verdict</th><th scope="col">Published figures</th></tr></thead>
+<tbody>
+<tr><th scope="row">Agrees</th><td class="num">{{lit.agree|n}}</td></tr>
+<tr><th scope="row">Agrees in direction only</th><td class="num">{{lit.direction|n}}</td></tr>
+<tr><th scope="row">Differs, for a reason tested by code here</th><td class="num">{{lit.tested|n}}</td></tr>
+<tr><th scope="row">Differs, for a reason not yet tested</th><td class="num">{{lit.untested|n}}</td></tr>
+<tr><th scope="row">Differs, for no reason found</th><td class="num">{{lit.unexplained|n}}</td></tr>
+<tr><th scope="row">Not compared</th><td class="num">{{lit.not_compared|n}}</td></tr>
+<tr><th scope="row">Compared, in all</th><td class="num">{{lit.compared|n}}</td></tr>
+</tbody></table></div>{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
 <p>Published "player advantage" figures are per amount bet, so they are set beside this page's per-amount-bet figures, not its per-round ones. Six-deck simulation figures from other games are shown only marked as a different game.</p>
 </section>
 
