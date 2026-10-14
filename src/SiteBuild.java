@@ -492,6 +492,78 @@ final class SiteBuild {
         return b.append("</tbody></table></div>").toString();
     }
 
+    /**
+     * {{table:NAME …}}: an input's table (SiteData.tables, such as sim_z, sim_planted, risk_ruin,
+     * literature_claims, ledger) as an HTML table, every cell a data-t span the page check holds to
+     * that table's entry (TABLE/INDEX/FIELD; SiteText.cell). Lines: head (the headings), one col
+     * per column, {@code FIELD}, {@code FIELD|FMT} for a number in one of SiteText's formats, or
+     * {@code FIELD|YES|NO} for a true-or-false field; and optionally where FIELD=VALUE to keep the
+     * entries whose field reads so. A field the entry lacks, or null, shows a dash.
+     */
+    static String tableBlock(String name, String body, SiteData d) {
+        List<String> head = null;
+        List<List<String>> cols = new ArrayList<>();
+        String whereField = null;
+        String whereValue = null;
+        for (String[] l : lines(body)) {
+            switch (l[0]) {
+                case "head": head = bars(l[1]); break;
+                case "col": cols.add(bars(l[1])); break;
+                case "where": {
+                    int eq = l[1].indexOf('=');
+                    whereField = l[1].substring(0, eq).trim();
+                    whereValue = l[1].substring(eq + 1).trim();
+                    break;
+                }
+                default: throw new IllegalArgumentException("table:" + name + ": unknown line \"" + l[0] + "\"");
+            }
+        }
+        Object t = d.tables.get(name);
+        if (!(t instanceof List)) {
+            throw new IllegalArgumentException("table:" + name + ": the inputs hold no such table");
+        }
+        if (head == null || head.size() != cols.size()) {
+            throw new IllegalArgumentException("table:" + name + " needs a head with one heading per col");
+        }
+        List<?> entries = (List<?>) t;
+        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"data\" id=\"").append(SiteSvg.esc(name))
+                .append("\">\n<thead><tr>");
+        for (String h : head) {
+            b.append("<th scope=\"col\">").append(h).append("</th>");
+        }
+        b.append("</tr></thead>\n<tbody>\n");
+        for (int i = 0; i < entries.size(); i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> e = (Map<String, Object>) entries.get(i);
+            if (whereField != null && !whereValue.equals(String.valueOf(e.get(whereField)))) {
+                continue;
+            }
+            b.append("<tr>");
+            for (List<String> c : cols) {
+                Object v = e.get(c.get(0));
+                String fmt = c.size() == 2 ? c.get(1) : null;
+                String words = c.size() == 3 ? c.get(1) + "|" + c.get(2) : null;
+                boolean num = v instanceof Number;
+                b.append(num ? "<td class=\"num\">" : "<td>");
+                if (v == null) {
+                    b.append("–");
+                } else {
+                    b.append("<span data-t=\"").append(SiteSvg.esc(name + "/" + i + "/" + c.get(0))).append('"');
+                    if (fmt != null) {
+                        b.append(" data-f=\"").append(SiteSvg.esc(fmt)).append('"');
+                    }
+                    if (words != null) {
+                        b.append(" data-w=\"").append(SiteSvg.esc(words)).append('"');
+                    }
+                    b.append('>').append(SiteSvg.esc(SiteText.cell(v, fmt, words))).append("</span>");
+                }
+                b.append("</td>");
+            }
+            b.append("</tr>\n");
+        }
+        return b.append("</tbody></table></div>").toString();
+    }
+
     // ---- the template ----
 
     private static final Pattern IF = Pattern.compile("\\{\\{#if ([^}]*)\\}\\}(.*?)(?:\\{\\{else\\}\\}(.*?))?\\{\\{/if\\}\\}",
@@ -706,6 +778,12 @@ final class SiteBuild {
         }
         if (head.startsWith("rows:")) {
             return rowsBlock(head.substring(5).trim(), body, d);
+        }
+        if (head.startsWith("table:")) {
+            return tableBlock(head.substring(6).trim(), body, d);
+        }
+        if (head.startsWith("fan:")) {
+            return SiteSvg.fan(head.substring(4).trim(), body, d);
         }
         if (p.startsWith("guard:")) {
             Map<String, Object> rec = guardRecord(d, expandGuard(p.substring(6), d));

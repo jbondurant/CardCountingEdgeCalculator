@@ -492,6 +492,59 @@ public class SiteBuildTest {
         assertFalse(q.contains("risk.ev_per100_usd.full.80.s8." + best), "no figure is asked of the best row");
     }
 
+    /**
+     * INTEGRATION.md open item 12: the page's blocks from input tables. With risk's fan and ruin
+     * tables, the simulator's tests and planted runs, and the ledger, every block renders, every
+     * cell is a data-t span the check holds to its table, and the fan's axes are data-ticks; a cell
+     * printed otherwise than its table gives is caught.
+     */
+    @Test
+    public void theTablesAndTheFanRenderFromTheirInputsAndAreChecked() throws IOException {
+        Path in = copy("blocks");
+        StringBuilder fan = new StringBuilder();
+        for (int j = 0; j < 3; j++) {
+            fan.append(j > 0 ? "," : "").append("{\"path\":").append(j).append(",\"figure\":\"F27\",\"step\":1000,\"points\":[");
+            for (int k = 0; k < 10; k++) {
+                fan.append(k > 0 ? "," : "").append(40 * (k + 1) - 90 * j + 15 * (k % 3));
+            }
+            fan.append("]}");
+        }
+        Files.write(in.resolve("risk-fixture.json"), ("{\"_source\":{\"what\":\"risk\",\"commit\":\"fixture\",\"fixture\":true},"
+                + "\"figures\":{\"risk.unit_usd\":{\"value\":25,\"fmt\":\"usd\"}},\"tables\":{\"risk_fan\":[" + fan + "],"
+                + "\"risk_ruin\":[{\"figure\":\"F27\",\"bankroll\":900.0,\"formula\":0.25,\"simulated\":0.2493,\"se\":0.0031,"
+                + "\"sim_bankroll\":905.0,\"sim_simulated\":0.2507,\"sim_se\":0.003}]}}").getBytes(StandardCharsets.UTF_8));
+        Files.write(in.resolve("sim-fixture.json"), ("{\"_source\":{\"what\":\"sim\",\"commit\":\"fixture\",\"fixture\":true},"
+                + "\"figures\":{\"sim.rounds\":{\"value\":121000000,\"fmt\":\"n\"},\"sim.tests\":{\"value\":2,\"fmt\":\"n\"},"
+                + "\"sim.passed\":{\"value\":2,\"fmt\":\"n\"},\"sim.flagged\":{\"value\":0,\"fmt\":\"n\"},"
+                + "\"sim.failed\":{\"value\":0,\"fmt\":\"n\"},\"sim.z_max\":{\"value\":1.25,\"fmt\":\"d1\"},"
+                + "\"sim.planted\":{\"value\":1,\"fmt\":\"n\"},\"sim.planted_caught\":{\"value\":1,\"fmt\":\"n\"}},"
+                + "\"tables\":{\"sim_z\":[{\"check\":\"P3\",\"figure\":\"F03\",\"key\":\"bet.80.s1.chart\",\"z\":1.25,"
+                + "\"verdict\":\"passes\"},{\"check\":\"P2\",\"figure\":\"F03\",\"key\":\"bet.80.s1.chart\",\"z\":-0.5,"
+                + "\"verdict\":\"passes\"}],\"sim_planted\":[{\"run\":\"s17\",\"d_failed\":[\"D1\"],\"z_max\":6.5,"
+                + "\"caught\":true,\"caught_by_z\":true}]}}").getBytes(StandardCharsets.UTF_8));
+        Files.write(in.resolve("ledger-fixture.json"), ("{\"_source\":{\"what\":\"ledger\",\"commit\":\"fixture\",\"fixture\":true},"
+                + "\"figures\":{\"ledger.lines\":{\"value\":1,\"fmt\":\"n\"}},\"tables\":{\"ledger\":[{\"commit\":\"97bf834\","
+                + "\"blob\":\"0123abcd\",\"time\":\"2026-10-09T19:16:00-04:00\",\"what\":\"ComparisonReport --published\"}]}}")
+                .getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output o = build(in, template);
+        assertEquals(List.of(), o.problems);
+        String q = o.text("index.html");
+        assertTrue(q.contains("<svg class=\"panel\" id=\"fan-risk_fan\""), "the fan is drawn");
+        assertTrue(q.contains("data-tick=\"10000\""), "its rounds axis is labelled by data-ticks");
+        assertTrue(q.contains("<span data-t=\"risk_ruin/0/simulated\" data-f=\"d4\">0.2493</span>"), q);
+        assertTrue(q.contains("<span data-t=\"sim_z/1/z\" data-f=\"s2\">"), "the z table");
+        assertTrue(q.contains("<span data-t=\"sim_planted/0/d_failed\">D1</span>"), "the planted runs");
+        assertTrue(q.contains("<span data-t=\"ledger/0/what\">ComparisonReport --published</span>"), "the registration box");
+        assertFalse(q.contains("Not yet computed: the registration box"));
+        String moved = q.replace("<span data-t=\"risk_ruin/0/simulated\" data-f=\"d4\">0.2493</span>",
+                "<span data-t=\"risk_ruin/0/simulated\" data-f=\"d4\">0.2494</span>");
+        assertNotEquals(q, moved);
+        o.files.put("index.html", moved.getBytes(StandardCharsets.UTF_8));
+        List<String> problems = SiteBuild.check(o, css);
+        assertTrue(problems.stream().anyMatch(p -> p.contains("risk_ruin/0/simulated") && p.contains("0.2493")),
+                problems.toString());
+    }
+
     // ---- light and dark ----
 
     @Test

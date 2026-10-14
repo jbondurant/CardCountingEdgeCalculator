@@ -63,7 +63,8 @@ public class SitePageTest {
         world = SiteWorld.make(Files.createDirectories(dir.resolve("world")));
         String template = read("site/template.html");
         inputs = Files.createDirectories(dir.resolve("inputs"));
-        run(SiteExport::main, "--stored", world.stored.toString(), "--widening", world.pilot.toString(), "--template",
+        run(SiteExport::main, "--stored", world.stored.toString(), "--report-final", world.reportFinal().toString(),
+                "--widening", world.pilot.toString(), "--template",
                 "site/template.html", "--states", world.states.toString(), "--saved", world.saved.toString(), "--counts",
                 world.registration.toString(), "--fullplay-run", world.runFile.toString(), "--fullplay-counts",
                 world.fullRegistration.toString(), "--out", inputs.resolve("results-world.json").toString());

@@ -342,4 +342,82 @@ final class SiteSvg {
         }
         return b.append("</tbody></table></div>").toString();
     }
+
+    /**
+     * {{fan:TABLE …}}: the fan chart of PLAN_COMPUTE.md 2.5, each path of an input's table (risk_fan:
+     * entries {path, step, points}, the cumulative win in units after every step rounds) drawn as a
+     * line from 0, on axes whose every label is a data-tick. Lines: title and desc. The paths are the
+     * first ones the simulator played, none chosen for its look (SIM_CHECK.md section 11).
+     */
+    @SuppressWarnings("unchecked")
+    static String fan(String table, String body, SiteData d) {
+        String title = null;
+        String desc = null;
+        for (String l : body.split("\n")) {
+            String t = l.trim();
+            if (t.startsWith("title ")) {
+                title = t.substring(6).trim();
+            } else if (t.startsWith("desc ")) {
+                desc = t.substring(5).trim();
+            } else if (!t.isEmpty()) {
+                throw new IllegalArgumentException("fan:" + table + ": unknown line \"" + t + "\"");
+            }
+        }
+        Object raw = d.tables.get(table);
+        if (title == null || desc == null || !(raw instanceof List) || ((List<?>) raw).isEmpty()) {
+            throw new IllegalArgumentException("fan:" + table + " needs title, desc and a table of paths");
+        }
+        List<java.util.Map<String, Object>> paths = (List<java.util.Map<String, Object>>) raw;
+        double min = 0;
+        double max = 0;
+        double rounds = 0;
+        for (java.util.Map<String, Object> p : paths) {
+            List<?> pts = (List<?>) p.get("points");
+            double step = ((Number) p.get("step")).doubleValue();
+            rounds = Math.max(rounds, step * pts.size());
+            for (Object v : pts) {
+                double x = ((Number) v).doubleValue();
+                min = Math.min(min, x);
+                max = Math.max(max, x);
+            }
+        }
+        Axis ay = axis(min, max, 4);
+        Axis ax = axis(0, rounds, 4);
+        double pw = W - LEFT - RIGHT;
+        double ph = H - TOP - BOTTOM;
+        String id = "fan-" + table;
+        StringBuilder b = new StringBuilder();
+        b.append("<svg class=\"panel\" id=\"").append(esc(id)).append("\" viewBox=\"0 0 ").append(W).append(' ').append(H)
+                .append("\" role=\"img\" aria-labelledby=\"").append(esc(id)).append("-t ").append(esc(id))
+                .append("-d\" xmlns=\"http://www.w3.org/2000/svg\">");
+        b.append("<title id=\"").append(esc(id)).append("-t\">").append(esc(title)).append("</title><desc id=\"")
+                .append(esc(id)).append("-d\">").append(esc(desc)).append("</desc>");
+        for (double t : ay.ticks) {
+            double y = TOP + ph * (1 - ay.pos(t) / 100);
+            b.append("<line class=\"").append(t == 0 && ay.lo < 0 ? "zl" : "gl").append("\" x1=\"").append(LEFT)
+                    .append("\" x2=\"").append(W - RIGHT).append("\" y1=\"").append(n1(y)).append("\" y2=\"").append(n1(y))
+                    .append("\"/>");
+            String l = ay.label(t);
+            b.append("<text class=\"tl\" x=\"").append(LEFT - 4).append("\" y=\"").append(n1(y + 4))
+                    .append("\" text-anchor=\"end\" data-tick=\"").append(l).append("\">").append(l).append("</text>");
+        }
+        for (double t : ax.ticks) {
+            double x = LEFT + pw * ax.pos(t) / 100;
+            String l = ax.label(t);
+            b.append("<text class=\"tl\" x=\"").append(n1(x)).append("\" y=\"").append(H - 8)
+                    .append("\" text-anchor=\"middle\" data-tick=\"").append(l).append("\">").append(l).append("</text>");
+        }
+        for (java.util.Map<String, Object> p : paths) {
+            List<?> pts = (List<?>) p.get("points");
+            double step = ((Number) p.get("step")).doubleValue();
+            StringBuilder q = new StringBuilder(n1(LEFT) + "," + n1(TOP + ph * (1 - ay.pos(0) / 100)));
+            for (int i = 0; i < pts.size(); i++) {
+                double x = LEFT + pw * ax.pos(step * (i + 1)) / 100;
+                double y = TOP + ph * (1 - ay.pos(((Number) pts.get(i)).doubleValue()) / 100);
+                q.append(' ').append(n1(x)).append(',').append(n1(y));
+            }
+            b.append("<polyline class=\"ln fg fan\" points=\"").append(q).append("\" vector-effect=\"non-scaling-stroke\"/>");
+        }
+        return b.append("</svg>").toString();
+    }
 }

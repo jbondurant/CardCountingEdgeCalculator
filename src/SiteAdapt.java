@@ -19,6 +19,7 @@ import java.util.Map;
  *   counts' tags, the registration step 7 scored (SiteCeiling);
  * - literature: LiteratureCheck's literature-SHA.json, already in the contract, checked and copied;
  * - sim: the simulator's runs, planted runs and mode B, held to SIM_CHECK.md (SiteSim).
+ * - ledger: the count-design ledger for the registration box (SiteLedger).
  * An adapter carries figures across and computes nothing the page shows but a change of unit
  * (fractions to percent) and a pick its computation's rule fixes; each lists the file it read,
  * with its SHA-256, in _source.artifacts. The computations write their files outside the page's
@@ -135,6 +136,14 @@ final class SiteAdapt {
             case "ceiling": made = SiteCeiling.adapt(in, files.get(0), Paths.get(files.get(1)),
                     files.size() > 2 ? Paths.get(files.get(2)) : null); break;
             case "sim": made = SiteSim.adapt(SiteSim.parse(files)); break;
+            case "ledger": {
+                int at = files.indexOf("--count-design");
+                if (at < 0 || at + 1 >= files.size()) {
+                    throw new IllegalArgumentException("usage: SiteAdapt ledger LEDGER.tsv --count-design DIR --out OUT.json");
+                }
+                made = SiteLedger.adapt(in, Paths.get(files.get(at + 1)));
+                break;
+            }
             case "literature": {
                 byte[] b = literature(in);
                 if (Files.exists(out)) {

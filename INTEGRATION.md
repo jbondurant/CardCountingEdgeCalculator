@@ -221,33 +221,49 @@ In the order they block the 7.2 runs. Each names where the work is.
    8's fit.ckpt replayed on the main file (run D). FullIndexReplay refuses counts of our own on
    the main file on purpose and points to lookOnMain. Without it there is no bundle for F49 to
    F52, no run C or D for the key edges, and no wide figures for the registered rows.
+   *Done on site-fix-engine:* `PageLook` (row 7 below), PageLookTest. On its 12-shoe fixture F1's
+   full play meets open item 1, so the full-play export is refused there; PageLook keeps the other
+   outputs and exits 1 saying so.
 5. **The wide plans are not exported.** (src/StrategyExport.java: `metrics()` refuses a label
    that is not a report plan.) F43 to F48 need P16, B0,8 and X-1.0,8 in the full-play files:
    bets per key with the PLAY share and the exit key (SystemScorer.Wide, `keyFrom`), states.bin
    bets that respect the exit (AllStates.minKey), and exact.tsv lines checked against wide.ser.
    Until then part 2 cannot test those six figures, and their swings have no simulator side.
+   *Done on site-fix-engine:* row 6's export carries P16, B0,8 and X-1.0,8 for F43 to F48's rows
+   when `--wide` is on (WidePlansExportTest); `--export-plans` and StrategyExport's `--plans` take
+   wide labels.
 6. **One bundle per reader.** `SiteAdapt sim` takes one P3 and one P2 summary of one bundle, and
    `RiskReport` one `--swings` file. Part 1 and part 2 are separate bundles (and part 2's rows
    come from two runs, rows 6 and 7), but the pass rule applies to their union (6.2). Either the
    exporter writes one part-2 bundle from both runs, and the readers take several summaries and
    swings files (src/SiteSim.java, src/SiteAdapt.java, src/RiskReport.java), or the parts' files
    are merged by a tool with a test. Nothing does this yet.
+   *Done on site-fix-engine:* `SiteAdapt sim` takes `--run DIR` once a run and `RiskReport`
+   `--swings` once a file, each figure from one (SiteSimTest, RiskSwingsAndRuinTest).
 7. **The engine-side reader does less than SIM_CHECK.md section 12 asks.** SiteSim lists
    registered figures not compared and shows ones not registered, but refuses neither. It does
    not read checks.txt, so a missing D check passes. It does not hold the bundle, commit and
    sizes to section 8's filled block. It does not refuse a chart fingerprint other than
    1af534aac9abcb39, or planted runs of other sizes than one chunk and K = 6,000 (SHOE_SPEC.md
    answers 4 and 12). (src/SiteSim.java.)
+   *Done on site-fix-engine:* all of section 12 (SiteSimTest). It needs item 8's identity table and
+   section 8's blocks filled: until then it refuses every main run, naming what is missing.
 8. **SIM_CHECK.md's identity table is unfilled.** Before the first pilot it needs SHOE_SPEC.md's
    final commit (c8d9b5a, merged here as 2c99a56) and the simulator's commit (4bf4830 on
    site-int-sim, merged here as b5bc25a).
 9. **D3 is not written:** test/SimVsExactSmallShoeTest.java (SIM_CHECK.md section 5).
+    *Done on site-fix-engine:* 16,125 comparisons on six 9-card shoes agree within 1e-12; its
+    commit goes in SIM_CHECK.md's identity table.
 10. **Simulator outputs no engine code reads yet:** summary-variants.json (mode B and the
     moving count, F26 to F29); the summaries' paired differences (σ_eff), from which SiteSim
     could give `sim.rounds_needed`, still "Not yet computed" on the page; ruin-FIG.tsv, beside
     RiskReport's own ruin paths from the same records and seed; depth.tsv and ev-by-key.tsv; the
     planted-bug runs' summaries (SIM_CHECK.md section 10's page block). (src/SiteSim.java,
     src/RiskReport.java, src/KeyEdgesReport.java.)
+    *Done on site-fix-engine, engine side:* SiteSim reads summary-variants.json (`--variants`), the
+    paired differences (sim.rounds_needed, with `--published`), depth.tsv, ev-by-key.tsv and the
+    planted runs (`--planted NAME=DIR`); RiskReport reads ruin-FIG.tsv (`--ruin FIG=PATH`).
+    Formats: Part C and sim/QUESTIONS.md item 27 (site-fix-sim).
 11. **Trip risk and the chance of being behind, simulator side** (SIM_CHECK.md section 11):
     not computed by the simulator, which lacks PLAN_COMPUTE.md 2.3's H and r (sim/QUESTIONS.md
     18). RiskReport works its own from the records.
@@ -258,15 +274,25 @@ In the order they block the 7.2 runs. Each names where the work is.
     data (tables sim_z, risk_rows, wide_plans, literature_claims, key_edges_failed). Also
     PLAN_PAGE.md 2.4's check of c06c061's first-decision column against report-final at
     report-final's printed precision has no code.
+    *Done on site-fix-engine:* `{{table:NAME}}` and `{{fan:TABLE}}` blocks, every cell held to its
+    input table by the page check: the risk fan and ruin table, the simulator's z table and
+    sentence, its planted runs and mode B, the literature claims table, the registration box from
+    `SiteAdapt ledger`; SiteExport requires `--report-final` and holds the stored rows to it
+    (CeilingReport.checkPrinted). Not done: the BC/IC scatter and its verdict sentence, the 5c
+    spread and wonging toggles, the evidence table.
 13. **Two widening rules agree only through the pilot.** CeilingResults widens a registered
     count's full play by the constant 1.07; SiteExport by the largest difference ratio of the
     pilot file it is given. Both write full.P.S.f1, and the build stops if they differ. Give
     SiteExport pilot-1417-100.txt (largest ratio 1.07), not row 3's wide pilot, unless
     CeilingResults changes too.
+    *Done on site-fix-engine:* CeilingResults takes `--widening`, read by SiteExport's rule; give
+    both pilot-1417-100.txt.
 14. **The answer's money sentence** names the first-ranked full-play row at 80%, 1-8 by its own
     risk figures. If that row is not one of RiskReport's five (Hi-Lo, KO, Zen, Hi-Opt II + ace,
     Victor APC + ace), the build stops with "no figure", by choice; RiskReport.ROWS or the
     sentence then changes.
+    *Done on site-fix-engine:* the build does not stop; the answer says the swings were simulated
+    for some counts only and gives the money of the highest-ranked row that has them, by name.
 15. **Not yet run here:** the simulator's D6 determinism on six threads (P3Test and P3ExtrasTest
     ran with `-Dsim.test.threads=1`; once without it when the machine is free); RealCountTest
     and FullIndexFitTest (no scoring code changed in these merges: SystemScorer, FullIndexFit,
@@ -329,7 +355,7 @@ java -Xmx4g -cp "$C:$M" CeilingResults full --stored $C06/results.ser \
   --saved $R/runs/report-ceiling-$REG.ser --report $R/runs/report-ceiling-$REG.md \
   --peek $R/runs/full-index/peek-c06c061-final.txt --counts $CD/custom-counts.json \
   --fullplay-run $S8/results.ser --fullplay-counts $CD/custom-counts-fullplay.json \
-  --out $R/runs/ceiling/report-ceiling-full-$SHA.md
+  --widening $R/runs/full-index/pilot-1417-100.txt --out $R/runs/ceiling/report-ceiling-full-$SHA.md
 java -Xmx4g -cp "$C:$M" BoundRows $R/runs/twin-80.states \
   --perfect $R/runs/custom-count/fullplay/choice-20000-38f4e60/results.ser --shoes 20000
 java -Xmx4g -cp "$C:$M" CeilingResults optimism --twin $R/runs/twin-80.states \
@@ -428,12 +454,26 @@ cd $C && nohup caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$M" FullIndexRun --f
 
 It writes $P/wide.ser, $P/replay.txt, $P/perfect.ser, $P-sink/run-b.ser and the bundle.
 
-**Row 7. The page look (6.3), 1.5 to 2 h: no tool yet** (open item 4). It needs
+**Row 7. The page look (6.3), 1.5 to 2 h** (open item 4, done on site-fix-engine: PageLook). It needs
 custom-count-design merged through step 8's ledger commit first, the count-design worktree's
 custom-counts.json and custom-counts-fullplay.json by absolute path, and one ledger line
 ("page figures: wide plans, per-key tables, simulator export") committed in $CD. Its outputs
 are run C's and run D's collectors (for `KeyEdgesRun report --rows/--full`), the registered
-rows' wide figures, and the export of F1 and F2 (F49 to F52).
+rows' wide figures, and the export of F1 and F2 (F49 to F52). PageLook writes the ledger line
+itself, before it reads the states; commit it in $CD at once. Interrupted, the same command with
+`--resume` (its line committed) finishes without a second line.
+
+```sh
+L=$R/runs/page-look-$SHA && cd $C
+caffeinate -i nice -n 5 java -Xmx12g -cp "$C:$M" PageLook --states $R/runs/montreal-80.states --count-design $CD \
+  --saved $R/runs/report-ceiling-$REG.ser --fullplay-run $S8 --trees-read-only $C06/trees.bin --out $L --threads 7 \
+  > $L.log 2>&1
+git -C $CD add custom-count-ledger.tsv && git -C $CD commit -m "page look: its one ledger line"
+```
+
+It writes $L/run-c.ser, $L/wide-first.ser, $L/export-first (F49, F51), $L/replay/wide.ser,
+$L/run-d/run-b.ser and $L/export-full (F50, F52). It needs step 8's run named by the same counts
+path step 8 was given (the replay holds step 8's identity line for line).
 
 **Row 8. Simulator part 2: pilot, run (2.5 to 4 h, budget 4.5 h).** On the replay's bundle (and
 the page look's, once open items 4 and 6 are settled), with the same missing pilot (open item 3).
@@ -455,6 +495,12 @@ for PL in none s17 no-das split-aces-hit hole-card truncate insure-whole-bet oth
     --catalog $W/counting-systems.json --threads 6 --k 6000 $A
 done
 ```
+
+The page look's two bundles (row 7), $L/export-first (F49, F51) and $L/export-full (F50, F52), are
+played the same way, p2 then p3, into O2L1=$R/runs/sim/part2-look-first-$SHA and
+O2L2=$R/runs/sim/part2-look-full-$SHA; SIM_CHECK.md's identity table names all three part 2
+bundles. Each run directory's checks.txt, summaries, swings, records and ruin files stay together:
+SiteAdapt sim reads them by directory.
 
 **Row 9. SplitMargin on the twin, 1.25 to 2.25 h, any daytime gap.** The stride given is
 SplitMargin's default; check that its first line names the 890 states calibration-b99ccbf
@@ -485,11 +531,11 @@ java -Xmx4g -cp "$C:$M" CeilingResults data --stored $C06/results.ser \
   --fullplay-run $S8/results.ser --fullplay-counts $CD/custom-counts-fullplay.json \
   --split-margin $R/runs/ceiling/split-margin-$SHA.tsv --optimism $R/runs/ceiling/optimism-$SHA.properties \
   --paragraphs $CD/CEILING_RESULT_PARAGRAPHS.md --full-report $R/runs/ceiling/report-ceiling-full-$SHA.md \
-  --out $R/runs/ceiling/ceiling-$SHA.json
+  --widening $PILOT --out $R/runs/ceiling/ceiling-$SHA.json
 java -cp "$C:$M" SiteAdapt ceiling $R/runs/ceiling/ceiling-$SHA.json $CD/CEILING_RESULT_PARAGRAPHS.md \
   $CD/custom-counts.json --out $R/runs/site/ceiling-$SHA.json
 # The published rows, the bound rows and the registered counts at every spread.
-java -Xmx8g -cp "$C:$M" SiteExport --stored $C06/results.ser --widening $PILOT \
+java -Xmx8g -cp "$C:$M" SiteExport --stored $C06/results.ser --report-final $R/runs/report-final-26f0724.md --widening $PILOT \
   --template $W/site/template.html --states $R/runs/montreal-80.states \
   --saved $R/runs/report-ceiling-$REG.ser --counts $CD/custom-counts.json \
   --fullplay-run $S8/results.ser --fullplay-counts $CD/custom-counts-fullplay.json \
@@ -506,11 +552,18 @@ java -cp "$C:$M" SiteAdapt edges $R/runs/key-edges/key-edges-*.json --out $R/run
 # Swings and risk.
 java -Xmx3g -cp "$C:$M" RiskReport --commit $SHA --source c06c061=$C06/results.ser \
   --source step7=$R/runs/report-ceiling-$REG.ser --source step8=$S8/results.ser --source replay=$P/wide.ser \
-  --widening $WPILOT --swings $O2/swings.tsv --records F27=$O2/records-F27.tsv --records F29=$O2/records-F29.tsv \
-  --fan F27=$O2/fan-F27.tsv --md $R/runs/risk/report-risk-$SHA.md --json $R/runs/risk/risk-$SHA.json
+  --widening $WPILOT --swings $O1/swings.tsv --swings $O2/swings.tsv --swings $O2L2/swings.tsv \
+  --records F27=$O2/records-F27.tsv --records F29=$O2/records-F29.tsv --ruin F27=$O2/ruin-F27.tsv \
+  --ruin F29=$O2/ruin-F29.tsv --fan F27=$O2/fan-F27.tsv --md $R/runs/risk/report-risk-$SHA.md \
+  --json $R/runs/risk/risk-$SHA.json
 java -cp "$C:$M" SiteAdapt risk $R/runs/risk/risk-$SHA.json --out $R/runs/site/risk-$SHA.json
-# The simulator (one part's summaries; open item 6).
-java -cp "$C:$M" SiteAdapt sim $O2/summary-p3.json $O2/summary-p2.json --out $R/runs/site/sim-$SHA.json
+# The simulator: every run, part 1's and part 2's (the replay's bundle, $O2, and the page look's two, $O2L1 and $O2L2),
+# held to SIM_CHECK.md section 12; mode B, the planted runs beside their control, {N} from c06c061's SEs.
+java -Xmx4g -cp "$C:$M" SiteAdapt sim --plan $W/SIM_CHECK.md --published $C06/results.ser --run $O1 --run $O2 \
+  --run $O2L1 --run $O2L2 --variants $O2/summary-variants.json --planted none=$O2-plant-none --planted s17=$O2-plant-s17 \
+  --out $R/runs/site/sim-$SHA.json      # and --planted NAME=$O2-plant-NAME for each of section 10's
+# The registration box, from the ledger's one home.
+java -cp "$C:$M" SiteAdapt ledger $CD/custom-count-ledger.tsv --count-design $CD --out $R/runs/site/ledger-$SHA.json
 # The literature (it reads step 7's save and report; run from $C for the catalog and commit.txt).
 java -cp "$C:$M" LiteratureCheck --claims $W/literature/claims.json --cache $R/runs/literature/cache \
   --report-final $R/runs/report-final-26f0724.md --custom-counts $CD/custom-counts.json \

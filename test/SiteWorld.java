@@ -318,6 +318,22 @@ final class SiteWorld {
         return out;
     }
 
+    /**
+     * report-final for the world: the stored rows' headline section printed by ComparisonReport, as
+     * report-final-26f0724.md was printed from c06c061's, so CeilingReport.checkPrinted holds the one
+     * to the other (PLAN_PAGE.md 2.4).
+     */
+    Path reportFinal() throws Exception {
+        CeilingReport.Published p = CeilingReport.read(stored);
+        ComparisonReport.Scored sc = new ComparisonReport.Scored();
+        sc.results = p.results;
+        sc.nullCount = p.nullCount();
+        sc.hiLo = p.of("Hi-Lo");
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ComparisonReport.headline(sc, ComparisonReport.rows(sc), new PrintStream(bytes, true, "UTF-8"));
+        return Files.write(dir.resolve("report-final.md"), bytes.toByteArray());
+    }
+
     /** RiskReport's data file from c06c061's rows, with swings for its figures as RiskFixture makes the simulator's. */
     Path risk() throws Exception {
         java.util.Map<String, Path> sources = new java.util.LinkedHashMap<>();
