@@ -29,9 +29,13 @@ import java.util.Map;
  *   the null count, Hi-Lo, the best plain published row, the best published row of any kind, the
  *   registered rows of the cell, F1 bet on its own value, the perfect first move's bound, and at
  *   full play the full-play bound B; each rung with its interval and its paired gap from the rung
- *   below. Full-play intervals are widened by the larger of the two rows' difference ratios
- *   (FULL_INDEX_PLAYS.md section 4: 1.07 for a count the pilot did not measure, which every
- *   custom row is); bound rows are fitted on nothing and are not widened;
+ *   below. Full-play intervals are widened by the larger of the two rows' difference ratios,
+ *   read from the pilot given (--widening, pilot-1417-100.txt) by the rule SiteExport reads it
+ *   with (SiteExport.Widening, FULL_INDEX_PLAYS.md section 4): a count the pilot measured takes
+ *   its own, any other the largest ratio the pilot measured, 1.07 in pilot-1417-100.txt, which
+ *   every custom row takes. So the two write the same full.P.S.f1 from the same pilot, and the
+ *   page's build, which stops when they differ, needs no constant here to agree with a file
+ *   there. Bound rows are fitted on nothing and are not widened;
  * - the share of the room each row closes, (row - null) / (bound - null) on every resample, with
  *   the first move's bound at first decisions and the full-play bound at full play, B and B + M;
  * - where F1's gap to the bound goes: betting (F1 bet on its own value less F1) and play (the
@@ -51,8 +55,6 @@ import java.util.Map;
  */
 final class CeilingResults {
 
-    /** A full-play difference's widening for a count the pilot did not measure (FULL_INDEX_PLAYS.md section 4). */
-    static final double DIFFERENCE = 1.07;
     /** The project's standard for a full-play result worked out again in another run: relative difference 1e-12. */
     static final double SAME_RUN = 1e-12;
 
@@ -140,8 +142,22 @@ final class CeilingResults {
         CeilingReport.Published run;
         CustomCounts.Listing counts;
         List<SystemScorer.Entry> bounds;
-        /** The difference ratios the pilot measured, by count name; every other count takes DIFFERENCE. */
-        final Map<String, Double> measured = new LinkedHashMap<>();
+        /**
+         * The pilot's ratios (--widening), read as SiteExport reads them: a count it measured takes
+         * its own, every other count the largest it measured. Null until given; no full-play
+         * interval is worked out without it.
+         */
+        SiteExport.Widening widening;
+
+        /** The ratio for a count the pilot did not measure, every custom row's: the largest it measured. */
+        double unmeasured() {
+            if (widening == null) {
+                throw new IllegalStateException("a full-play interval is widened by the pilot's ratios, and none was given: "
+                        + "give --widening runs/full-index/pilot-1417-100.txt, the file SiteExport is given "
+                        + "(FULL_INDEX_PLAYS.md section 4)");
+            }
+            return widening.difference;
+        }
     }
 
     /**
@@ -242,12 +258,17 @@ final class CeilingResults {
         return out;
     }
 
-    /** A row's full-play difference ratio: the pilot's for a count it measured, DIFFERENCE otherwise, 1 for a bound or a first-decision row. */
+    /**
+     * A row's full-play difference ratio: SiteExport.Widening's level at the 1-8 schedule, the
+     * spread the ladder and the claims are made at (the pilot's own for a count it measured, the
+     * largest it measured otherwise); 1 for a bound or a first-decision row.
+     */
     static double ratio(Full f, SystemScorer.Entry e) {
         if (e.count == null || !e.fullPlay) {
             return 1;
         }
-        return f.measured.getOrDefault(e.count.name, DIFFERENCE);
+        f.unmeasured();
+        return f.widening.level(e.count, SystemScorer.SPREADS);
     }
 
     /** A pair's widening: the larger of the two ratios (COUNT_DESIGN.md section 5). */
@@ -706,7 +727,8 @@ final class CeilingResults {
     static Inputs read(Map<String, Path> args, String commit) throws Exception {
         Inputs in = new Inputs();
         in.commit = commit;
-        for (String k : new String[]{"stored", "saved", "report", "counts", "fullplay-run", "fullplay-counts", "peek"}) {
+        for (String k : new String[]{"stored", "saved", "report", "counts", "fullplay-run", "fullplay-counts", "peek",
+                "widening"}) {
             if (args.get(k) == null) {
                 throw new IllegalArgumentException("give --" + k);
             }
@@ -723,6 +745,7 @@ final class CeilingResults {
         checkPeek(stored, args.get("peek"));
         CeilingReport.Published run = CeilingReport.read(args.get("fullplay-run"));
         in.full = fullPlay(stored, run, CustomCounts.read(args.get("fullplay-counts")), saved.bounds);
+        in.full.widening = SiteExport.Widening.read(args.get("widening"));
         samePerfect(stored.perfect, run.perfect);
         String hiLo = sameFullPlay(stored.of("Hi-Lo"), run.of("Hi-Lo"));
         if (hiLo != null) {
@@ -839,7 +862,8 @@ final class CeilingResults {
         out.printf("Full-play intervals are widened by each count's difference ratio, %s for a count the pilot did not "
                 + "measure, every custom row among them; a pair by the larger of its two; the bounds are fitted on "
                 + "nothing and not widened (FULL_INDEX_PLAYS.md section 4). The full-play F1 in the flat cells is F1 at "
-                + "1-8 itself, a looser lower bound there than F1 flat is at first decisions.%n%n", DIFFERENCE);
+                + "1-8 itself, a looser lower bound there than F1 flat is at first decisions. The ratios are those of the "
+                + "pilot %s.%n%n", f.unmeasured(), java.nio.file.Paths.get(f.widening.from).getFileName());
         double[][] mTight = margin(in.split, true);
         double[][] mCrude = margin(in.split, false);
         out.println(in.split == null ? "No split margin was given: M is not added to the full-play bound here."
@@ -893,7 +917,7 @@ final class CeilingResults {
         SystemScorer.Entry ownFull = fullOwnValue(f1Full);
         Bootstrap.Interval[][] splits = {own == null ? null : gapSplit(CeilingReport.row(c.custom.get(f1)), own,
                 c.bounds.get(0), p, s8, 1), ownFull == null ? null : gapSplit(fullRow(f1Full), ownFull, f.bounds.get(2),
-                p, s8, DIFFERENCE)};
+                p, s8, f.unmeasured())};
         for (int k = 0; k < 2; k++) {
             if (splits[k] != null) {
                 out.printf("| %s | %s %s | %s %s | %s %s |%n", k == 0 ? "First decisions" : "Full play",
@@ -1156,7 +1180,7 @@ final class CeilingResults {
         SystemScorer.Result r = f.run.results.get(f.counts.indexOf(f.counts.cells.get("same").get(0)));
         SystemScorer.Entry ownFull = fullOwnValue(r);
         if (ownFull != null) {
-            Bootstrap.Interval[] g = gapSplit(fullRow(r), ownFull, f.bounds.get(2), p, s8, DIFFERENCE);
+            Bootstrap.Interval[] g = gapSplit(fullRow(r), ownFull, f.bounds.get(2), p, s8, f.unmeasured());
             j.open(view(true, p, s8), '{').interval("betting", g[0]).interval("play", g[1]).interval("whole", g[2])
                     .close('}');
         }
@@ -1257,7 +1281,7 @@ final class CeilingResults {
      *   --stored runs/full-index/full-c06c061/results.ser --saved runs/report-ceiling-97bf834.ser
      *   --report runs/report-ceiling-97bf834.md --peek runs/full-index/peek-c06c061-final.txt
      *   --counts REGISTRATION --fullplay-run STEP8/results.ser --fullplay-counts FULL-PLAY REGISTRATION
-     *   [--split-margin FILE] [--optimism FILE.properties] --out FILE
+     *   --widening runs/full-index/pilot-1417-100.txt [--split-margin FILE] [--optimism FILE.properties] --out FILE
      *   data also: --paragraphs CEILING_RESULT_PARAGRAPHS.md [--full-report runs/report-ceiling-full-SHA.md]
      * The classes must carry commit.txt (FullIndexRun.commit), which every output names.
      */

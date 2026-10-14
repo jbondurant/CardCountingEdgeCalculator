@@ -118,7 +118,23 @@ final class AllStates {
 
     /** minKey for the scorer's plans that leave the table (SystemScorer.roundStarts), on the states st holds. */
     SystemScorer.RoundStarts roundStarts(ScoringStates st) {
-        return c -> minKey(c, st);
+        return new Starts(this, st);
+    }
+
+    /** The round starts as the scorer reads them, keeping the shoes dealt again for a reader that needs them whole (the export). */
+    static final class Starts implements SystemScorer.RoundStarts {
+        final AllStates all;
+        private final ScoringStates st;
+
+        Starts(AllStates all, ScoringStates st) {
+            this.all = all;
+            this.st = st;
+        }
+
+        @Override
+        public int[] minKey(CountKeys.Count c) {
+            return all.minKey(c, st);
+        }
     }
 
     private static boolean same(ScoringStates st, int r, ShoeRun.State s) {

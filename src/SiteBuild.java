@@ -523,10 +523,19 @@ final class SiteBuild {
                 Map<String, Object> rec = SiteGuards.evaluate(text, d);
                 d.guards.add(rec);
                 holds = Boolean.TRUE.equals(rec.get("holds"));
-            } else if (c.startsWith("has:")) {
+            } else if (c.startsWith("has:") || c.startsWith("lacks:")) {
+                // Clauses joined by " and ", each has:P1,P2 or lacks:P1,P2; a prefix may name a row by
+                // rank or by another key's row (expand), and one that names no row is not had.
                 holds = true;
-                for (String p : c.substring(4).split(",")) {
-                    holds &= d.hasPrefix(p.trim());
+                for (String clause : c.split(" and ")) {
+                    String t = clause.trim();
+                    boolean has = t.startsWith("has:");
+                    if (!has && !t.startsWith("lacks:")) {
+                        throw new IllegalArgumentException("unknown condition {{#if " + c + "}}");
+                    }
+                    for (String p : t.substring(has ? 4 : 6).split(",")) {
+                        holds &= hasPattern(d, p.trim()) == has;
+                    }
                 }
             } else {
                 throw new IllegalArgumentException("unknown condition {{#if " + c + "}}");
@@ -540,6 +549,30 @@ final class SiteBuild {
             throw new IllegalArgumentException("an {{#if}} block is not closed");
         }
         return out;
+    }
+
+    /**
+     * Whether the data has a figure or table under a prefix that may name its row by rank or by
+     * another key's row (full.80.s8.@best, risk.ev_per100_usd.full.80.s8.=full.80.s8.@best): each
+     * key it expands to is had; a pattern that names no row (no row has the figure ranked) is not.
+     */
+    static boolean hasPattern(SiteData d, String p) {
+        if (!p.contains("@") && !p.contains(".=")) {
+            return d.hasPrefix(p);
+        }
+        List<String> keys;
+        try {
+            keys = expand(p, d);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        for (String k : keys) {
+            // The key itself, not a prefix of it: hi_opt_ii is not had because hi_opt_ii_ace is.
+            if (!d.has(k)) {
+                return false;
+            }
+        }
+        return !keys.isEmpty();
     }
 
     /**

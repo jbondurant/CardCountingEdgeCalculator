@@ -94,9 +94,56 @@ final class StrategyExport {
         return Integer.parseInt(label.substring(label.indexOf('-') + 1));
     }
 
-    /** B2.5's RULE of a report plan: own for the own ramp, rounded or not; same for the same schedule. */
+    /**
+     * B2.5's RULE of a plan: for a report plan, own for the own ramp, rounded or not, and same for
+     * the same schedule; for a wide plan (PLAN_COMPUTE.md 3.1), same when its bets are handed out
+     * as the same schedule, own for a plan that leaves the table, which has only the own rule.
+     */
     static String rule(String label) {
+        SystemScorer.Plan w = widePlan(label);
+        if (w != null) {
+            return w.sameSchedule() ? "same" : "own";
+        }
         return label.startsWith("same-") ? "same" : "own";
+    }
+
+    /** The wide plan of this label (SystemScorer.WIDE_PLANS, B2.5's labels such as P16, B0,8, X-1.0,8), or null. */
+    static SystemScorer.Plan widePlan(String label) {
+        for (SystemScorer.Plan p : SystemScorer.WIDE_PLANS) {
+            if (p.label.equals(label)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /** A label the exporter writes: one of the report's plans or one of the wide plans; any other is refused. */
+    static void checkLabel(String label) {
+        if (widePlan(label) == null) {
+            metrics(label);
+        }
+    }
+
+    /**
+     * A list of plan labels as a command line gives it, comma separated. A wide plan's label holds
+     * a comma itself (B0,8, X-1.0,8), so a part that is only digits after a part that starts a B
+     * or X label is put back on it: "same-8,B0,8,X-1.0,8" is same-8, B0,8 and X-1.0,8.
+     */
+    static String[] planList(String text) {
+        List<String> out = new ArrayList<>();
+        for (String part : text.split(",")) {
+            String t = part.trim();
+            int last = out.size() - 1;
+            if (last >= 0 && t.matches("\\d+") && out.get(last).matches("[BX][-+]?[0-9.]+")) {
+                out.set(last, out.get(last) + "," + t);
+            } else {
+                out.add(t);
+            }
+        }
+        for (String l : out) {
+            checkLabel(l);
+        }
+        return out.toArray(new String[0]);
     }
 
     /** {EV metric, average-bet metric} of a report plan in SystemScorer.METRICS. */
@@ -268,6 +315,8 @@ final class StrategyExport {
         /** Each fold file's answers as the engine's fit gives them, for lookups.tsv (B8). */
         final Lookup[] lookup = new Lookup[2];
         ExportBundle.Section section;
+        /** [fold][plan]: the exit key of a wide plan that leaves the table (B2.5's EXIT), null for the others. */
+        Integer[][] exit;
     }
 
     /**
@@ -305,6 +354,12 @@ final class StrategyExport {
         SystemScorer.BetKeys bk = scorer.betKeys(bet, pen);
         Built out = new Built();
         double[][] units = new double[2][];
+        // The wide plans among the labels (PLAN_COMPUTE.md 3.1), their bets per key worked out by
+        // SystemScorer.Wide from the same fitted advantage and blocks as the report's plans; a plan
+        // that leaves the table needs each state's lowest bet key of its shoe so far.
+        SystemScorer.Plan[] wide = widePlans(labels);
+        int[] lowest = lowestKeys(scorer, bet, pen, wide);
+        out.exit = new Integer[2][labels.length];
         for (int f = 0; f < 2; f++) {
             SystemScorer.FoldPlay fp = rf.plays[f];
             double[] value = e.bettingOnly ? pen.chart : fp.base;
@@ -313,8 +368,13 @@ final class StrategyExport {
                 rv[j] = value[j] + rf.insurance[f][j];
             }
             double[][] detail = new double[bk.value.length][SystemScorer.DETAIL];
+            SystemScorer.Wide acc = null;
+            if (wide.length > 0) {
+                acc = new SystemScorer.Wide(wide, SystemScorer.referenceBets(wide, pen.chart), lowest);
+                acc.detail = new double[bk.value.length][wide.length * SystemScorer.KEY_COLS];
+            }
             SystemScorer.bets(bk, pen.train[f], pen.test[f], pen.testByChart[f], pen.weight, rv, pen.chart,
-                    new double[SystemScorer.METRICS + 1], detail);
+                    new double[SystemScorer.METRICS + 1], detail, acc);
 
             ExportBundle.Strategy s = new ExportBundle.Strategy();
             s.row = e.name;
@@ -370,20 +430,98 @@ final class StrategyExport {
             for (int l = 0; l < labels.length; l++) {
                 double[] u = new double[present];
                 double[] chance = new double[present];
+                SystemScorer.Plan w = widePlan(labels[l]);
+                int i = w == null ? -1 : Arrays.asList(wide).indexOf(w);
                 for (int x = 0; x < present; x++) {
-                    u[x] = units(detail[at[x]], labels[l]);
-                    chance[x] = 1;
-                    units[f][at[x] * labels.length + l] = u[x];
+                    if (w == null) {
+                        u[x] = units(detail[at[x]], labels[l]);
+                        chance[x] = 1;
+                    } else {
+                        double[] u2 = wideUnits(w, acc.detail[at[x]], i);
+                        u[x] = u2[0];
+                        chance[x] = u2[1];
+                    }
+                    // B3: states.bin holds the expected bet, UNITS x PLAY, as the round trip reads it back.
+                    units[f][at[x] * labels.length + l] = u[x] * chance[x];
                 }
-                s.plans.add(new ExportBundle.Plan(labels[l], rule(labels[l]), null, key, u, chance));
+                if (w != null && !w.sameSchedule()) {
+                    double[] adv = new double[detail.length];
+                    for (int k = 0; k < adv.length; k++) {
+                        adv[k] = detail[k][2];
+                    }
+                    out.exit[f][l] = SystemScorer.keyFrom(bk, adv, w.exit);
+                }
+                s.plans.add(new ExportBundle.Plan(labels[l], rule(labels[l]), out.exit[f][l], key, u, chance));
             }
             out.fold[f] = s;
             out.lookup[f] = new Lookup(s.fileName(), play, pen.cut, fp.groups, e.bettingOnly ? null : fp.fit.move,
                     rf.insuranceSum[f], e.fullPlay ? rf.later[f] : null, e.fullPlay ? rf.stands[f] : null);
         }
-        out.section = section(st, pen, rf, e, bk, units, labels);
+        out.section = section(st, pen, rf, e, bk, units, labels, out.exit, lowest);
         return out;
     }
+
+    /** The wide plans among labels, in their order; none for the report's plans alone. */
+    static SystemScorer.Plan[] widePlans(String[] labels) {
+        List<SystemScorer.Plan> out = new ArrayList<>();
+        for (String l : labels) {
+            SystemScorer.Plan w = widePlan(l);
+            if (w != null) {
+                out.add(w);
+            }
+        }
+        return out.toArray(new SystemScorer.Plan[0]);
+    }
+
+    /**
+     * Each state's lowest bet key of its shoe so far, by its place in the penetration, for the
+     * wide plans that leave the table (AllStates.minKey through the scorer's round starts, which
+     * the replay's --wide sets); null when no plan given leaves.
+     */
+    static int[] lowestKeys(SystemScorer scorer, CountKeys.Count bet, SystemScorer.Pen pen, SystemScorer.Plan[] wide) {
+        if (!SystemScorer.anyExit(wide)) {
+            return null;
+        }
+        if (scorer.roundStarts == null) {
+            throw new IllegalArgumentException("a plan that leaves the table is exported only where the scorer knows every "
+                    + "round start of each shoe (the replay's --wide, SystemScorer.roundStarts)");
+        }
+        int[] all = scorer.minKey(bet);
+        int[] out = new int[pen.states.length];
+        for (int j = 0; j < out.length; j++) {
+            out[j] = all[pen.states[j]];
+        }
+        return out;
+    }
+
+    /**
+     * A wide plan's UNITS and PLAY at a key (B2.5), from SystemScorer.Wide's detail row for it,
+     * the plan the i-th of those the accumulator scored. The same schedule: the expected bet
+     * K_SAME_BET played with chance K_SAME_PLAY, so UNITS is the bet when played, the expected bet
+     * over the chance, and a key the plan sits out is UNITS 0 and PLAY 0. A plan that leaves the
+     * table: the own rule's bet while seated, played every round; the exit key goes on the plan line.
+     */
+    static double[] wideUnits(SystemScorer.Plan w, double[] wideDetail, int i) {
+        int col = i * SystemScorer.KEY_COLS;
+        if (!w.sameSchedule()) {
+            return new double[]{wideDetail[col + SystemScorer.K_OWN_BET], 1};
+        }
+        double bet = wideDetail[col + SystemScorer.K_SAME_BET];
+        double play = wideDetail[col + SystemScorer.K_SAME_PLAY];
+        if (play == 0) {
+            return new double[]{0, 0};
+        }
+        // A block whose every round is played has a share of 1 less rounding (its integral of
+        // 1[g > 0] and its weight are summed in two orders); B2.5 writes PLAY 1 there, so only the
+        // block that straddles the entry threshold carries a chance.
+        if (play == 1 || Math.abs(play - 1) <= PLAY_ONE) {
+            return new double[]{bet, 1};
+        }
+        return new double[]{bet / play, play};
+    }
+
+    /** How near 1 a block's share played is taken as 1, its rounding: far below any share a straddling block of real weight has. */
+    static final double PLAY_ONE = 1e-12;
 
     /** The bet of a report plan at a key, from SystemScorer.bets' detail row for it (B7). */
     static double units(double[] detail, String label) {
@@ -407,6 +545,17 @@ final class StrategyExport {
      */
     static ExportBundle.Section section(ScoringStates st, SystemScorer.Pen pen, Refit rf, SystemScorer.Entry e,
                                         SystemScorer.BetKeys bk, double[][] units, String[] labels) {
+        return section(st, pen, rf, e, bk, units, labels, null, null);
+    }
+
+    /**
+     * The same, a plan with an exit key (exit[fold][plan], null for none) betting 0 at a state
+     * whose shoe's lowest bet key so far (lowest, by the state's place in the penetration) is
+     * below its fold's exit: the player has left the table until the shuffle (B2.5, B3).
+     */
+    static ExportBundle.Section section(ScoringStates st, SystemScorer.Pen pen, Refit rf, SystemScorer.Entry e,
+                                        SystemScorer.BetKeys bk, double[][] units, String[] labels, Integer[][] exit,
+                                        int[] lowest) {
         ExportBundle.Section sec = new ExportBundle.Section();
         int m = pen.states.length;
         sec.row = e.name;
@@ -431,8 +580,10 @@ final class StrategyExport {
                     throw new IllegalStateException(e.name + ": state " + s + "'s key " + sec.betKey[j]
                             + " has no bet in its own fold, whose test states it is one of");
                 }
-                // B3: the expected bet, UNITS x PLAY; every report plan plays each round, PLAY 1.
-                sec.bet[j][l] = u * 1.0;
+                // B3: the expected bet, UNITS x PLAY (units holds the product), 0 once a plan with an
+                // exit has left the table.
+                boolean left = exit != null && exit[f][l] != null && lowest[j] < exit[f][l];
+                sec.bet[j][l] = left ? 0 : u;
             }
         }
         return sec;
@@ -1173,11 +1324,51 @@ final class StrategyExport {
             this.shoeSums = shoeSums;
         }
 
+        /** The wide plans' labels the entry was scored with, and Entry.wide[p], what wide.ser holds; null when not scored with them. */
+        String[] widePlans;
+        double[] wide;
+
         static Expect of(SystemScorer.Entry e, int p) {
             if (e.estimate[p] == null) {
                 throw new IllegalArgumentException(e.name + " was not scored at " + SystemScorer.PENETRATIONS[p]);
             }
-            return new Expect(e.name, ExportBundle.PENS[p], e.estimate[p], e.shoeSums[p]);
+            Expect x = new Expect(e.name, ExportBundle.PENS[p], e.estimate[p], e.shoeSums[p]);
+            if (e.widePlans != null && e.wide != null && e.wide[p] != null) {
+                x.widePlans = new String[e.widePlans.length];
+                for (int i = 0; i < e.widePlans.length; i++) {
+                    x.widePlans[i] = e.widePlans[i].label;
+                }
+                x.wide = e.wide[p].clone();
+            }
+            return x;
+        }
+
+        /**
+         * What figure number fi of a file with these labels must give: Entry.estimate's metric for
+         * the report's figures; for a wide plan's ev: and bet:, its EV and average bet per round
+         * watched as the entry's wide figures hold them (the same schedule's, or for a plan that
+         * leaves the table the own rule's). NaN for a figure neither has; a wide plan exported for
+         * an entry not scored with it is refused, since nothing would hold its bets to the engine's.
+         */
+        double expected(String[] labels, int fi) {
+            int m = metric(labels, fi);
+            if (m >= 0) {
+                return estimate[m];
+            }
+            String label = labels[(fi - 3) / 2];
+            SystemScorer.Plan w = widePlan(label);
+            if (w == null) {
+                return Double.NaN;
+            }
+            int i = widePlans == null ? -1 : Arrays.asList(widePlans).indexOf(label);
+            if (i < 0) {
+                throw new IllegalStateException(row + " at " + pen + "%: " + label + " is exported, and the entry holds no "
+                        + "wide figures for it to be held to (the replay's --wide scores them)");
+            }
+            boolean ev = (fi - 3) % 2 == 0;
+            int at = w.sameSchedule() ? (ev ? SystemScorer.W_SAME : SystemScorer.W_SAME_BET)
+                    : (ev ? SystemScorer.W_OWN : SystemScorer.W_OWN_BET);
+            return wide[SystemScorer.wideAt(i, at)];
         }
     }
 
@@ -1272,7 +1463,7 @@ final class StrategyExport {
      */
     static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
                                        ExportBundle.Section bin, Report r) {
-        return replay(st, chart, files, bin, r, null, null);
+        return replay(st, chart, files, bin, r, null, null, null);
     }
 
     /**
@@ -1284,6 +1475,12 @@ final class StrategyExport {
     static final class FullSource {
         final Map<String, Refit> values = new TreeMap<>();
         final Map<String, ExportBundle.Section> verified = new TreeMap<>();
+        /**
+         * Every round start of the state file's shoes, dealt again (AllStates), for a plan that
+         * leaves the table: its bets need each state's lowest bet key of its shoe so far, which
+         * the valued states alone do not give; null when no plan exported leaves.
+         */
+        AllStates dealt;
 
         static String key(String row, int pen) {
             return row + "\t" + pen;
@@ -1297,8 +1494,22 @@ final class StrategyExport {
      * to the bit; its insurance and bets are worked out from the file either way.
      */
     static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
-                                       ExportBundle.Section bin, Report r, Refit rf, ExportBundle.Section verified) {
+                                       ExportBundle.Section bin, Report r, Refit rf, ExportBundle.Section verified,
+                                       AllStates starts) {
         String where = bin.row + " at " + bin.pen + "%";
+        // A plan that leaves the table bets 0 at a state whose shoe's lowest bet key so far is below
+        // its exit: that key is worked out here from the file's own bet tags (B2.2) over every round
+        // start of the shoe, dealt again, apart from the engine's CountKeys.
+        int[][] lowest = new int[2][];
+        for (int f = 0; f < 2; f++) {
+            for (ExportBundle.Plan plan : files[f].plans) {
+                if (plan.exit != null && lowest[f] == null) {
+                    r.require(starts != null, where + ": " + plan.label + " leaves the table, and no round starts were "
+                            + "dealt again to find each state's lowest bet key so far");
+                    lowest[f] = lowestSoFar(starts, st, files[f]);
+                }
+            }
+        }
         boolean full = files[0].scope == ExportBundle.Scope.FULL;
         r.require(files[1].scope == files[0].scope, where + ": its two files are of scopes " + files[0].scope + " and "
                 + files[1].scope);
@@ -1414,7 +1625,8 @@ final class StrategyExport {
                 int at = Arrays.binarySearch(plan.key, out.betKey[e]);
                 r.require(at >= 0, where + ": state " + s + "'s bet key " + out.betKey[e] + " has no bet line in "
                         + plan.label + " of fold " + f + ", whose test states it is one of");
-                out.bet[e][l] = plan.units[at] * plan.play[at];
+                boolean left = plan.exit != null && lowest[f][s] < plan.exit;
+                out.bet[e][l] = left ? 0 : plan.units[at] * plan.play[at];
             }
             r.equal(bin.betKey[e], out.betKey[e], where + ": state " + s + "'s bet key");
             r.same(bin.rvPlay[e], out.rvPlay[e], where + ": state " + s + "'s round value under its fold's play");
@@ -1433,6 +1645,34 @@ final class StrategyExport {
                 r.require(listed.equals(testKeys.get(f)), where + ": " + plan.label + " of fold " + f
                         + " lists bets at keys " + listed + ", its test states hold " + testKeys.get(f));
             }
+        }
+        return out;
+    }
+
+    /**
+     * For each valued state of st, the lowest bet key a strategy file's bet count gives (B2.2, from
+     * the file's bet tags by ExportBundle.betKey) over the round starts of its shoe up to it, it
+     * included, the shoes dealt again in dealt: B2.5's test of whether a plan with an exit is
+     * still seated.
+     */
+    static int[] lowestSoFar(AllStates dealt, ScoringStates st, ExportBundle.Strategy file) {
+        if (dealt.valuedAt.length != st.size) {
+            throw new IllegalArgumentException(st.size + " states, " + dealt.valuedAt.length + " found when dealt again");
+        }
+        int[] out = new int[st.size];
+        int record = 0;
+        int lowest = Integer.MAX_VALUE;
+        for (int s = 0; s < dealt.size && record < out.length; s++) {
+            if (dealt.depth[s] == 0) {
+                lowest = Integer.MAX_VALUE;
+            }
+            lowest = Math.min(lowest, ExportBundle.betKey(file, dealt.dealt(s), dealt.depth[s]));
+            if (dealt.valuedAt[record] == s) {
+                out[record++] = lowest;
+            }
+        }
+        if (record != out.length) {
+            throw new IllegalStateException("only " + record + " of " + out.length + " valued states found dealt again");
         }
         return out;
     }
@@ -1560,7 +1800,8 @@ final class StrategyExport {
         ExportBundle.Strategy[] files = strategies.get(x.row + "\t" + x.pen);
         r.require(files != null && files[0] != null && files[1] != null, where + " lacks a fold's strategy file");
         String key = FullSource.key(x.row, x.pen);
-        ExportBundle.Section again = replay(st, chart, files, sec, r, full.values.get(key), full.verified.get(key));
+        ExportBundle.Section again = replay(st, chart, files, sec, r, full.values.get(key), full.verified.get(key),
+                full.dealt);
         List<String> figures = figures(sec.labels);
         double[] pooledA = new double[figures.size()];
         double[] pooledB = new double[figures.size()];
@@ -1591,14 +1832,18 @@ final class StrategyExport {
         double[] engine = engineOrder(st, again, files);
         double[] scale = termScale(st, again);
         int checked = 0;
+        int wideChecked = 0;
         for (int fi = 0; fi < figures.size(); fi++) {
-            int m = metric(sec.labels, fi);
-            if (m >= 0) {
-                r.same(engine[fi], x.estimate[m], where + ": " + figures.get(fi)
-                        + " summed in the engine's order, against the report's estimate");
-                r.same(pooledA[fi] / pooledB[fi], x.estimate[m], scale[fi], where + ": " + figures.get(fi)
-                        + " pooled over the folds from exact.tsv, against the report's estimate");
+            if (held(sec.labels, fi)) {
+                double want = x.expected(sec.labels, fi);
+                boolean wide = metric(sec.labels, fi) < 0;
+                String against = wide ? "the entry's wide figure (wide.ser's)" : "the report's estimate";
+                r.same(engine[fi], want, where + ": " + figures.get(fi) + " summed in the engine's order, against "
+                        + against);
+                r.same(pooledA[fi] / pooledB[fi], want, scale[fi], where + ": " + figures.get(fi)
+                        + " pooled over the folds from exact.tsv, against " + against);
                 checked++;
+                wideChecked += wide ? 1 : 0;
             }
         }
         int same8 = Arrays.asList(sec.labels).indexOf("same-" + SPREADS);
@@ -1619,7 +1864,13 @@ final class StrategyExport {
                 ? " (full play, on its strategies' Hit and Split values)"
                 : " (full play: round values as checked on its strategies' values when made)";
         r.lines.add(where + ": " + sec.index.length + " states replayed from the strategy files equal states.bin" + how
-                + "; " + checked + " figures pooled from exact.tsv equal Entry.estimate; " + shoes);
+                + "; " + (checked - wideChecked) + " figures pooled from exact.tsv equal Entry.estimate"
+                + (wideChecked == 0 ? "" : ", " + wideChecked + " of the wide plans equal Entry.wide") + "; " + shoes);
+    }
+
+    /** Whether figure fi of a file with these labels is held to the engine: a report metric, or a wide plan's ev: or bet:. */
+    static boolean held(String[] labels, int fi) {
+        return metric(labels, fi) >= 0 || fi >= 3 && widePlan(labels[(fi - 3) / 2]) != null;
     }
 
     /**
@@ -1777,6 +2028,19 @@ final class StrategyExport {
             sum[0] += flat;
             for (int l = 0; l < plans; l++) {
                 ExportBundle.Plan plan = files[f].plans.get(l);
+                if (plan.exit != null) {
+                    // A plan that leaves the table: SystemScorer.Wide sums its own rule state by
+                    // state, in the fold's order, each at its bet while seated and 0 once it has left.
+                    for (int e = 0; e < sec.index.length; e++) {
+                        int s = sec.index[e];
+                        if (st.fold(s) == f) {
+                            double w = st.weight[s];
+                            sum[3 + 2 * l] += sec.bet[e][l] * w * (sec.rvPlay[e] + sec.rvInsurance[e]);
+                            sum[4 + 2 * l] += sec.bet[e][l] * w;
+                        }
+                    }
+                    continue;
+                }
                 for (Map.Entry<Integer, double[]> k : byKey.entrySet()) {
                     double bet = plan.bet(k.getKey());
                     sum[3 + 2 * l] += bet * k.getValue()[1];
@@ -2076,7 +2340,7 @@ final class StrategyExport {
             throw new IllegalStateException(out + " or " + partial + " exists already; a bundle is written once");
         }
         for (String l : labels) {
-            metrics(l);
+            checkLabel(l);
         }
         ScoringStates st = scorer.st;
         Files.createDirectories(partial);
@@ -2174,18 +2438,23 @@ final class StrategyExport {
      * round walked, and the row's figures summed in the engine's order against its estimate.
      */
     static Report checkFull(ScoringStates st, PlayerMove[] chart, Built b, Refit rf, Expect x) {
+        return checkFull(st, chart, b, rf, x, null);
+    }
+
+    /** The same, dealt the shoes' every round start for a plan that leaves the table (null when none does). */
+    static Report checkFull(ScoringStates st, PlayerMove[] chart, Built b, Refit rf, Expect x, AllStates dealt) {
         Report r = new Report();
         ExportBundle.Strategy[] files = new ExportBundle.Strategy[2];
         for (int f = 0; f < 2; f++) {
             files[f] = ExportBundle.readStrategyText(format(b.fold[f]));
         }
-        ExportBundle.Section again = replay(st, chart, files, b.section, r, rf, null);
+        ExportBundle.Section again = replay(st, chart, files, b.section, r, rf, null, dealt);
         double[] engine = engineOrder(st, again, files);
         for (int fi = 0; fi < engine.length; fi++) {
-            int m = metric(again.labels, fi);
-            if (m >= 0) {
-                r.same(engine[fi], x.estimate[m], x.row + " at " + x.pen + "%: " + figures(again.labels).get(fi)
-                        + " summed in the engine's order, against the report's estimate");
+            if (held(again.labels, fi)) {
+                r.same(engine[fi], x.expected(again.labels, fi), x.row + " at " + x.pen + "%: "
+                        + figures(again.labels).get(fi) + " summed in the engine's order, against the "
+                        + (metric(again.labels, fi) >= 0 ? "report's estimate" : "entry's wide figure"));
             }
         }
         return r;
@@ -2219,13 +2488,20 @@ final class StrategyExport {
         /** Rows to export as NAME@P (P 70, 75 or 80); empty for every full-play row of every item replayed. */
         final List<String> rows;
         final String[] labels;
+        /**
+         * Further plans for some rows, by NAME@P, after labels: the wide plans SIM_CHECK.md registers
+         * for a row (F43 to F48), which only those rows' files carry.
+         */
+        final Map<String, List<String>> more = new TreeMap<>();
         final long seed;
         final PrintStream log;
         private ScoringStates st;
+        /** Every round start dealt again, for a plan that leaves the table; from the scorer's round starts when it has them. */
+        private transient AllStates dealt;
 
         ReplayExport(Path out, Path states, int shoes, List<String> rows, String[] labels, long seed, PrintStream log) {
             for (String l : labels) {
-                metrics(l);
+                checkLabel(l);
             }
             this.out = out;
             this.states = states;
@@ -2252,8 +2528,67 @@ final class StrategyExport {
             return out;
         }
 
-        /** The report plans exported by default: SIM_CHECK.md's full-play figures are flat and the 1-8 same schedule. */
+        /**
+         * The report plans exported for every row by default: SIM_CHECK.md's full-play figures are
+         * flat and the 1-8 same schedule, and the wide plans of F43 to F48 go to their rows alone
+         * (registeredPlans).
+         */
         static final String[] PLANS = {"same-8"};
+
+        /**
+         * The wide plans SIM_CHECK.md registers on the replay's strategies (source replay, F43 to
+         * F48), by NAME@P among the penetrations replayed: each row's ev: labels that are not report
+         * plans.
+         */
+        static Map<String, List<String>> registeredPlans(int[] pens) {
+            Map<String, List<String>> out = new TreeMap<>();
+            for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+                String fig = f.exportFigure();
+                if (f.play == SimCheckPlan.Play.FULL && f.source.equals("replay") && contains(pens, penIndex(f.pen))
+                        && fig.startsWith("ev:") && widePlan(fig.substring(3)) != null) {
+                    List<String> l = out.computeIfAbsent(f.entry() + "@" + f.pen, k -> new ArrayList<>());
+                    if (!l.contains(fig.substring(3))) {
+                        l.add(fig.substring(3));
+                    }
+                }
+            }
+            return out;
+        }
+
+        /** Adds plans to one row's files, NAME@P, after the plans every row has. */
+        ReplayExport plans(String row, List<String> labels) {
+            for (String l : labels) {
+                checkLabel(l);
+            }
+            more.computeIfAbsent(row, k -> new ArrayList<>()).addAll(labels);
+            return this;
+        }
+
+        /** The plans of a row's files at penetration p (0 to 2): every row's, then its own. */
+        String[] labelsFor(String row, int p) {
+            List<String> out = new ArrayList<>(Arrays.asList(labels));
+            for (String l : more.getOrDefault(row + "@" + ExportBundle.PENS[p], new ArrayList<>())) {
+                if (!out.contains(l)) {
+                    out.add(l);
+                }
+            }
+            return out.toArray(new String[0]);
+        }
+
+        /** Whether any row's files carry a wide plan, and whether one leaves the table. */
+        boolean anyWide(boolean leaving) {
+            List<String> all = new ArrayList<>(Arrays.asList(labels));
+            for (List<String> l : more.values()) {
+                all.addAll(l);
+            }
+            for (String l : all) {
+                SystemScorer.Plan w = widePlan(l);
+                if (w != null && (!leaving || !w.sameSchedule())) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /**
          * The replay's --export rows when no --export-row is given: the full-play figures SIM_CHECK.md
@@ -2315,7 +2650,7 @@ final class StrategyExport {
         @Override
         public String describe() {
             return "export (rows " + (rows.isEmpty() ? "every full-play row" : rows.toString()) + "; plans "
-                    + String.join(",", labels) + "; sample seed " + seed + ")";
+                    + String.join(",", labels) + (more.isEmpty() ? "" : "; and " + more) + "; sample seed " + seed + ")";
         }
 
         /** Before anything is replayed: a bundle is written once, so one already there is refused now, not after hours. */
@@ -2325,6 +2660,38 @@ final class StrategyExport {
             if (Files.exists(out) || Files.exists(partial)) {
                 throw new IllegalStateException(out + " or " + partial + " exists already; a bundle is written once");
             }
+            // A wide plan's files are held to the entry's wide figures, which only the replay's --wide
+            // scores (it comes before the export among the hooks and sets the scorer's plans).
+            if (anyWide(false)) {
+                List<String> scored = new ArrayList<>();
+                for (SystemScorer.Plan w : scorer.wide == null ? new SystemScorer.Plan[0] : scorer.wide) {
+                    scored.add(w.label);
+                }
+                List<String> all = new ArrayList<>(Arrays.asList(labels));
+                for (List<String> l : more.values()) {
+                    all.addAll(l);
+                }
+                for (String l : all) {
+                    if (widePlan(l) != null && !scored.contains(l)) {
+                        throw new IllegalStateException("the export's plan " + l + " is a wide plan, which the replay "
+                                + "scores only with --wide; give --wide, or leave it out of the export");
+                    }
+                }
+            }
+        }
+
+        /** Every round start dealt again, once, for the plans that leave the table. */
+        AllStates dealt(SystemScorer scorer) {
+            if (dealt == null && anyWide(true)) {
+                try {
+                    dealt = scorer != null && scorer.roundStarts instanceof AllStates.Starts
+                            ? ((AllStates.Starts) scorer.roundStarts).all
+                            : AllStates.replay(StateStore.header(states), st.shoes, st.rules, BasicStrategy.chart(), st);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            }
+            return dealt;
         }
 
         boolean wanted(String row, int p) {
@@ -2352,8 +2719,8 @@ final class StrategyExport {
                 RowExport x = new RowExport();
                 x.expect = Expect.of(e, item.pen);
                 try {
-                    Built b = build(scorer, rf, e, labels);
-                    Report r = checkFull(st, chartArray(), b, rf, x.expect);
+                    Built b = build(scorer, rf, e, labelsFor(e.name, item.pen));
+                    Report r = checkFull(st, chartArray(), b, rf, x.expect, dealt(scorer));
                     x.section = b.section;
                     for (int f = 0; f < 2; f++) {
                         x.text[f] = format(b.fold[f]);
@@ -2418,6 +2785,7 @@ final class StrategyExport {
             List<Expect> expected = new ArrayList<>();
             List<LookupColumn> columns = new ArrayList<>();
             FullSource full = new FullSource();
+            full.dealt = dealt(null);
             for (RowExport x : kept) {
                 for (int f = 0; f < 2; f++) {
                     ExportBundle.Strategy s = ExportBundle.readStrategyText(x.text[f]);
@@ -2470,7 +2838,7 @@ final class StrategyExport {
                     chartFrom = args[++k];
                     break;
                 case "--plans":
-                    labels = args[++k].split(",");
+                    labels = planList(args[++k]);
                     break;
                 case "--sample-seed":
                     seed = Long.parseLong(args[++k]);

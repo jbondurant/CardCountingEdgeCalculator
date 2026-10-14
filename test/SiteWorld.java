@@ -232,9 +232,12 @@ final class SiteWorld {
         w.stored = CeilingResultsTest.published(dir.resolve("results.ser"), c.published);
         w.saved = w.save(dir.resolve("ceiling.ser"));
         w.stepEight();
-        // The pilot's largest difference ratio is 1.07, the default CeilingResults widens a registered count by.
+        // The pilot's largest difference ratio, 1.12, is what both CeilingResults and SiteExport widen a
+        // registered count by, each reading this file (INTEGRATION.md open item 13): not 1.07, the
+        // real pilot's, so a constant in either would show here as two different full.P.S.f1.
         w.pilot = Files.write(dir.resolve("pilot.txt"), WideReportTest.pilot(WideReportTest.ratios("1-8 same schedule",
-                RiskReport.KO, 1.04, "flat", RiskReport.KO, 1.07)).getBytes(StandardCharsets.UTF_8));
+                RiskReport.KO, 1.04, "flat", RiskReport.KO, SiteExportCeilingTest.NOT_MEASURED))
+                .getBytes(StandardCharsets.UTF_8));
         return w;
     }
 
@@ -309,7 +312,8 @@ final class SiteWorld {
         CeilingResults.run(new String[]{"data", "--stored", stored.toString(), "--saved", saved.toString(), "--report",
                 report.toString(), "--counts", registration.toString(), "--fullplay-run", runFile.toString(),
                 "--fullplay-counts", fullRegistration.toString(), "--peek", peekFile.toString(), "--split-margin",
-                split.toString(), "--paragraphs", SiteCeilingTest.paragraphs(dir).toString(), "--out", out.toString()},
+                split.toString(), "--paragraphs", SiteCeilingTest.paragraphs(dir).toString(), "--widening", pilot.toString(),
+                "--out", out.toString()},
                 "ceiling-world", new PrintStream(new ByteArrayOutputStream(), true, "UTF-8"));
         return out;
     }

@@ -461,6 +461,35 @@ public class SiteBuildTest {
         String q = o.text("index.html");
         assertFalse(q.contains("Not yet computed: swings"));
         assertTrue(q.contains("<span data-k=\"risk.unit_usd\" data-f=\"usd\">$25</span> a unit"));
+        assertFalse(q.contains("The swings were simulated for some counts only"));
+    }
+
+    /**
+     * INTEGRATION.md open item 14: the first-ranked full-play row at 80%, 1-8 has no risk figures
+     * (the simulator keeps swings for a few rows only). The build does not stop: the answer says so
+     * and gives the money of the highest-ranked row that has them, by name.
+     */
+    @Test
+    public void theMoneySentenceNamesTheBestRowWithSwingsWhenTheBestHasNone() throws IOException {
+        String best = SiteSvg.rowOf(SiteBuild.one("full.80.s8.@best", page.data));
+        List<String> top = SiteBuild.expand("full.80.s8.@top2", page.data);
+        String second = SiteSvg.rowOf(top.get(1));
+        assertNotEquals(best, second);
+        Path withRisk = copy("risk-not-best");
+        Files.write(withRisk.resolve("risk-fixture.json"), ("{\"_source\":{\"what\":\"risk\",\"commit\":\"fixture\",\"fixture\":true},"
+                + "\"figures\":{\"risk.unit_usd\":{\"value\":25,\"fmt\":\"usd\"},\"risk.rounds\":{\"value\":100,\"fmt\":\"n\"},"
+                + "\"risk.ev_per100_usd.full.80.s8." + second + "\":{\"value\":11,\"fmt\":\"usd\"},"
+                + "\"risk.sd_per100_usd.full.80.s8." + second + "\":{\"value\":270,\"fmt\":\"usd\"}}}")
+                .getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output o = build(withRisk, template);
+        assertEquals(List.of(), o.problems);
+        String q = o.text("index.html");
+        assertTrue(q.contains("The swings were simulated for some counts only, and not for <span data-name=\"" + best + "\">"),
+                q);
+        assertTrue(q.contains("For <span data-name=\"" + second + "\">"), q);
+        assertTrue(q.contains("data-k=\"risk.ev_per100_usd.full.80.s8." + second + "\""), q);
+        assertTrue(q.contains("data-k=\"risk.sd_per100_usd.full.80.s8." + second + "\""), q);
+        assertFalse(q.contains("risk.ev_per100_usd.full.80.s8." + best), "no figure is asked of the best row");
     }
 
     // ---- light and dark ----

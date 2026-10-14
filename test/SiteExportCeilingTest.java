@@ -28,8 +28,8 @@ public class SiteExportCeilingTest {
     static SiteWorld world;
     static String template;
     static Map<String, Object> grid;
-    /** The world's pilot measured difference ratios of 1.04 and 1.07: a count it did not measure takes 1.07. */
-    static final double NOT_MEASURED = 1.07;
+    /** The world's pilot measured difference ratios of 1.04 and 1.12: a count it did not measure takes 1.12. */
+    static final double NOT_MEASURED = 1.12;
 
     @BeforeAll
     @SuppressWarnings("unchecked")

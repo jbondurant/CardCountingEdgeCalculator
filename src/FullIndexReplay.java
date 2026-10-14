@@ -401,8 +401,22 @@ final class FullIndexReplay {
             }
             List<String> rows = o.exportRows == null ? StrategyExport.ReplayExport.registered(o.pens)
                     : StrategyExport.ReplayExport.named(o.exportRows, o.pens);
-            out.add(new StrategyExport.ReplayExport(o.export.toAbsolutePath().normalize(), o.states, o.shoes, rows,
-                    o.exportPlans, StrategyExport.SAMPLE_SEED, log));
+            StrategyExport.ReplayExport export = new StrategyExport.ReplayExport(o.export.toAbsolutePath().normalize(),
+                    o.states, o.shoes, rows, o.exportPlans, StrategyExport.SAMPLE_SEED, log);
+            if (o.exportRows == null) {
+                // The registered rows carry the wide plans SIM_CHECK.md registers for them (F43 to F48),
+                // which the replay scores with --wide; without it they are left out, and the log says so.
+                java.util.Map<String, List<String>> wide = StrategyExport.ReplayExport.registeredPlans(o.pens);
+                if (o.wide) {
+                    for (java.util.Map.Entry<String, List<String>> e : wide.entrySet()) {
+                        export.plans(e.getKey(), e.getValue());
+                    }
+                } else if (!wide.isEmpty()) {
+                    log.println("export: the wide plans SIM_CHECK.md registers (" + wide + ") are not exported: the "
+                            + "replay scores them only with --wide");
+                }
+            }
+            out.add(export);
         } else if (o.exportRows != null) {
             throw new IllegalArgumentException("export rows were named but no --export directory was given");
         }
