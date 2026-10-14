@@ -141,6 +141,34 @@ public class SiteCeilingTest {
         new SiteData().add("ceiling.json", in.text("ceiling.json").getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * F1 a little above the best plain row (Zen) at 1-8 and flat, but noisy enough that its
+     * interval reaches below: no claim holds, its estimate is above, so B in both cells, from the
+     * file's own claims.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void aGainTheIntervalDoesNotSupportPicksB(@TempDir Path dir) throws Exception {
+        CeilingParagraphsTest.Levels l = new CeilingParagraphsTest.Levels();
+        l.f1 = CeilingParagraphsTest.ZEN + 0.0002;
+        l.f1Noise = 0.0005;
+        l.f1Flat = CeilingParagraphsTest.ZEN + 0.0002;
+        l.f1FlatNoise = 0.0005;
+        Path file = data(dir, l, true);
+        Map<String, Object> claim = (Map<String, Object>) ((Map<String, Object>) SiteAdapt.read(file).get("claims"))
+                .get("fd.80.same.F1");
+        assertEquals(Boolean.FALSE, claim.get("holds"), "the claim does not hold");
+        assertTrue(((Number) claim.get("ev")).doubleValue() > ((Number) claim.get("bestEv")).doubleValue());
+        SiteInput in = SiteCeiling.adapt(file, "x", paragraphs(dir));
+        assertEquals("B", table(in, "same").get("letter"));
+        assertEquals("F1", table(in, "same").get("row"));
+        assertEquals("B", table(in, "flat").get("letter"));
+        assertEquals("F1 flat", table(in, "flat").get("row"));
+        CeilingParagraphs.Texts t = CeilingParagraphs.parse(CeilingParagraphsTest.committed(), CeilingParagraphs.BLOB);
+        assertEquals(t.paragraphs.get('B'), table(in, "same").get("words"));
+        assertEquals(t.flat.get('B'), table(in, "flat").get("words"));
+    }
+
     @Test
     public void theFixturesOwnLevelsPickC(@TempDir Path dir) throws Exception {
         Path file = data(dir, new CeilingParagraphsTest.Levels(), true);
