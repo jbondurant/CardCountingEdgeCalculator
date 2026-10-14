@@ -52,6 +52,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * on the stored values; export.txt carrying a time) were against ReplayHooks.Export, retired at the
  * integration for StrategyExport.ReplayExport; this test's checks of the bundle's first moves, later
  * cells and states.bin now hold that hook, and its own plants are in FullPlayExportTest.
+ * Planted at the integration on 13 October 2026, in scratch copies of StrategyExport, each failing
+ * the test named: ReplayExport's rows and plans left out of the replay's identity
+ * (aReplayKilledAndResumed...), and its refusal of an existing bundle at the start left out, so
+ * the replay scored every item before the export refused (aReplayRefuses...).
  */
 public class FullIndexReplayTest {
 
