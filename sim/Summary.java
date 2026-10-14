@@ -44,11 +44,15 @@ public final class Summary {
     /**
      * A paired difference, reported and never tested (SIM_CHECK.md section 9): {@code row}'s figure
      * less {@code less}'s on the same shoes or states, with its SE and σ_eff of the per-round
-     * difference (P3), or the engine's difference on the same states (P2).
+     * difference (P3), or the engine's difference on the same states (P2). {@code fig} and
+     * {@code lessFig} are the two figures' registered ids ("" for one the registry does not list),
+     * so a reader finds SIM_CHECK.md section 9's "F25 less F18" and "F29 less F27" by id, for the
+     * rounds a simulation would need (INTEGRATION.md open item 10). For mode B and the moving count
+     * both are the figure's own id, {@code less} saying which variant less mode A.
      */
     public record Difference(String check, String row, int pen, String figure, String less, double difference,
                              double se, double sigmaEff, double first, double second, double exact, double rounds,
-                             double shoes) {
+                             double shoes, String fig, String lessFig) {
     }
 
     private Summary() {
@@ -141,6 +145,7 @@ public final class Summary {
                     .append(", \"sigmaEff\": ").append(num(d.sigmaEff())).append(", \"first\": ").append(num(d.first()))
                     .append(", \"second\": ").append(num(d.second())).append(", \"exact\": ").append(num(d.exact()))
                     .append(", \"rounds\": ").append(num(d.rounds())).append(", \"shoes\": ").append(num(d.shoes()))
+                    .append(", \"fig\": ").append(json(d.fig())).append(", \"lessFig\": ").append(json(d.lessFig()))
                     .append("}");
         }
         b.append(differences.isEmpty() ? "]\n}\n" : "\n  ]\n}\n");

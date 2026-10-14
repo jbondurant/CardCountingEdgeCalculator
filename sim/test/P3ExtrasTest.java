@@ -217,6 +217,25 @@ class P3ExtrasTest {
             assertEquals(d, got[0], 1e-12, "difference, figure " + j);
             assertEquals(Math.sqrt(shoes / (shoes - 1.0) * ss), got[1], 1e-9 * got[1], "SE, figure " + j);
         }
+        // The summary's differences carry both figures' registered ids (INTEGRATION.md open item 10:
+        // "F25 less F18" found by id), pooled with exact.tsv's weights, w and v above.
+        List<String> text = new ArrayList<>(List.of("# exact.tsv: SHOE_SPEC.md B5, format 1", Exact.HEADER));
+        for (String figure : List.of("flat", "ev:same-8", "ev:X-1,8")) {
+            for (int f = 0; f < 2; f++) {
+                text.add("Other count\t80\t" + f + "\t" + figure + "\t-1\t75\t1.0\t" + w[f] * 1000 + "\t1\t1\t1");
+                text.add(BundleFixture.HILO + "\t80\t" + f + "\t" + figure + "\t-1\t75\t1.0\t" + v[f] * 1000 + "\t1\t1\t1");
+            }
+        }
+        Registry registry = Registry.parse(List.of("```sim-registry", Registry.HEADER,
+                "F18\t1\t" + BundleFixture.HILO + "\t80\tev:same-8\tP3,P2\tc06c061\t1\t0",
+                "F25\t1\tOther count\t80\tev:same-8\tP3,P2\tc06c061\t0\t0", "```"));
+        List<Summary.Difference> diffs = Outputs.differences(p3, List.of(hiLo, oth), sums, Exact.parse(text, "exact.tsv"),
+                Plants.NONE, registry);
+        assertEquals(3, diffs.size());
+        assertEquals(List.of("", "F25", ""), diffs.stream().map(Summary.Difference::fig).toList());
+        assertEquals(List.of("", "F18", ""), diffs.stream().map(Summary.Difference::lessFig).toList());
+        assertEquals(p3.pair(sums, 1, w[0], w[1], v[0], v[1])[0], diffs.get(1).difference(), 1e-15);
+        assertEquals(p3.pair(sums, 1, w[0], w[1], v[0], v[1])[2], diffs.get(1).sigmaEff(), 1e-15);
     }
 
     @Test

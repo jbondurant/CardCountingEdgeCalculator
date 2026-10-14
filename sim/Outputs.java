@@ -69,7 +69,8 @@ public final class Outputs {
     }
 
     /** Every figure less Hi-Lo's at the same play, penetration and bets, shoe by shoe (SIM_CHECK.md section 9). */
-    static List<Summary.Difference> differences(P3 p3, List<Row> rows, double[] sums, Exact exact, Plants plants) {
+    static List<Summary.Difference> differences(P3 p3, List<Row> rows, double[] sums, Exact exact, Plants plants,
+                                                Registry registry) {
         List<Summary.Difference> out = new ArrayList<>();
         for (int i = 0; i < p3.pairs().size(); i++) {
             int[] p = p3.pairs().get(i);
@@ -81,7 +82,9 @@ public final class Outputs {
             double rounds = Moments.sum(sums, p[4], new double[]{0, 0, 0, 0, 1});
             out.add(new Summary.Difference("P3", row.name, row.pen, row.figures.get(p[1]), hl.name, d[0], d[1], d[2],
                     d[3], d[4], exact.estimate(row.name, row.pen, row.figures.get(p[1]))
-                    - exact.estimate(hl.name, hl.pen, hl.figures.get(p[3])), rounds, Moments.shoes(sums, p[4])));
+                    - exact.estimate(hl.name, hl.pen, hl.figures.get(p[3])), rounds, Moments.shoes(sums, p[4]),
+                    Summary.fig(registry, row.name, row.pen, row.figures.get(p[1])),
+                    Summary.fig(registry, hl.name, hl.pen, hl.figures.get(p[3]))));
         }
         return out;
     }

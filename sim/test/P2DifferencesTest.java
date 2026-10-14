@@ -73,6 +73,14 @@ class P2DifferencesTest {
             assertEquals(eng / sw, got.exact(), 1e-12, "the engine's difference, figure " + j);
             assertEquals(got.first() - got.second(), got.difference(), 1e-12);
         }
+        // Named by the registry where it lists both figures (INTEGRATION.md open item 10).
+        Registry registry = Registry.parse(List.of("```sim-registry", Registry.HEADER,
+                "F18\t1\t" + BundleFixture.HILO + "\t80\tev:same-8\tP3,P2\tc06c061\t1\t0",
+                "F25\t1\tOther count\t80\tev:same-8\tP3,P2\tc06c061\t0\t0", "```"));
+        List<Summary.Difference> named = p2.differences(sums, registry);
+        assertEquals(List.of("", "F25", ""), named.stream().map(Summary.Difference::fig).toList());
+        assertEquals(List.of("", "F18", ""), named.stream().map(Summary.Difference::lessFig).toList());
+        assertEquals(d.get(1).difference(), named.get(1).difference(), 0);
     }
 
     /** One instance's bet × result on a re-deal, its own round played out. */
