@@ -29,7 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * one its settings make, a fit not finished, an item with nothing to compare with, an output in the
  * source, a tree store it could write, and registered counts on the main file. Parts and perfect
  * values planted beyond 1e-12 stop it, naming the item or the state; within 1e-12, it reports them
- * and goes on. It is never pointed at runs/full-index/full-c06c061.
+ * and goes on. With the plan's three hooks on (ReplayHooks: the wide plans, the sink, the full-play
+ * export), every item is still the run's to the bit, each hook's file holds what the replay scored,
+ * and a killed and resumed replay writes every one of them to the bit as an uninterrupted one does.
+ * It is never pointed at runs/full-index/full-c06c061.
  *
  * Planted in a scratch copy of the code on 12 October 2026, one at a time, each failed the test
  * named, which passes without it: the comparison skipping nested arrays of doubles, the replayed
@@ -39,6 +42,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * and the hooks left out of the replay's identity (aReplayKilledAndResumed...); c06c061's
  * names-only count lines not taken by name (c06c061sRunId...); and in ResultDiffTest, a count
  * compared field by field, and the timing compared.
+ *
+ * Planted for the hooks on 12 October 2026, the same way, each failing the test named: the sink's
+ * records handed to the collector at the wrong penetration; the export's later cells read on the
+ * other softness, written as the chart, or each turned over; P8 not checked; the bound rows left out
+ * of wide.ser; a state's bet taken from the other fold; the export's first decisions refitted on the
+ * stored values instead of the full-play ones (theHooksOutputs...); export.txt carrying a time, and
+ * the hooks' rows and plans left out of the replay's identity (aReplayKilledAndResumed...).
  */
 public class FullIndexReplayTest {
 
@@ -242,9 +252,52 @@ public class FullIndexReplayTest {
         }
     }
 
+    /** The full-play rows of the fixture's run that a bundle can hold: every full-play entry not bet on its own value. */
+    static List<String> fullPlayRows() throws Exception {
+        List<String> out = new ArrayList<>();
+        for (SystemScorer.Result r : CeilingReport.read(source.resolve("results.ser")).results) {
+            for (SystemScorer.Entry e : r.fullEntries) {
+                if (!e.ownValue) {
+                    out.add(e.name);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A folds-only replay into out with the plan's three hooks on, as 6.1 runs it: the wide plans,
+     * the sink into out/sink and the export of every full-play row into out/bundle, at four of the
+     * report's plans; and the test's own hook.
+     */
+    static FullIndexReplay.Options withHooks(Path out) throws Exception {
+        FullIndexReplay.Options o = options(source, out);
+        o.foldsOnly = true;
+        o.wide = true;
+        o.sink = out.resolve("sink");
+        o.export = out.resolve("bundle");
+        o.exportRows = fullPlayRows();
+        o.exportPlans = new String[]{"same-1", "same-8", "own-8", "played-8"};
+        o.hooks.add(new ValuesHook());
+        return o;
+    }
+
+    /** The files a replay with every hook writes, by their place in its directory: its own, the hooks', and the bundle's. */
+    static List<String> written(Path out) throws Exception {
+        List<String> files = new ArrayList<>(Arrays.asList("replay.txt", "perfect.ser", "hook.bin", "wide.ser",
+                "sink/" + ReplayHooks.Sink.FILE, "export.txt"));
+        try (Stream<Path> bundle = Files.list(out.resolve("bundle.partial"))) {
+            bundle.map(p -> "bundle.partial/" + p.getFileName()).sorted().forEach(files::add);
+        }
+        return files;
+    }
+
     /** Two replays wrote the same files to the bit, and kept every item's Result the same to the bit. */
     static void sameReplay(FullIndexReplay.Assembled a, FullIndexReplay.Assembled b) throws Exception {
-        for (String f : new String[]{"replay.txt", "perfect.ser", "hook.bin"}) {
+        List<String> files = written(a.out);
+        assertEquals(files, written(b.out), "the same files");
+        assertTrue(files.size() > 10, files.toString());
+        for (String f : files) {
             assertArrayEquals(Files.readAllBytes(a.out.resolve(f)), Files.readAllBytes(b.out.resolve(f)), f);
         }
         assertEquals(a.items.size(), b.items.size());
@@ -262,61 +315,220 @@ public class FullIndexReplayTest {
      */
     @Test
     public void aReplayKilledAndResumedWritesWhatAnUninterruptedOneWrites() throws Exception {
-        FullIndexReplay.Options whole = options(source, root.resolve("uninterrupted"));
-        whole.foldsOnly = true;
-        whole.hooks.add(new ValuesHook());
-        FullIndexReplay.Assembled w = FullIndexReplay.run(whole, "replay", QUIET);
+        FullIndexReplay.Assembled w = FullIndexReplay.run(withHooks(root.resolve("uninterrupted")), "replay", QUIET);
         assertEquals(4, w.items.size(), "the fold fits' items");
         assertTrue(Files.size(w.out.resolve("hook.bin")) > 1000);
+        assertEquals(written(w.out), written(w.out), "the bundle is listed in a fixed order");
 
         // Killed after its first item, one item a batch.
         Path dir = root.resolve("killed-after-an-item");
-        FullIndexReplay.Options a = options(source, dir);
-        a.foldsOnly = true;
+        FullIndexReplay.Options a = withHooks(dir);
         a.batchBytes = 1;
-        a.hooks.add(new ValuesHook());
         a.afterItem = n -> {
             if (n == 1) {
                 throw new Interrupted();
             }
         };
         assertThrows(Interrupted.class, () -> FullIndexReplay.run(a, "replay", QUIET));
-        FullIndexReplay.Options again = options(source, dir);
-        again.foldsOnly = true;
+        assertFalse(Files.exists(dir.resolve("wide.ser")) || Files.exists(dir.resolve("bundle.partial")),
+                "nothing put together before every item is kept");
+        FullIndexReplay.Options again = withHooks(dir);
         again.batchBytes = 1;
         again.resume = true;
         ValuesHook counted = new ValuesHook();
-        again.hooks.add(counted);
+        again.hooks.set(0, counted);
         sameReplay(w, FullIndexReplay.run(again, "replay", QUIET));
         assertEquals(3, counted.called, "only the items with no record are scored again");
 
         // Killed in its one batch, after the last round, as its third item is about to be scored.
         Path batch = root.resolve("killed-in-a-batch");
-        FullIndexReplay.Options b = options(source, batch);
-        b.foldsOnly = true;
+        FullIndexReplay.Options b = withHooks(batch);
         b.batchBytes = 1e15;
         ValuesHook thrower = new ValuesHook();
         thrower.throwAt = 2;
-        b.hooks.add(thrower);
+        b.hooks.set(0, thrower);
         assertThrows(Interrupted.class, () -> FullIndexReplay.run(b, "replay", QUIET));
-        FullIndexReplay.Options more = options(source, batch);
-        more.foldsOnly = true;
+        FullIndexReplay.Options more = withHooks(batch);
         more.batchBytes = 1e15;
         more.resume = true;
-        more.hooks.add(new ValuesHook());
         sameReplay(w, FullIndexReplay.run(more, "replay", QUIET));
 
-        // Another commit, or no hook, is another replay: refused, as is a fresh start over its records.
-        FullIndexReplay.Options other = options(source, batch);
+        // Other hooks, or other rows exported, make another replay: refused, as is a fresh start over its records.
+        Path third = root.resolve("killed-again");
+        FullIndexReplay.Options c = withHooks(third);
+        c.afterItem = n -> {
+            throw new Interrupted();
+        };
+        assertThrows(Interrupted.class, () -> FullIndexReplay.run(c, "replay", QUIET));
+        FullIndexReplay.Options other = options(source, third);
         other.foldsOnly = true;
         other.resume = true;
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> FullIndexReplay.run(other, "replay", QUIET));
-        assertTrue(e.getMessage().contains("hooks: values"), e.getMessage());
-        FullIndexReplay.Options fresh = options(source, batch);
-        fresh.foldsOnly = true;
-        fresh.hooks.add(new ValuesHook());
+        assertTrue(e.getMessage().contains("hooks: wide sink export (rows {F1 start, full play=[0, 1, 2]"), e.getMessage());
+        FullIndexReplay.Options fewer = withHooks(third);
+        fewer.resume = true;
+        fewer.exportRows = fewer.exportRows.subList(0, 1);
+        assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(fewer, "replay", QUIET));
+        FullIndexReplay.Options fresh = withHooks(third);
         assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(fresh, "replay", QUIET));
+    }
+
+    /**
+     * What each fold strategy plays at every later cell, as the replay holds it: for every later
+     * group, the play in force at the group's highest key, through Strategy.laterPlay, which reads
+     * cells by the engine's own map; set beside the export's later lines, which go by Part B's order.
+     */
+    static final class LaterHook implements FullIndexReplay.Hook {
+        @Override
+        public String name() {
+            return "later";
+        }
+
+        @Override
+        public Serializable after(FullIndexReplay.Item item, SystemScorer scorer, SystemScorer.Result scored,
+                                  List<FullIndexFit.Strategy> two) {
+            int[][] cells = ExportBundle.cells();
+            ArrayList<boolean[][]> out = new ArrayList<>();
+            for (FullIndexFit.Strategy t : two) {
+                int groups = t.later == null ? 1 : t.later.count();
+                boolean[][] st = new boolean[groups][cells.length];
+                PlayerTree.LaterPlay play = t.laterPlay();
+                for (int l = 0; l < groups; l++) {
+                    int key = t.later == null ? 0 : t.later.hi[l];
+                    for (int c = 0; c < cells.length; c++) {
+                        st[l][c] = play.stands(cells[c][1], cells[c][2] == 1, cells[c][0], key);
+                    }
+                }
+                out.add(st);
+            }
+            return out;
+        }
+    }
+
+    /**
+     * The three hooks' outputs hold what the replay scored. Every item, scored with the wide plans
+     * on, is still the run's part to the bit, the wide arrays only added; wide.ser holds every
+     * replayed row with the oracle and bound rows under the replay's identity and passes
+     * WideReport's checks. The sink's run-b.ser hands back each entry's states at each penetration,
+     * whose weighted mean is the entry's flat figure. The bundle's strategy files read back as
+     * Part B says, play their first moves as the replayed fit and their later cells as the play in
+     * force, and its states.bin gives the replayed figures. Planted: a P8 one unit in its last place
+     * off, an entry without its wide figures, a round value or a bet moved in the export: each stops.
+     */
+    @Test
+    public void theHooksOutputsHoldWhatTheReplayScored() throws Exception {
+        FullIndexReplay.Options o = withHooks(root.resolve("hooks"));
+        o.hooks.add(new LaterHook());
+        FullIndexReplay.Assembled h = FullIndexReplay.run(o, "hooks", QUIET);
+        List<SystemScorer.Result> merged = h.results();
+        int rows = 0;
+        for (int k = 0; k < h.items.size(); k++) {
+            FullIndexReplay.Record r = h.record(k);
+            assertTrue(r.diff.identical() && r.diff.added > 0, r.item + ": " + r.diff.describe());
+        }
+        for (SystemScorer.Result r : merged) {
+            rows += r.entries.size() + r.fullEntries.size();
+        }
+
+        WideReport.Saved wide = WideReport.read(h.out.resolve("wide.ser"));
+        assertEquals(h.identity, wide.identity);
+        assertEquals(SystemScorer.WIDE_PLANS.length, wide.plans.length);
+        assertEquals(rows + 1 + 3, wide.rows.size(), "every row, the oracle and the three bound rows");
+        assertTrue(WideReport.check(wide).isEmpty(), String.valueOf(WideReport.check(wide)));
+
+        KeyEdges.Collector c = KeyEdges.Collector.read(h.out.resolve("sink").resolve(ReplayHooks.Sink.FILE));
+        assertEquals(h.identity, c.identity);
+        for (SystemScorer.Result r : merged) {
+            List<SystemScorer.Entry> es = new ArrayList<>(r.entries);
+            es.addAll(r.fullEntries);
+            for (SystemScorer.Entry e : es) {
+                for (int p = 1; p <= 2; p++) {
+                    KeyEdges.Values v = c.values(e.name, p);
+                    double wv = 0;
+                    double ww = 0;
+                    double scale = 0;
+                    for (int j = 0; j < v.state.length; j++) {
+                        wv += v.weight[j] * v.value[j];
+                        ww += v.weight[j];
+                        scale += v.weight[j] * Math.abs(v.value[j]);
+                    }
+                    // Summed in another order than the scorer's: held to the size of its terms (StrategyExport.Report).
+                    double flat = e.estimate[p][SystemScorer.FLAT];
+                    assertEquals(flat, wv / ww, 1e-12 * scale / ww, e.name + " at " + p);
+                }
+            }
+        }
+        assertFalse(Files.exists(h.out.resolve("bundle")), "a bundle without its round trip stays .partial");
+        Path bundle = h.out.resolve("bundle.partial");
+        ExportBundle.States bin = ExportBundle.readStates(bundle.resolve("states.bin"));
+        assertEquals(2 * o.exportRows.size(), bin.sections.size(), "every row at 75% and 80%");
+        String txt = new String(Files.readAllBytes(h.out.resolve("export.txt")), "UTF-8");
+        int checkedFiles = 0;
+        for (int k = 0; k < h.items.size(); k++) {
+            FullIndexReplay.Record rec = h.record(k);
+            int p = rec.item.pen;
+            @SuppressWarnings("unchecked")
+            List<boolean[][]> later = (List<boolean[][]>) rec.kept.get("later");
+            for (SystemScorer.Entry e : rec.result.fullEntries) {
+                if (e.ownValue) {
+                    continue;
+                }
+                assertTrue(txt.contains("- " + e.name + " at " + ExportBundle.PENS[p] + "%: "), txt);
+                for (int f = 0; f < 2; f++) {
+                    ExportBundle.Strategy s = ExportBundle.readStrategy(bundle.resolve(
+                            ExportBundle.Strategy.fileName(e.name, ExportBundle.PENS[p], f)));
+                    SystemScorer.Fit fit = rec.result.fullFirst[p][f];
+                    assertArrayEquals(fit.groups.hi, s.hi);
+                    for (int g = 0; g < s.hi.length; g++) {
+                        for (int i = 0; i < Deals.COUNT; i++) {
+                            if (!Deals.playerNatural(i) && fit.reach[g][i] > 0) {
+                                assertEquals(StateValuer.MOVES[fit.move[g][i]], s.first[g][i][0], g + " " + i);
+                            }
+                        }
+                    }
+                    assertEquals(later.get(f).length, s.stands.length);
+                    for (int l = 0; l < s.stands.length; l++) {
+                        assertArrayEquals(later.get(f)[l], s.stands[l], "later group " + l);
+                    }
+                    checkedFiles++;
+                }
+            }
+        }
+        assertEquals(4 * o.exportRows.size(), checkedFiles);
+
+        // Planted, one at a time.
+        FullIndexReplay.Record rec = h.record(h.items.size() - 1);
+        SystemScorer.Entry first = rec.result.entries.get(0);
+        int p = rec.item.pen;
+        int p8 = SystemScorer.wideAt(SystemScorer.planIndex(SystemScorer.WIDE_PLANS, "P8"), SystemScorer.W_SAME);
+        double was = first.wide[p][p8];
+        first.wide[p][p8] = Math.nextUp(was);
+        IllegalStateException x = assertThrows(IllegalStateException.class,
+                () -> new ReplayHooks.WidePlans().after(rec.item, null, rec.result, null));
+        assertTrue(x.getMessage().contains("check 1 of PLAN_COMPUTE.md 3.5"), x.getMessage());
+        first.wide[p][p8] = was;
+        new ReplayHooks.WidePlans().after(rec.item, null, rec.result, null);
+        first.widePlans = null;
+        x = assertThrows(IllegalStateException.class, () -> new ReplayHooks.WidePlans().after(rec.item, null, rec.result,
+                null));
+        assertTrue(x.getMessage().contains("holds no wide figures"), x.getMessage());
+
+        @SuppressWarnings("unchecked")
+        ReplayHooks.Row row = ((List<ReplayHooks.Row>) rec.kept.get("export")).get(0);
+        ExportBundle.Strategy[] pair = new ExportBundle.Strategy[2];
+        for (int f = 0; f < 2; f++) {
+            pair[f] = ExportBundle.readStrategyText(row.text[f]);
+        }
+        ScoringStates st = FullIndexPilot.load(states, 12);
+        ReplayHooks.check(st, row.section(), pair, row.estimate, row.shoeSums, "as kept");
+        row.rvPlay[3] += 1e-6;
+        assertThrows(IllegalStateException.class, () -> ReplayHooks.check(st, row.section(), pair, row.estimate,
+                row.shoeSums, "a round value moved"));
+        row.rvPlay[3] -= 1e-6;
+        row.bet[3][1] += 0.001;
+        assertThrows(IllegalStateException.class, () -> ReplayHooks.check(st, row.section(), pair, row.estimate,
+                row.shoeSums, "a bet moved"));
     }
 
     /**
@@ -345,14 +557,24 @@ public class FullIndexReplayTest {
         writable.readOnlyTrees = false;
         a = assertThrows(IllegalArgumentException.class, () -> FullIndexReplay.run(writable, "r", QUIET));
         assertTrue(a.getMessage().contains("--trees-read-only"), a.getMessage());
-        for (String hook : new String[]{"wide", "sink", "export"}) {
+        // The hooks' own outputs: none in the run's directory, an export bundle written once, rows only with a bundle.
+        for (String hook : new String[]{"sink", "export"}) {
             FullIndexReplay.Options h = options(source, out);
-            h.wide = hook.equals("wide");
-            h.sink = hook.equals("sink") ? root.resolve("sink") : null;
-            h.export = hook.equals("export") ? root.resolve("export") : null;
+            h.sink = hook.equals("sink") ? source.resolve("sink") : null;
+            h.export = hook.equals("export") ? source.resolve("bundle") : null;
             a = assertThrows(IllegalArgumentException.class, () -> FullIndexReplay.run(h, "r", QUIET));
-            assertTrue(a.getMessage().startsWith("--" + hook + " needs"), a.getMessage());
+            assertTrue(a.getMessage().contains("where the replay writes nothing"), a.getMessage());
         }
+        Path made = root.resolve("a-bundle-already");
+        Files.createDirectories(made);
+        FullIndexReplay.Options twice = options(source, out);
+        twice.export = made;
+        e = assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(twice, "r", QUIET));
+        assertTrue(e.getMessage().contains("a bundle is written once"), e.getMessage());
+        FullIndexReplay.Options rowsOnly = options(source, out);
+        rowsOnly.exportRows = Arrays.asList("F1 start, full play");
+        a = assertThrows(IllegalArgumentException.class, () -> FullIndexReplay.run(rowsOnly, "r", QUIET));
+        assertTrue(a.getMessage().contains("no --export directory"), a.getMessage());
 
         Path missing = copyOfRun("missing-part");
         Files.delete(missing.resolve("part-1-1-folds.ckpt"));

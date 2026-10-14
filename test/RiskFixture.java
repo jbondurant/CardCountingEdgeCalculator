@@ -138,6 +138,68 @@ final class RiskFixture {
         }
     }
 
+    /**
+     * The wide plans' figures each fixture row has at 80%, full play: by row, for P16 and B0,8 (the
+     * same schedule) and X-1.0,8 (the own rule), {EV per round watched, average bet, mean square bet}.
+     */
+    static final Map<String, double[][]> WIDE_MU = new LinkedHashMap<>();
+
+    static {
+        WIDE_MU.put(RiskReport.HI_LO, new double[][]{{0.0061, 2.4, 9.0}, {0.0050, 1.1, 5.0}, {0.0042, 1.3, 6.0}});
+        WIDE_MU.put(RiskReport.VICTOR, new double[][]{{0.0068, 2.5, 9.5}, {0.0056, 1.2, 5.5}, {0.0047, 1.35, 6.5}});
+    }
+
+    static final String[] WIDE_LABELS = {"P16", "B0,8", "X-1.0,8"};
+
+    /**
+     * The replay's wide.ser, as WideReport.save writes it: Hi-Lo's and Victor APC + ace's full-play
+     * rows with the wide plans' figures at 80% (WIDE_MU) and 1,000 resamples of every kept figure.
+     */
+    static void writeWide(Path file, String identity) throws IOException {
+        List<WideReport.Row> rows = new ArrayList<>();
+        SystemScorer.Plan[] plans = SystemScorer.WIDE_PLANS;
+        int[] kept = SystemScorer.wideRows(plans);
+        long seed = 900;
+        for (SystemScorer.Result r : results()) {
+            for (SystemScorer.Entry e : r.fullEntries) {
+                double[][] mu = WIDE_MU.get(e.name.substring(0, e.name.length() - ", full play".length()));
+                if (mu == null) {
+                    continue;
+                }
+                e.widePlans = plans;
+                e.wide = new double[3][];
+                e.wideBoot = new double[3][][];
+                e.wide[2] = new double[plans.length * SystemScorer.WIDE_METRICS];
+                java.util.Arrays.fill(e.wide[2], 0.5);
+                for (int l = 0; l < WIDE_LABELS.length; l++) {
+                    int i = SystemScorer.planIndex(plans, WIDE_LABELS[l]);
+                    int base = l < 2 ? SystemScorer.W_SAME : SystemScorer.W_OWN;
+                    e.wide[2][SystemScorer.wideAt(i, base)] = mu[l][0];
+                    e.wide[2][SystemScorer.wideAt(i, base + 1)] = mu[l][1];
+                    e.wide[2][SystemScorer.wideAt(i, base + 3)] = mu[l][2];
+                }
+                e.wideBoot[2] = new double[kept.length][];
+                for (int k = 0; k < kept.length; k++) {
+                    e.wideBoot[2][k] = boot(e.wide[2][kept[k]], 0.0003, seed++);
+                }
+                rows.add(new WideReport.Row(e));
+            }
+        }
+        WideReport.save(file, identity, plans, rows);
+    }
+
+    /** The pilot run again with --wide: its Results add a P16 table, where Victor APC + ace's ratio is 1.20. */
+    static List<String> widePilot() {
+        List<String> out = new ArrayList<>(pilot());
+        int at = out.indexOf("## The full run, projected");
+        String head = "| Count | Estimate, full play | SE, first decisions only | SE, later plays held | "
+                + "SE, later plays refitted | Refitted / held | its jackknife SE |";
+        out.addAll(at, List.of("Difference from Hi-Lo at 80%, P16 same schedule, over 100 resamples (SEs in % of a "
+                        + "unit per round):", "", head, "|---|---|---|---|---|---|---|",
+                "| " + RiskReport.VICTOR + " | +0.0400% | 0.0300% | 0.0290% | 0.0348% | 1.20 | 0.03 |", ""));
+        return out;
+    }
+
     /** A pilot's output: a table before its Results that must be ignored, then the Results. */
     static List<String> pilot() {
         String head = "| Count | Estimate, full play | SE, first decisions only | SE, later plays held | "
