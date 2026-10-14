@@ -18,7 +18,7 @@ import java.util.Map;
  * - ceiling: CeilingResults' ceiling-SHA.json, CEILING_RESULT_PARAGRAPHS.md and, for the searched
  *   counts' tags, the registration step 7 scored (SiteCeiling);
  * - literature: LiteratureCheck's literature-SHA.json, already in the contract, checked and copied;
- * - sim: the simulator's summary-p3.json and summary-p2.json (SiteSim).
+ * - sim: the simulator's runs, planted runs and mode B, held to SIM_CHECK.md (SiteSim).
  * An adapter carries figures across and computes nothing the page shows but a change of unit
  * (fractions to percent) and a pick its computation's rule fixes; each lists the file it read,
  * with its SHA-256, in _source.artifacts. The computations write their files outside the page's
@@ -26,7 +26,7 @@ import java.util.Map;
  *
  * java -cp build/classes:lib/mongo-java-driver-3.12.14.jar SiteAdapt KIND FILE... --out OUT.json
  *   risk RISK.json | wide SPREADS.json | edges KEY-EDGES.json | ceiling CEILING.json PARAGRAPHS.md [COUNTS.json]
- *   | literature LITERATURE.json | sim SUMMARY-P3.json [SUMMARY-P2.json]
+ *   | literature LITERATURE.json | sim --plan SIM_CHECK.md [--published RESULTS.ser] --run DIR ... (SiteSim)
  */
 final class SiteAdapt {
 
@@ -134,7 +134,7 @@ final class SiteAdapt {
             case "edges": made = SiteEdges.adapt(in, files.get(0)); break;
             case "ceiling": made = SiteCeiling.adapt(in, files.get(0), Paths.get(files.get(1)),
                     files.size() > 2 ? Paths.get(files.get(2)) : null); break;
-            case "sim": made = SiteSim.adapt(in, files.size() > 1 ? Paths.get(files.get(1)) : null); break;
+            case "sim": made = SiteSim.adapt(SiteSim.parse(files)); break;
             case "literature": {
                 byte[] b = literature(in);
                 if (Files.exists(out)) {

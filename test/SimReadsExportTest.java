@@ -131,11 +131,22 @@ public class SimReadsExportTest {
         int p3exit = sim(l3, "p3", "--bundle", bundle.toString(), "--out", out.toString(), "--sim-commit", "fixture",
                 "--chunks", "1", "--chunk-size", "40", "--threads", "1", "--registry", "SIM_CHECK.md");
         assertEquals(0, p3exit, new String(Files.readAllBytes(l3), StandardCharsets.UTF_8));
-        SiteInput in = SiteSim.adapt(out.resolve("summary-p3.json"), out.resolve("summary-p2.json"));
+        // SiteSim's readers on what the simulator wrote: every z and pass held to its own figures, each
+        // comparison matched to the registry, and checks.txt's D checks read as passed. The whole adapter
+        // then refuses the run, as SIM_CHECK.md section 12 asks of one whose bundle the identity table
+        // does not name and whose part's registered tests it does not all make.
+        assertEquals(List.of(), SiteSim.failedChecks(out.resolve("checks.txt")));
         List<String> figures = new ArrayList<>();
-        for (Object o : (List<Object>) in.tables.get("sim_z")) {
-            figures.add(((Map<String, Object>) o).get("check") + " " + ((Map<String, Object>) o).get("figure"));
+        for (String f : new String[]{"summary-p3.json", "summary-p2.json"}) {
+            for (SiteSim.Test t : SiteSim.tests(new SiteSim.Summary(out.resolve(f)))) {
+                figures.add(t.check + " " + (t.fig == null ? null : t.fig.id));
+            }
         }
+        SiteSim.Options o = new SiteSim.Options();
+        o.plan = Path.of("SIM_CHECK.md");
+        o.runs.add(out);
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> SiteSim.adapt(o));
+        assertTrue(refused.getMessage().contains("identity table"), refused.getMessage());
         for (String f : new String[]{"P3 F03", "P2 F03", "P3 F18", "P2 F18"}) {
             assertTrue(figures.contains(f), f + " in " + figures);
         }

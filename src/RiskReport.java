@@ -580,6 +580,65 @@ final class RiskReport {
         }
     }
 
+    /**
+     * Reads several swings files as one (INTEGRATION.md open item 6: part 1's and part 2's runs each
+     * write one, and the page look's bundle may have its own): every figure from one file only.
+     */
+    static Map<String, Swing> readSwingFiles(List<Path> files) throws IOException {
+        Map<String, Swing> out = new TreeMap<>();
+        Map<String, Path> from = new LinkedHashMap<>();
+        for (Path f : files) {
+            for (Map.Entry<String, Swing> e : readSwings(Files.readAllLines(f, StandardCharsets.UTF_8)).entrySet()) {
+                if (out.put(e.getKey(), e.getValue()) != null) {
+                    throw new IllegalArgumentException(e.getKey() + " has swings in both " + from.get(e.getKey()) + " and " + f
+                            + "; each figure's swings come from one run");
+                }
+                from.put(e.getKey(), f);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * ruin-FIG.tsv, the simulator's own ruin paths (sim/QUESTIONS.md item 27's format): {mu,
+     * sigma_eff} from its comment lines, then per risk {risk, bankroll, paths, ruined, simulated, se,
+     * capped, mean shoes}.
+     */
+    static Object[] readRuin(Path file) throws IOException {
+        double mu = Double.NaN;
+        double sigma = Double.NaN;
+        List<double[]> rows = new ArrayList<>();
+        boolean header = false;
+        for (String l : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (l.startsWith("# mu\t")) {
+                mu = Double.parseDouble(l.substring(5));
+            } else if (l.startsWith("# sigmaEff\t")) {
+                sigma = Double.parseDouble(l.substring(11));
+            } else if (l.startsWith("#") || l.isEmpty()) {
+                continue;
+            } else if (!header) {
+                if (!l.equals("risk\tbankroll\tpaths\truined\tsimulated\tse\tcapped\tmeanShoes")) {
+                    throw new IllegalArgumentException(file + "'s header is not the simulator's ruin header: " + l);
+                }
+                header = true;
+            } else {
+                String[] f = l.split("\t", -1);
+                if (f.length != 8) {
+                    throw new IllegalArgumentException(file + ": " + l);
+                }
+                double[] r = new double[8];
+                for (int k = 0; k < 8; k++) {
+                    r[k] = Double.parseDouble(f[k]);
+                }
+                rows.add(r);
+            }
+        }
+        if (Double.isNaN(mu) || Double.isNaN(sigma) || rows.isEmpty()) {
+            throw new IllegalArgumentException(file + " gives no mu, sigma_eff or ruin line");
+        }
+        return new Object[]{new double[]{mu, sigma}, rows};
+    }
+
     /** Reads swings.tsv in the format the class comment fixes; refuses anything else in it. */
     static Map<String, Swing> readSwings(List<String> lines) {
         Map<String, Swing> out = new TreeMap<>();
@@ -834,6 +893,13 @@ final class RiskReport {
         /** B_25%, B_5% and B_1% at the records' own mu and sigma_eff, or null when the records lose. */
         double[] bankrolls;
         RiskMath.RuinPaths paths;
+        /**
+         * The simulator's own ruin paths from the same records and seed (ruin-FIG.tsv), set beside
+         * these: its mu and sigma_eff, and per bankroll {risk, bankroll, paths, ruined, simulated,
+         * se, capped, mean shoes}; null when not given.
+         */
+        double[] simMoments;
+        List<double[]> sim;
         /** Blocks of H r rounds, by HOURS then RATES. */
         final List<RiskMath.Blocks> blocks = new ArrayList<>();
         double seconds;
@@ -1258,6 +1324,17 @@ final class RiskReport {
                             c.paths.simulated(k), c.paths.se(k), (c.paths.simulated(k) - c.paths.formula(k)) / c.paths.se(k));
                 }
             }
+            if (c.sim != null) {
+                out.println();
+                out.printf("The simulator's own ruin paths from the same records (ruin-%s.tsv): mu %+.6f, sigma_eff %.4f.%n%n",
+                        c.figure, c.simMoments[0], c.simMoments[1]);
+                out.println("| Risk | Bankroll | Paths | Ruined | Simulated | SE | Capped | Mean shoes |");
+                out.println("|---|---|---|---|---|---|---|---|");
+                for (double[] r : c.sim) {
+                    out.printf("| %.2f | %.0f | %.0f | %.0f | %.4f | %.4f | %.0f | %.1f |%n", r[0], r[1], r[2], r[3], r[4], r[5],
+                            r[6], r[7]);
+                }
+            }
             out.println();
             out.println("| Block | Blocks | Behind: formula, simulated, gap / SE | " + tripHeads() + " |");
             out.println("|---|---|---|" + "---|".repeat(TRIP_BANKROLLS.length));
@@ -1445,6 +1522,15 @@ final class RiskReport {
                 }
                 b.append(']');
             }
+            if (c.sim != null) {
+                b.append(",\"sim\":{\"mu\":").append(num(c.simMoments[0])).append(",\"sigma_eff\":")
+                        .append(num(c.simMoments[1])).append(",\"points\":[");
+                for (int k = 0; k < c.sim.size(); k++) {
+                    double[] r = c.sim.get(k);
+                    b.append(k > 0 ? "," : "").append(arr(r[1], r[0], r[4], r[5]));
+                }
+                b.append("]}");
+            }
             b.append(",\"blocks\":[");
             for (int k = 0; k < c.blocks.size(); k++) {
                 RiskMath.Blocks x = c.blocks.get(k);
@@ -1544,19 +1630,53 @@ final class RiskReport {
      */
     static Outcome run(Map<String, Path> sources, Path pilot, Path swingsFile, Map<String, Path> recordFiles,
                        String fanFigure, Path fanFile, String commit, Path md, Path json) throws Exception {
+        return run(sources, pilot, List.of(swingsFile), recordFiles, new LinkedHashMap<>(), fanFigure, fanFile, commit, md,
+                json);
+    }
+
+    /**
+     * The same, the swings from several files (each figure from one) and the simulator's ruin paths
+     * (ruin-FIG.tsv) set beside this report's own from the same records: a ruin file whose mu or
+     * sigma_eff is not the one its records give, within 1e-9 relative, was not made from them, and
+     * is refused with the rest.
+     */
+    static Outcome run(Map<String, Path> sources, Path pilot, List<Path> swingsFiles, Map<String, Path> recordFiles,
+                       Map<String, Path> ruinFiles, String fanFigure, Path fanFile, String commit, Path md, Path json)
+            throws Exception {
         for (Path out : new Path[]{md, json}) {
             if (Files.exists(out)) {
                 throw new IllegalStateException(out + " is already there; a report is never written over");
             }
         }
         Engine e = readEngine(sources, pilot);
-        Map<String, Swing> swings = readSwings(Files.readAllLines(swingsFile, StandardCharsets.UTF_8));
+        Map<String, Swing> swings = readSwingFiles(swingsFiles);
         Map<String, RiskMath.Records> records = new LinkedHashMap<>();
         for (Map.Entry<String, Path> r : recordFiles.entrySet()) {
             records.put(r.getKey(), readRecords(r.getValue()));
         }
         double[][] fan = fanFile == null ? null : readFan(fanFile);
         Outcome o = compute(e, swings, records, fanFigure, fan);
+        for (Map.Entry<String, Path> r : ruinFiles.entrySet()) {
+            RuinCheck c = null;
+            for (RuinCheck x : o.ruin) {
+                c = x.figure.equals(r.getKey()) ? x : c;
+            }
+            if (c == null) {
+                o.failures.add("ruin-" + r.getKey() + ".tsv was given, and no ruin check of " + r.getKey() + " was made (its "
+                        + "records were not given, or its row was not computed)");
+                continue;
+            }
+            Object[] read = readRuin(r.getValue());
+            double[] m = (double[]) read[0];
+            if (Math.abs(m[0] - c.mu) > 1e-9 * Math.abs(c.mu) || Math.abs(m[1] - c.sigma) > 1e-9 * c.sigma) {
+                o.failures.add(r.getValue() + " gives mu " + m[0] + " and sigma_eff " + m[1] + "; records-" + r.getKey()
+                        + ".tsv gives " + c.mu + " and " + c.sigma + ": the two were not made from the same records");
+            }
+            c.simMoments = m;
+            @SuppressWarnings("unchecked")
+            List<double[]> rows = (List<double[]>) read[1];
+            c.sim = rows;
+        }
         if (!o.failures.isEmpty()) {
             throw new IllegalStateException("the risk figures fail their checks, so nothing is written:\n"
                     + String.join("\n", o.failures));
@@ -1568,7 +1688,12 @@ final class RiskReport {
         if (pilot != null) {
             inputs.put(pilot.toString(), sha256(pilot));
         }
-        inputs.put(swingsFile.toString(), sha256(swingsFile));
+        for (Path f : swingsFiles) {
+            inputs.put(f.toString(), sha256(f));
+        }
+        for (Path f : ruinFiles.values()) {
+            inputs.put(f.toString(), sha256(f));
+        }
         for (Path p : recordFiles.values()) {
             inputs.put(p.toString(), sha256(p));
         }
@@ -1612,7 +1737,8 @@ final class RiskReport {
         Map<String, Path> records = new LinkedHashMap<>();
         Map<String, Path> fan = new LinkedHashMap<>();
         Path pilot = null;
-        Path swings = null;
+        List<Path> swings = new ArrayList<>();
+        Map<String, Path> ruin = new LinkedHashMap<>();
         Path md = null;
         Path json = null;
         String commit = null;
@@ -1622,20 +1748,23 @@ final class RiskReport {
                 case "--records": put(records, args[++k]); break;
                 case "--fan": put(fan, args[++k]); break;
                 case "--widening": pilot = Paths.get(args[++k]); break;
-                case "--swings": swings = Paths.get(args[++k]); break;
+                case "--swings": swings.add(Paths.get(args[++k])); break;
+                case "--ruin": put(ruin, args[++k]); break;
                 case "--md": md = Paths.get(args[++k]); break;
                 case "--json": json = Paths.get(args[++k]); break;
                 case "--commit": commit = args[++k]; break;
                 default: throw new IllegalArgumentException("unknown argument " + args[k]);
             }
         }
-        if (sources.isEmpty() || swings == null || md == null || json == null || commit == null || fan.size() > 1) {
+        if (sources.isEmpty() || swings.isEmpty() || md == null || json == null || commit == null || fan.size() > 1) {
             System.err.println("usage: RiskReport --commit SHA --source NAME=PATH ... [--widening PILOT] --swings FILE "
-                    + "[--records FIG=PATH ...] [--fan FIG=PATH] --md OUT.md --json OUT.json");
+                    + "[--swings FILE ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--fan FIG=PATH] --md OUT.md "
+                    + "--json OUT.json");
             System.exit(2);
         }
         String fanFigure = fan.isEmpty() ? null : fan.keySet().iterator().next();
-        Outcome o = run(sources, pilot, swings, records, fanFigure, fan.isEmpty() ? null : fan.get(fanFigure), commit, md, json);
+        Outcome o = run(sources, pilot, swings, records, ruin, fanFigure, fan.isEmpty() ? null : fan.get(fanFigure), commit,
+                md, json);
         int computed = 0;
         for (Row r : o.rows) {
             computed += r.computed() ? 1 : 0;
