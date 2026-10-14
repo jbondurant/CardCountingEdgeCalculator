@@ -17,7 +17,20 @@ nothing under src/ or test/ and no run's output. PLAN_COMPUTE.md has no section 
 section 11 (the paths) is the one used.
 
 Items 1 to 12 were answered on the engine side in SHOE_SPEC.md ("Answers to the simulator's
-questions"); each now says what was done. Items 13 on are this session's.
+questions"); each now says what was done. Items 13 to 23 are the second session's.
+
+**Third session, 13 October 2026 (branch site-fix-sim, off site-integration at 304901c).** It
+mended INTEGRATION.md's open items 2 (p3 stopped after its chunks on a bundle with no figure
+that keeps paths), 3 (the pilot), 11 (trip risk and the chance of being behind) and the
+simulator's side of 10. It read: INTEGRATION.md (all), SIM_CHECK.md (all), SHOE_SPEC.md B9, Part
+C, the answers and "How this file is held" (lines 1000 to the end), PLAN_COMPUTE.md sections 1
+(lines 96-349) and 2.4 (423-458), everything in sim/ and sim/test. A search for headings over
+PLAN_COMPUTE.md also showed the first lines of 2.3's items 7 and 8 (trip risk "losing B within T
+rounds, by Brownian first passage"; being behind "after H hours: Φ(−μ√T/σ_eff), T = H·r, for H
+= 10, 100, 1,000"); nothing else of 2.3 was read. It opened nothing under src/ or test/ and no
+run's output. It compiled src/ and test/ unread and ran test/SimReadsExportTest.java as a black
+box, looking only at its counts (1 passed, 1 skipped: its disabled half, as before). Items 24 on
+are this session's.
 
 1. **Soft 17.** Loto-Québec's PDF leaves hit-or-stand on soft 17 to the sign at the table.
    *Chosen:* the dealer hits soft 17, from SHOE_SPEC.md A2 (`rule.hits.soft.17 = true`) and
@@ -154,7 +167,7 @@ questions"); each now says what was done. Items 13 on are this session's.
 18. **Trip risk and the chance of being behind.** SIM_CHECK.md section 11 cuts the records into
     blocks of H·r rounds; H and r are in PLAN_COMPUTE.md 2.3, outside this session's reading.
     *Chosen:* not computed in the simulator; records-FIG.tsv holds every shoe's (Y, N, M) in shoe
-    order, which is all the blocks need, for RiskReport.
+    order, which is all the blocks need, for RiskReport. *Done in the third session:* item 24.
 
 19. **The records' shoes.** SHOE_SPEC.md C2 says "P3's first two chunks (2,000,000 shoes)".
     *Chosen:* the shoes of the first two chunks, 2 × `--chunk-size` (fewer if the run has fewer),
@@ -184,3 +197,65 @@ questions"); each now says what was done. Items 13 on are this session's.
 
 23. **A bundle without keys-sample.tsv or lookups.tsv.** *Chosen:* `sim.Sim p2` reports D2 or D5
     as not run and counts the exact checks as failed, so P2 does not start (unless a plant is on).
+
+24. **Trip risk and being behind: H, r and the bankrolls** (open item 11; item 18 is now done).
+    *Chosen:* `p3` writes `trip-FIG.tsv` beside `ruin-FIG.tsv` for each figure with paths, from
+    the same records (`Trip.java`). H = 10, 100 and 1,000 hours, from the one line of
+    PLAN_COMPUTE.md 2.3 seen; r = 50, 80 and 100 rounds an hour, the paces SIM_CHECK.md section 11
+    names, since 2.3's r was not read; both are options (`--trip-hours`, `--trip-paces`). The
+    bankrolls are the ruin paths' B_25%, B_5% and B_1% (2.4 check 4: "the same for trip risk and
+    P(behind)"), and trip lines are written only when the records' μ is above 0. A block is the
+    fewest whole shoes reaching T = H·r rounds, so it holds a little more than T (column
+    `meanRounds`); the formula is taken at T itself. A trip is lost when bankroll + the block's
+    lowest running total ≤ 0, the lowest being the least of (the block's total before a shoe + that
+    shoe's M); behind when the block's total is below 0; each share with its binomial SE over the
+    blocks. Formulas: Φ((−B − μT)/(σ√T)) + exp(−2μB/σ²)·Φ((−B + μT)/(σ√T)) and Φ(−μ√T/σ), σ = σ_eff.
+    *For the engine side:* confirm r, or name the paces RiskReport uses, and say whether the trip's
+    bankrolls should be B_p or some other B.
+
+25. **The pilot** (open item 3). *Chosen:* `sim.Sim pilot --part N --bundle DIR --out DIR
+    --sim-commit SHA [--registry] [--catalog] [--threads]` reads the bundle, runs D1, D2, D4 and D5
+    (setup; a failure stops it with no file, SIM_CHECK.md section 5), then P3, P2 and, in part 2,
+    the extras, at 1% and blind, and writes `sim-pilot-partN.tsv` as section 8 gives it, plus
+    `pilot-partN-checks.txt`. Its chunks and records go to `OUT/pilot-partN.work`, which it deletes
+    when done (only a directory holding its own mark). What it times: P3 is the whole p3 command at
+    1% (38 chunks of 10,000 shoes, the records of the first two, 20 fans of 1,000 rounds, 200 ruin
+    paths, the trip blocks); P2 is K = 1,200 on every state. Part 2's extras are the variants
+    command (4 chunks of 10,000 shoes) and the eight planted runs and the control (each P3 on one
+    chunk of 10,000 shoes and P2 at K = 60); each planted run's bundle reading and exact checks are
+    a fixed cost, so they enter `time extra` divided by 100 and the rule's ×100 counts them once a
+    run. Every number is in units of a one-unit bet, as exact.tsv's and the summaries' are, not in
+    percent: σ_eff near 1.16 for F03, the section 8 assumption. A figure of the part the bundle
+    cannot give (its row not exported) is left out, named on the console, and the command exits 1.
+    One bundle a pilot. *For the engine side:* (a) does `SimCheckPlan fill` read `sd`, `v` and
+    `exact` in units (as written) or in percent? (b) part 2's F43 to F48 (open item 5) and F49 to
+    F52 (open item 4) are not in any bundle yet, and part 2's rows come from two bundles (open
+    item 6): should the pilot take several bundles, and should fill accept a file without the
+    figures that cannot run (section 7)?
+
+26. **What the summaries gained** (open item 10, the simulator's side). Every paired difference
+    carries `fig` and `lessFig`, the registered ids of the figure and of the one it is less ("" for
+    one the registry does not list), so the reader finds F25 less F18 and F29 less F27 by id; their
+    `sigmaEff` is σ_eff of the per-round difference, from which {N} of PLAN_PAGE.md section 3 is
+    computed engine side (this session did not read its formula). In summary-variants.json both
+    ids are the figure's own and `less` says which variant less mode A. summary-p2.json carries
+    each exact check's outcome as facts `D1`, `D2`, `D4` and `D5` (`passed`, `failed`, `not run`),
+    which a planted run's page block needs ("which D checks failed"). summary-p3.json's `records`
+    fact names the figures kept, or says none were, and a `trip` fact gives H, r and the
+    bankrolls. A reader that refuses unknown keys must accept these.
+
+27. **The simulator's own formats, in one place.** SHOE_SPEC.md Part C fixes swings.tsv,
+    records-FIG.tsv, fan-FIG.tsv and ev-by-key.tsv. The others are the simulator's; their header
+    lines are below, as the writers write them, and `sim/test/FormatsTest.java` holds the writers
+    to this block. The engine side may move them into Part C. A summary's comparison and difference
+    are JSON objects with these keys in this order; its facts are strings.
+
+```sim-formats
+depth.tsv	band	from	to	rounds	shoes	simulated	se	exactWeight	exact
+variants.tsv	kind	fig	row	pen	figure	what	value	se	sigmaEff	rounds	shoes
+ruin-FIG.tsv	risk	bankroll	paths	ruined	simulated	se	capped	meanShoes
+trip-FIG.tsv	kind	hours	pace	rounds	blocks	meanRounds	risk	bankroll	simulated	se	formula
+comparison	check	row	pen	figure	exact	exactSe	simulated	simulatedSe	rounds	shoes	difference	z	pass	flagged	unseenKeyRounds	fig
+difference	check	row	pen	figure	less	difference	se	sigmaEff	first	second	exact	rounds	shoes	fig	lessFig
+sim-pilot-partN.tsv	part|setup|time|sd|v|exact
+```
