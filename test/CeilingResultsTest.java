@@ -113,12 +113,33 @@ public class CeilingResultsTest {
             r.fullEntries.add(own);
             run.results.add(r);
         }
-        return CeilingResults.fullPlay(c.published, run, counts, c.bounds);
+        CeilingResults.Full f = CeilingResults.fullPlay(c.published, run, counts, c.bounds);
+        f.widening = widening(PILOT_LARGEST);
+        return f;
+    }
+
+    /** The fixture pilot's largest difference ratio, what a count it did not measure is widened by; the real pilot's is 1.07. */
+    static final double PILOT_LARGEST = 1.12;
+
+    /**
+     * A pilot's ratios as SiteExport.Widening reads them (INTEGRATION.md open item 13): Red Seven
+     * measured at 1.04 on both tables and Omega II at the given largest at 1-8, gains 1.43; every
+     * row of the fixture's ladder is a count it did not measure.
+     */
+    static SiteExport.Widening widening(double largest) {
+        java.util.Map<String, java.util.Map<String, double[]>> t = new java.util.LinkedHashMap<>();
+        for (String table : new String[]{"flat", "1-8 same schedule"}) {
+            java.util.Map<String, double[]> m = new java.util.LinkedHashMap<>();
+            m.put("Red Seven (Red 7)", new double[]{1.04, 0.01, 1.43, 0.05});
+            m.put("Omega II", new double[]{table.equals("flat") ? 1.04 : largest, 0.01, 1.43, 0.05});
+            t.put(table, m);
+        }
+        return new SiteExport.Widening(t, "pilot-fixture.txt");
     }
 
     /**
      * The full-play ladder at 80%, 1-8: the rungs in the page's order, each full-play level widened
-     * by 1.07 (no count here was measured by the pilot) and each bound by nothing; F2 by its row with
+     * by the pilot's largest ratio (no count here was measured by it) and each bound by nothing; F2 by its row with
      * the betting vector, though its play vector alone scores far above; each gap paired with the
      * rung below.
      */
@@ -137,11 +158,11 @@ public class CeilingResultsTest {
         assertEquals("Hi-Opt II + ace side count, full play", ladder.get(3).entry.name);
         assertEquals(F2_FULL, ladder.get(5).entry.estimate[P][S8], 0, "F2's row with its betting vector, not its play vector");
         CeilingResults.Rung f1 = ladder.get(4);
-        assertEquals(CeilingResults.DIFFERENCE, f1.ratio);
+        assertEquals(PILOT_LARGEST, f1.ratio, "the pilot's largest ratio, read from it, not a constant");
         double se = Bootstrap.interval(F1_FULL, f1.entry.boot[P][S8]).se;
-        assertEquals(CeilingResults.DIFFERENCE * se, f1.level.se, 1e-15);
+        assertEquals(PILOT_LARGEST * se, f1.level.se, 1e-15);
         assertEquals(1, ladder.get(8).ratio, "a bound is fitted on nothing and not widened");
-        Bootstrap.Interval gap = SystemScorer.difference(f1.entry, ladder.get(3).entry, P, S8, CeilingResults.DIFFERENCE);
+        Bootstrap.Interval gap = SystemScorer.difference(f1.entry, ladder.get(3).entry, P, S8, PILOT_LARGEST);
         assertEquals(gap.lo, f1.gap.lo, 0);
         // First decisions: no full-play bound, and nothing widened.
         List<CeilingResults.Rung> fd = CeilingResults.ladder(c, null, P, S8);
@@ -178,14 +199,14 @@ public class CeilingResultsTest {
         double[] withM = CeilingResults.share(f1, none, CeilingResults.roomBound(c, f), P, S8, 0.0007);
         assertTrue(withM[0] < share[0]);
         Bootstrap.Interval[] split = CeilingResults.gapSplit(f1, CeilingResults.fullOwnValue(f.run.results.get(0)),
-                f.bounds.get(2), P, S8, CeilingResults.DIFFERENCE);
+                f.bounds.get(2), P, S8, PILOT_LARGEST);
         assertEquals(split[2].estimate, split[0].estimate + split[1].estimate, 1e-15);
         assertEquals(F1_OWN_FULL - F1_FULL, split[0].estimate, 1e-15);
     }
 
     /**
      * The full-play claim: F2's row with its betting vector against every published full-play row,
-     * each difference widened by 1.07; judged by its play vector alone (fullEntries[0]) it would hold.
+     * each difference widened by the pilot's largest ratio; judged by its play vector alone (fullEntries[0]) it would hold.
      */
     @Test
     public void theFullPlayClaimIsWidenedAndReadsF2sBettingRow(@TempDir Path dir) throws Exception {
@@ -201,14 +222,17 @@ public class CeilingResultsTest {
             d[r] = f2.row.boot[P][S8][r] - f2.best.boot[P][S8][r];
         }
         Bootstrap.Interval widened = Bootstrap.interval(f2.row.estimate[P][S8] - f2.best.estimate[P][S8],
-                Bootstrap.widen(d, 1.07));
+                Bootstrap.widen(d, PILOT_LARGEST));
         assertEquals(widened.lo, f2.fromBest.lo, 1e-15);
         CeilingReport.Claim play = CeilingReport.claim(f.run.results.get(1).fullEntries.get(0),
                 CeilingResults.fullPublished(c.published, true), P, S8);
         assertTrue(play.holds(), "the trap: the play vector alone would be claimed");
-        f.measured.put(f2.best.count.name, 1.30);
+        f.widening = widening(1.30);
         assertTrue(CeilingResults.fullClaim(f, 1, P, S8).fromBest.lo < f2.fromBest.lo,
-                "a comparator measured wider widens the pair by its ratio, the larger");
+                "a pilot that measured a wider ratio widens the pair by it, the larger");
+        f.widening = null;
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> CeilingResults.fullClaim(f, 1, P, S8));
+        assertTrue(e.getMessage().contains("--widening"), e.getMessage());
     }
 
     /** Checks 2 to 5 on the fixture, each made to fail by one planted figure. */
@@ -425,7 +449,8 @@ public class CeilingResultsTest {
         Path paragraphs = Files.write(dir.resolve(CeilingParagraphs.FILE), CeilingParagraphsTest.committed());
         String[] common = {"--stored", stored.toString(), "--saved", save.toString(), "--report", report.toString(),
                 "--counts", c.counts.file.toString(), "--fullplay-run", run.toString(), "--fullplay-counts",
-                f.counts.file.toString(), "--peek", peekFile.toString(), "--split-margin", split.toString()};
+                f.counts.file.toString(), "--peek", peekFile.toString(), "--split-margin", split.toString(), "--widening",
+                pilotFile(dir).toString()};
         PrintStream nowhere = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
         Path full = dir.resolve("full.md");
         CeilingResults.run(with(common, "full", "--out", full.toString()), "test", nowhere);
@@ -565,5 +590,11 @@ public class CeilingResultsTest {
                 main.toString(), "--counts", withObjectives.toString(), "--stored", ser.toString(), "--saved",
                 save.toString(), "--out", dir.resolve("o3.properties").toString()}, "test", nowhere));
         assertTrue(e.getMessage().contains("main state file"), e.getMessage());
+    }
+
+    /** The fixture pilot written as FullIndexPilot prints one, its largest difference ratio PILOT_LARGEST. */
+    static Path pilotFile(Path dir) throws Exception {
+        return Files.write(dir.resolve("pilot-ceiling.txt"), WideReportTest.pilot(WideReportTest.ratios("1-8 same schedule",
+                "Omega II", PILOT_LARGEST, "flat", "Red Seven (Red 7)", 1.04)).getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -63,7 +63,8 @@ public class SitePageTest {
         world = SiteWorld.make(Files.createDirectories(dir.resolve("world")));
         String template = read("site/template.html");
         inputs = Files.createDirectories(dir.resolve("inputs"));
-        run(SiteExport::main, "--stored", world.stored.toString(), "--widening", world.pilot.toString(), "--template",
+        run(SiteExport::main, "--stored", world.stored.toString(), "--report-final", world.reportFinal().toString(),
+                "--widening", world.pilot.toString(), "--template",
                 "site/template.html", "--states", world.states.toString(), "--saved", world.saved.toString(), "--counts",
                 world.registration.toString(), "--fullplay-run", world.runFile.toString(), "--fullplay-counts",
                 world.fullRegistration.toString(), "--out", inputs.resolve("results-world.json").toString());
@@ -75,8 +76,9 @@ public class SitePageTest {
                 "--out", inputs.resolve("spreads-fixture.json").toString());
         run(SiteAdapt::main, "edges", SiteEdgesTest.keyEdges(Files.createDirectories(dir.resolve("edges"))).toString(),
                 "--out", inputs.resolve("key-edges-fixture.json").toString());
-        Path[] sim = SiteSimTest.summaries(Files.createDirectories(dir.resolve("sim")), "a=off b=off");
-        run(SiteAdapt::main, "sim", sim[0].toString(), sim[1].toString(), "--out", inputs.resolve("sim-fixture.json").toString());
+        Path sim = Files.createDirectories(dir.resolve("sim"));
+        run(SiteAdapt::main, "sim", "--plan", SiteSimTest.plan(sim, true).toString(), "--run",
+                SiteSimTest.part1(sim.resolve("part1")).toString(), "--out", inputs.resolve("sim-fixture.json").toString());
         Path lit = Files.createDirectories(dir.resolve("literature"));
         run(SiteAdapt::main, "literature", SiteLiteratureTest.file(lit, SiteLiteratureTest.check(lit, false),
                 "literature.json").toString(), "--out", inputs.resolve("literature-fixture.json").toString());

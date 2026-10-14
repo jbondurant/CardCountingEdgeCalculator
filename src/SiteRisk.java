@@ -115,6 +115,7 @@ final class SiteRisk {
             }
         }
         in.tables.put("risk_rows", status);
+        panels(in, d);
         Object same = SiteAdapt.obj(d.get("same_swings"), "same_swings").get("holds");
         if (same instanceof Boolean) {
             Map<String, Object> m = in.figure("risk.same_swings", (Boolean) same ? 1 : -1, "w:holds:does not hold");
@@ -144,6 +145,62 @@ final class SiteRisk {
         } else {
             Map<String, Object> m = in.figure(key, SiteAdapt.num(v, key), fmt);
             SiteInput.at(m, null, at);
+        }
+    }
+
+    /**
+     * The fan and ruin panels (INTEGRATION.md open item 12): risk_fan, each fan path's cumulative
+     * win every step rounds, as RiskReport keeps them (FAN_STEP); risk_ruin, each ruin check's
+     * bankrolls with the formula's risk, the report's simulated risk and its SE, and the
+     * simulator's own from ruin-FIG.tsv where it was given, in the same order of bankrolls.
+     */
+    static void panels(SiteInput in, Map<String, Object> d) {
+        Object fan = d.get("fan");
+        if (fan != null) {
+            Map<String, Object> f = SiteAdapt.obj(fan, "fan");
+            double step = SiteAdapt.num(f.get("step"), "fan.step");
+            List<Object> paths = new ArrayList<>();
+            List<Object> raw = SiteAdapt.list(f.get("paths"), "fan.paths");
+            for (int j = 0; j < raw.size(); j++) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("path", j);
+                m.put("figure", f.get("figure"));
+                m.put("step", step);
+                m.put("points", SiteAdapt.list(raw.get(j), "fan.paths[" + j + "]"));
+                paths.add(m);
+            }
+            in.tables.put("risk_fan", paths);
+        }
+        List<Object> ruin = new ArrayList<>();
+        for (Object o : d.get("ruin") == null ? List.of() : SiteAdapt.list(d.get("ruin"), "ruin")) {
+            Map<String, Object> c = SiteAdapt.obj(o, "a ruin check");
+            if (c.get("points") == null) {
+                continue;
+            }
+            List<Object> pts = SiteAdapt.list(c.get("points"), "ruin points");
+            List<Object> sim = null;
+            if (c.get("sim") != null) {
+                sim = SiteAdapt.list(SiteAdapt.obj(c.get("sim"), "ruin sim").get("points"), "ruin sim points");
+            }
+            for (int k = 0; k < pts.size(); k++) {
+                List<Object> p = SiteAdapt.list(pts.get(k), "a ruin point");
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("figure", c.get("figure"));
+                m.put("bankroll", SiteAdapt.num(p.get(0), "bankroll"));
+                m.put("formula", SiteAdapt.num(p.get(1), "formula"));
+                m.put("simulated", SiteAdapt.num(p.get(2), "simulated"));
+                m.put("se", SiteAdapt.num(p.get(3), "se"));
+                if (sim != null && k < sim.size()) {
+                    List<Object> q = SiteAdapt.list(sim.get(k), "a simulator ruin point");
+                    m.put("sim_bankroll", SiteAdapt.num(q.get(0), "bankroll"));
+                    m.put("sim_simulated", SiteAdapt.num(q.get(2), "simulated"));
+                    m.put("sim_se", SiteAdapt.num(q.get(3), "se"));
+                }
+                ruin.add(m);
+            }
+        }
+        if (!ruin.isEmpty()) {
+            in.tables.put("risk_ruin", ruin);
         }
     }
 }

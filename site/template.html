@@ -17,7 +17,7 @@
 <p class="tagline">Justin Bondurant-David · version {{s:version}}, {{s:date}}</p>
 </header>
 
-<p class="headline" id="answer">At the Casino de Montréal's blackjack, played with {{game.decks|n}} decks, a player who counts without mistakes, bets from one unit up to {{game.spread_max|n}} units and plays every decision by the count {{full.80.s8.@best|w:wins:loses}} about {{full.80.s8.@best|a2}}% of the minimum bet per round with the count that scored highest here ({{name:full.80.s8.@best}}), and {{full.80.s8.hi_lo|w:wins:loses}} about {{full.80.s8.hi_lo|a2}}% with {{name:hi_lo}}, the most common count, when the dealer puts the cut card {{game.pen.80|n}}% of the way into the shoe. With bets averaging {{avgbet.80.s8|d1}} units, that is about {{perbet.full.80.s8.@best|a2}}% and {{perbet.full.80.s8.hi_lo|a2}}% of the money bet. At {{game.pen.70|n}}%, the shallowest of the three places studied, {{name:hi_lo}} {{full.70.s8.hi_lo|w:wins:loses}} {{full.70.s8.hi_lo|a2}}% and {{name:full.80.s8.@best}} {{full.70.s8.=full.80.s8.@best|w:wins:loses}} {{full.70.s8.=full.80.s8.@best|a2}}%. I have not measured where Montreal's dealers put the cut card. Someone who plays the standard strategy chart without counting {{bet.80.s1.null|w:wins:loses}} {{bet.80.s1.null|a2}}% of the first bet of each round.{{#if has:risk.ev_per100_usd}} At {{risk.unit_usd|usd}} a unit, that is about {{risk.ev_per100_usd.full.80.s8.=full.80.s8.@best|usd}} per {{risk.rounds|n}} rounds, against a swing of ±{{risk.sd_per100_usd.full.80.s8.=full.80.s8.@best|usd}} over the same rounds.{{/if}}</p>
+<p class="headline" id="answer">At the Casino de Montréal's blackjack, played with {{game.decks|n}} decks, a player who counts without mistakes, bets from one unit up to {{game.spread_max|n}} units and plays every decision by the count {{full.80.s8.@best|w:wins:loses}} about {{full.80.s8.@best|a2}}% of the minimum bet per round with the count that scored highest here ({{name:full.80.s8.@best}}), and {{full.80.s8.hi_lo|w:wins:loses}} about {{full.80.s8.hi_lo|a2}}% with {{name:hi_lo}}, the most common count, when the dealer puts the cut card {{game.pen.80|n}}% of the way into the shoe. With bets averaging {{avgbet.80.s8|d1}} units, that is about {{perbet.full.80.s8.@best|a2}}% and {{perbet.full.80.s8.hi_lo|a2}}% of the money bet. At {{game.pen.70|n}}%, the shallowest of the three places studied, {{name:hi_lo}} {{full.70.s8.hi_lo|w:wins:loses}} {{full.70.s8.hi_lo|a2}}% and {{name:full.80.s8.@best}} {{full.70.s8.=full.80.s8.@best|w:wins:loses}} {{full.70.s8.=full.80.s8.@best|a2}}%. I have not measured where Montreal's dealers put the cut card. Someone who plays the standard strategy chart without counting {{bet.80.s1.null|w:wins:loses}} {{bet.80.s1.null|a2}}% of the first bet of each round.{{#if has:risk.ev_per100_usd.full.80.s8.=full.80.s8.@best}} At {{risk.unit_usd|usd}} a unit, that is about {{risk.ev_per100_usd.full.80.s8.=full.80.s8.@best|usd}} per {{risk.rounds|n}} rounds, against a swing of ±{{risk.sd_per100_usd.full.80.s8.=full.80.s8.@best|usd}} over the same rounds.{{/if}}{{#if has:risk.ev_per100_usd.full.80.s8 and lacks:risk.ev_per100_usd.full.80.s8.=full.80.s8.@best}} The swings were simulated for some counts only, and not for {{name:full.80.s8.@best}}. For {{name:risk.ev_per100_usd.full.80.s8.@best}}, the highest of those, at {{risk.unit_usd|usd}} a unit that is about {{risk.ev_per100_usd.full.80.s8.@best|usd}} per {{risk.rounds|n}} rounds, against a swing of ±{{risk.sd_per100_usd.full.80.s8.=risk.ev_per100_usd.full.80.s8.@best|usd}} over the same rounds.{{/if}}</p>
 
 <p class="headline sub" id="conditions">Every decision is played from a table of index plays the program worked out for this game, not from the authors' published index lists; published estimates for a six-deck game say a short list captures less (see <a href="#prior">Prior work</a>). "One to {{game.spread_max|n}} units" means the same bet sizes for every count, averaging {{avgbet.80.s8|d1}} units, handed out in the order of each count's own estimate of the advantage.</p>
 
@@ -218,7 +218,16 @@ series full.70.{x}.perfect
 {{#if has:ceiling_paragraphs}}<p class="headline">{{para:same}}</p>
 <p>{{para:flat}}</p>{{else}}<p><span class="pending">Not yet computed: the searched count's result, picked from the ceiling count's figures by the rule committed before they were read.</span></p>{{/if}}
 <p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it.{{#if has:search.}} <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span>{{else}} <span class="pending">Not yet computed: the searched counts' scores on the search file.</span>{{/if}} Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
-{{#if has:ledger.}}<div class="box" id="registration"></div>{{else}}<p><span class="pending">Not yet computed: the registration box, printed from the ledger once the registered counts have been scored.</span></p>{{/if}}
+{{#if has:ledger.}}<div class="box" id="registration">
+<h3>The registration and its looks at the main file</h3>
+<p>The searched counts were fixed in a committed file before the main shoes were scored with them. Every run that scored them on the main shoes wrote one line to a ledger kept beside that file, {{ledger.lines|n}} in all: the commit of the code, the registration's git blob, the time and what ran.</p>
+{{table:ledger
+head Commit|Registration blob|Time|What ran
+col commit
+col blob
+col time
+col what
+}}</div>{{else}}<p><span class="pending">Not yet computed: the registration box, printed from the ledger once the registered counts have been scored.</span></p>{{/if}}
 <figure>
 {{tags:f1,f2,zen_count,hi_lo}}
 <figcaption>The searched counts' tags beside {{name:zen_count}}'s and {{name:hi_lo}}'s. The values are printed in the cells; the colour is a second cue.</figcaption>
@@ -228,12 +237,53 @@ series full.70.{x}.perfect
 <section id="table">
 <h2>What it means at a table</h2>
 {{#if has:risk.}}<p class="headline">The win is small next to the swings.</p>{{else}}<p><span class="pending">Not yet computed: swings, money per hour and risk of ruin, from the risk computation.</span></p>{{/if}}
+{{#if has:risk_fan}}<figure>{{fan:risk_fan
+title The first paths of play
+desc The cumulative win in units of the minimum bet over the rounds played, one line a path, each path whole shoes in order played by one fold's strategy; the first paths the simulator played, none chosen for its look.
+}}<figcaption>Each line is one player's run of shoes, the win in units of the minimum bet against the rounds played. The paths are the first the simulator played, in order, not picked.</figcaption></figure>{{/if}}
+{{#if has:risk_ruin}}<p>The risk of ruin by the formula beside bankroll paths drawn from the simulated shoes: this report's paths and, where given, the simulator's own from the same records.</p>
+{{table:risk_ruin
+head Figure|Bankroll, units|Formula|Simulated|SE|Simulator's paths|SE
+col figure
+col bankroll|d0
+col formula|d4
+col simulated|d4
+col se|d4
+col sim_simulated|d4
+col sim_se|d4
+}}{{/if}}
 </section>
 
 <section id="second">
 <h2>A second program</h2>
 <p>An AI agent wrote this program too (see <a href="#ai">How AI was used</a>).</p>
 {{#if has:sim.}}<p class="headline">A second program, a plain simulator written separately from the same rules document by an AI agent that did not read the engine's code, played {{sim.rounds|n}} rounds with the strategies and bets the engine exported.</p>{{else}}<p><span class="pending">Not yet computed: the independent simulation and its agreement with the exact values.</span></p>{{/if}}
+{{#if has:sim.tests}}<p>The check registers its tests before any run. Of the {{sim.tests|n}} tests of the parts run, {{sim.passed|n}} passed, {{sim.flagged|n}} of them flagged for a look, and {{sim.failed|n}} failed; the largest |z| was {{sim.z_max|d1}}.</p>
+{{table:sim_z
+head Figure|Check|Page key|z|Verdict
+col figure
+col check
+col key
+col z|s2
+col verdict
+}}{{/if}}
+{{#if has:sim.planted}}<p>Bugs planted on purpose in the simulator, each run beside a clean control: {{sim.planted_caught|n}} of {{sim.planted|n}} were caught.</p>
+{{table:sim_planted
+head Run|Exact checks failed|Largest abs. z|Caught|By the z tests alone
+col run
+col d_failed
+col z_max|d1
+col caught|yes|no
+col caught_by_z|yes|no
+}}{{/if}}
+{{#if has:sim.variants}}<p>Two conventions the programs share by choice, measured: each instance's own play taking the cards (mode B) and the count moving through split hands, each less the shared convention on the same shoes.</p>
+{{table:sim_variants
+head Figure|What|Difference|SE
+col fig
+col what
+col difference|s4
+col se|d4
+}}{{/if}}
 <p>What this check cannot catch: a rule both programs misread; an export bug both share; conventions both follow by choice (cards taken by the chart's play, the count frozen in split hands); the chart itself; whether each fitted play is the best one; the fitting and the bootstrap intervals; the catalog's tags; and differences smaller than its limits.</p>
 </section>
 
@@ -250,7 +300,16 @@ series full.70.{x}.perfect
 <tr><th scope="row">Differs, for no reason found</th><td class="num">{{lit.unexplained|n}}</td></tr>
 <tr><th scope="row">Not compared</th><td class="num">{{lit.not_compared|n}}</td></tr>
 <tr><th scope="row">Compared, in all</th><td class="num">{{lit.compared|n}}</td></tr>
-</tbody></table></div>{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
+</tbody></table></div>
+{{table:literature_claims
+head Claim|Topic|Theirs|Ours|Verdict|Why
+col id
+col topic
+col theirs
+col ours
+col verdict
+col why
+}}{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
 <p>Published "player advantage" figures are per amount bet, so they are set beside this page's per-amount-bet figures, not its per-round ones. Six-deck simulation figures from other games are shown only marked as a different game.</p>
 </section>
 

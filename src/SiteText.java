@@ -147,6 +147,44 @@ final class SiteText {
         throw new IllegalArgumentException("a rows field that is " + v);
     }
 
+    /** Entry i of an input's table. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> entry(SiteData d, String table, int i) {
+        Object t = d.tables.get(table);
+        if (!(t instanceof List) || i < 0 || i >= ((List<?>) t).size()) {
+            throw new IllegalArgumentException("no entry " + i + " in table " + table);
+        }
+        return (Map<String, Object>) ((List<?>) t).get(i);
+    }
+
+    /**
+     * A table cell as page text: a number in the format given (SiteText's formats, as a figure is
+     * printed), a whole number without one, a true-or-false field by its two words, a string as it
+     * is, a list its items joined by commas. A number that is not whole needs a format.
+     */
+    static String cell(Object v, String fmt, String words) {
+        if (v instanceof Number && fmt != null) {
+            SiteData.Figure f = new SiteData.Figure("table", ((Number) v).doubleValue(), Double.NaN, Double.NaN, Double.NaN,
+                    fmt, "table", "", "", "main", 1, false, null);
+            return format(f, fmt);
+        }
+        if (v instanceof Number) {
+            double x = ((Number) v).doubleValue();
+            if (x != Math.rint(x)) {
+                throw new IllegalArgumentException("a table cell " + v + " that is not whole needs a format");
+            }
+            return grouped(Math.round(x));
+        }
+        if (v instanceof List) {
+            List<String> out = new java.util.ArrayList<>();
+            for (Object x : (List<?>) v) {
+                out.add(String.valueOf(x));
+            }
+            return out.isEmpty() ? "none" : String.join(", ", out);
+        }
+        return field(v, words);
+    }
+
     /** A number as an axis label: as few decimals as the step between ticks needs. */
     static String tick(double x, int places) {
         return fixed(x, places);
@@ -424,7 +462,8 @@ final class SiteText {
             String[] p = e.attrs.get("data-t").split("/");
             String want;
             try {
-                want = field(SiteBuild.row(d, p[1]).get(p[2]), e.attrs.get("data-w"));
+                want = p[0].equals("rows") ? field(SiteBuild.row(d, p[1]).get(p[2]), e.attrs.get("data-w"))
+                        : cell(entry(d, p[0], Integer.parseInt(p[1])).get(p[2]), e.attrs.get("data-f"), e.attrs.get("data-w"));
             } catch (RuntimeException x) {
                 problems.add("data-t=\"" + e.attrs.get("data-t") + "\": " + x.getMessage());
                 return;

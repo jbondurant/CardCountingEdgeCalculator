@@ -169,7 +169,7 @@ public final class FullIndexRun {
                     replayOnly = true;
                     break;
                 case "--export-plans":
-                    replay.exportPlans = args[++a].split(",");
+                    replay.exportPlans = StrategyExport.planList(args[++a]);
                     replayOnly = true;
                     break;
                 default:

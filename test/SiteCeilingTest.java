@@ -74,7 +74,8 @@ public class SiteCeilingTest {
         List<String> args = new ArrayList<>(List.of("data", "--stored", stored.toString(), "--saved", save.toString(),
                 "--report", report.toString(), "--counts", c.counts.file.toString(), "--fullplay-run", run.toString(),
                 "--fullplay-counts", f.counts.file.toString(), "--peek", peekFile.toString(), "--split-margin",
-                split.toString(), "--paragraphs", paragraphs.toString()));
+                split.toString(), "--paragraphs", paragraphs.toString(), "--widening",
+                CeilingResultsTest.pilotFile(dir).toString()));
         if (optimism) {
             Path o = Files.write(dir.resolve("optimism.properties"), ("twinGain.F2.80.s8=0.0001\ntwinGain.F1.80.flat=0.0001\n"
                     + "optimism.F1.80.s8=0.0002\noptimism.F2.80.s8=0.0002\n").getBytes(StandardCharsets.UTF_8));
@@ -135,7 +136,7 @@ public class SiteCeilingTest {
         Map<String, Object> full = (Map<String, Object>) in.figures.get("full.80.s8.perfect");
         assertEquals(100 * CeilingResultsTest.BOUND_FULL, (Double) full.get("value"), 1e-12);
         assertEquals(1.0, full.get("widen"), "a bound is fitted on nothing");
-        assertEquals(CeilingResults.DIFFERENCE, ((Map<String, Object>) in.figures.get("full.80.s8.f1")).get("widen"));
+        assertEquals(CeilingResultsTest.PILOT_LARGEST, ((Map<String, Object>) in.figures.get("full.80.s8.f1")).get("widen"));
         assertNotNull(in.figures.get("fd.80.s8.hi_lo"), "a published rung at first decisions, for one number, one value");
         assertNull(in.figures.get("full.80.s8.hi_lo"), "and not at full play, where the two widen differently");
         new SiteData().add("ceiling.json", in.text("ceiling.json").getBytes(StandardCharsets.UTF_8));

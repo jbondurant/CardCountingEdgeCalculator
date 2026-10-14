@@ -492,6 +492,78 @@ final class SiteBuild {
         return b.append("</tbody></table></div>").toString();
     }
 
+    /**
+     * {{table:NAME …}}: an input's table (SiteData.tables, such as sim_z, sim_planted, risk_ruin,
+     * literature_claims, ledger) as an HTML table, every cell a data-t span the page check holds to
+     * that table's entry (TABLE/INDEX/FIELD; SiteText.cell). Lines: head (the headings), one col
+     * per column, {@code FIELD}, {@code FIELD|FMT} for a number in one of SiteText's formats, or
+     * {@code FIELD|YES|NO} for a true-or-false field; and optionally where FIELD=VALUE to keep the
+     * entries whose field reads so. A field the entry lacks, or null, shows a dash.
+     */
+    static String tableBlock(String name, String body, SiteData d) {
+        List<String> head = null;
+        List<List<String>> cols = new ArrayList<>();
+        String whereField = null;
+        String whereValue = null;
+        for (String[] l : lines(body)) {
+            switch (l[0]) {
+                case "head": head = bars(l[1]); break;
+                case "col": cols.add(bars(l[1])); break;
+                case "where": {
+                    int eq = l[1].indexOf('=');
+                    whereField = l[1].substring(0, eq).trim();
+                    whereValue = l[1].substring(eq + 1).trim();
+                    break;
+                }
+                default: throw new IllegalArgumentException("table:" + name + ": unknown line \"" + l[0] + "\"");
+            }
+        }
+        Object t = d.tables.get(name);
+        if (!(t instanceof List)) {
+            throw new IllegalArgumentException("table:" + name + ": the inputs hold no such table");
+        }
+        if (head == null || head.size() != cols.size()) {
+            throw new IllegalArgumentException("table:" + name + " needs a head with one heading per col");
+        }
+        List<?> entries = (List<?>) t;
+        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"data\" id=\"").append(SiteSvg.esc(name))
+                .append("\">\n<thead><tr>");
+        for (String h : head) {
+            b.append("<th scope=\"col\">").append(h).append("</th>");
+        }
+        b.append("</tr></thead>\n<tbody>\n");
+        for (int i = 0; i < entries.size(); i++) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> e = (Map<String, Object>) entries.get(i);
+            if (whereField != null && !whereValue.equals(String.valueOf(e.get(whereField)))) {
+                continue;
+            }
+            b.append("<tr>");
+            for (List<String> c : cols) {
+                Object v = e.get(c.get(0));
+                String fmt = c.size() == 2 ? c.get(1) : null;
+                String words = c.size() == 3 ? c.get(1) + "|" + c.get(2) : null;
+                boolean num = v instanceof Number;
+                b.append(num ? "<td class=\"num\">" : "<td>");
+                if (v == null) {
+                    b.append("–");
+                } else {
+                    b.append("<span data-t=\"").append(SiteSvg.esc(name + "/" + i + "/" + c.get(0))).append('"');
+                    if (fmt != null) {
+                        b.append(" data-f=\"").append(SiteSvg.esc(fmt)).append('"');
+                    }
+                    if (words != null) {
+                        b.append(" data-w=\"").append(SiteSvg.esc(words)).append('"');
+                    }
+                    b.append('>').append(SiteSvg.esc(SiteText.cell(v, fmt, words))).append("</span>");
+                }
+                b.append("</td>");
+            }
+            b.append("</tr>\n");
+        }
+        return b.append("</tbody></table></div>").toString();
+    }
+
     // ---- the template ----
 
     private static final Pattern IF = Pattern.compile("\\{\\{#if ([^}]*)\\}\\}(.*?)(?:\\{\\{else\\}\\}(.*?))?\\{\\{/if\\}\\}",
@@ -523,10 +595,19 @@ final class SiteBuild {
                 Map<String, Object> rec = SiteGuards.evaluate(text, d);
                 d.guards.add(rec);
                 holds = Boolean.TRUE.equals(rec.get("holds"));
-            } else if (c.startsWith("has:")) {
+            } else if (c.startsWith("has:") || c.startsWith("lacks:")) {
+                // Clauses joined by " and ", each has:P1,P2 or lacks:P1,P2; a prefix may name a row by
+                // rank or by another key's row (expand), and one that names no row is not had.
                 holds = true;
-                for (String p : c.substring(4).split(",")) {
-                    holds &= d.hasPrefix(p.trim());
+                for (String clause : c.split(" and ")) {
+                    String t = clause.trim();
+                    boolean has = t.startsWith("has:");
+                    if (!has && !t.startsWith("lacks:")) {
+                        throw new IllegalArgumentException("unknown condition {{#if " + c + "}}");
+                    }
+                    for (String p : t.substring(has ? 4 : 6).split(",")) {
+                        holds &= hasPattern(d, p.trim()) == has;
+                    }
                 }
             } else {
                 throw new IllegalArgumentException("unknown condition {{#if " + c + "}}");
@@ -540,6 +621,30 @@ final class SiteBuild {
             throw new IllegalArgumentException("an {{#if}} block is not closed");
         }
         return out;
+    }
+
+    /**
+     * Whether the data has a figure or table under a prefix that may name its row by rank or by
+     * another key's row (full.80.s8.@best, risk.ev_per100_usd.full.80.s8.=full.80.s8.@best): each
+     * key it expands to is had; a pattern that names no row (no row has the figure ranked) is not.
+     */
+    static boolean hasPattern(SiteData d, String p) {
+        if (!p.contains("@") && !p.contains(".=")) {
+            return d.hasPrefix(p);
+        }
+        List<String> keys;
+        try {
+            keys = expand(p, d);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        for (String k : keys) {
+            // The key itself, not a prefix of it: hi_opt_ii is not had because hi_opt_ii_ace is.
+            if (!d.has(k)) {
+                return false;
+            }
+        }
+        return !keys.isEmpty();
     }
 
     /**
@@ -673,6 +778,12 @@ final class SiteBuild {
         }
         if (head.startsWith("rows:")) {
             return rowsBlock(head.substring(5).trim(), body, d);
+        }
+        if (head.startsWith("table:")) {
+            return tableBlock(head.substring(6).trim(), body, d);
+        }
+        if (head.startsWith("fan:")) {
+            return SiteSvg.fan(head.substring(4).trim(), body, d);
         }
         if (p.startsWith("guard:")) {
             Map<String, Object> rec = guardRecord(d, expandGuard(p.substring(6), d));

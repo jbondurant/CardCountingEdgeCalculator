@@ -28,8 +28,8 @@ public class SiteExportCeilingTest {
     static SiteWorld world;
     static String template;
     static Map<String, Object> grid;
-    /** The world's pilot measured difference ratios of 1.04 and 1.07: a count it did not measure takes 1.07. */
-    static final double NOT_MEASURED = 1.07;
+    /** The world's pilot measured difference ratios of 1.04 and 1.12: a count it did not measure takes 1.12. */
+    static final double NOT_MEASURED = 1.12;
 
     @BeforeAll
     @SuppressWarnings("unchecked")
@@ -104,6 +104,33 @@ public class SiteExportCeilingTest {
             assertNull(grid.get(check), "a check count is not a row of the page");
         }
         assertEquals(List.of("full"), grid.get("_widened"));
+    }
+
+    /**
+     * PLAN_PAGE.md 2.4, "one number, one value": the stored rows must give report-final's printed
+     * headline at its printed precision (CeilingReport.checkPrinted); one printed digit moved and
+     * SiteExport stops.
+     */
+    @Test
+    public void theStoredRowsAreHeldToReportFinal() throws Exception {
+        SiteExport.Options o = world.export(template);
+        o.reportFinal = world.reportFinal();
+        assertNotNull(SiteExport.export(o));
+        List<String> lines = Files.readAllLines(o.reportFinal, StandardCharsets.UTF_8);
+        boolean moved = false;
+        for (int i = 0; i < lines.size() && !moved; i++) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d\\.\\d\\d)(\\d)").matcher(lines.get(i));
+            if (lines.get(i).startsWith("| ") && !lines.get(i).startsWith("| Count") && m.find()) {
+                int d = (lines.get(i).charAt(m.end(2) - 1) - '0' + 1) % 10;
+                lines.set(i, lines.get(i).substring(0, m.end(2) - 1) + d + lines.get(i).substring(m.end(2)));
+                moved = true;
+            }
+        }
+        assertTrue(moved, "a printed figure to move");
+        Path other = Files.write(dir.resolve("report-final-moved.md"), lines, StandardCharsets.UTF_8);
+        o.reportFinal = other;
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> SiteExport.export(o));
+        assertTrue(e.getMessage().contains("do not give"), e.getMessage());
     }
 
     /** One way the files may not belong together, applied to the world's options; what the refusal says. */

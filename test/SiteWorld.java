@@ -232,9 +232,12 @@ final class SiteWorld {
         w.stored = CeilingResultsTest.published(dir.resolve("results.ser"), c.published);
         w.saved = w.save(dir.resolve("ceiling.ser"));
         w.stepEight();
-        // The pilot's largest difference ratio is 1.07, the default CeilingResults widens a registered count by.
+        // The pilot's largest difference ratio, 1.12, is what both CeilingResults and SiteExport widen a
+        // registered count by, each reading this file (INTEGRATION.md open item 13): not 1.07, the
+        // real pilot's, so a constant in either would show here as two different full.P.S.f1.
         w.pilot = Files.write(dir.resolve("pilot.txt"), WideReportTest.pilot(WideReportTest.ratios("1-8 same schedule",
-                RiskReport.KO, 1.04, "flat", RiskReport.KO, 1.07)).getBytes(StandardCharsets.UTF_8));
+                RiskReport.KO, 1.04, "flat", RiskReport.KO, SiteExportCeilingTest.NOT_MEASURED))
+                .getBytes(StandardCharsets.UTF_8));
         return w;
     }
 
@@ -309,9 +312,26 @@ final class SiteWorld {
         CeilingResults.run(new String[]{"data", "--stored", stored.toString(), "--saved", saved.toString(), "--report",
                 report.toString(), "--counts", registration.toString(), "--fullplay-run", runFile.toString(),
                 "--fullplay-counts", fullRegistration.toString(), "--peek", peekFile.toString(), "--split-margin",
-                split.toString(), "--paragraphs", SiteCeilingTest.paragraphs(dir).toString(), "--out", out.toString()},
+                split.toString(), "--paragraphs", SiteCeilingTest.paragraphs(dir).toString(), "--widening", pilot.toString(),
+                "--out", out.toString()},
                 "ceiling-world", new PrintStream(new ByteArrayOutputStream(), true, "UTF-8"));
         return out;
+    }
+
+    /**
+     * report-final for the world: the stored rows' headline section printed by ComparisonReport, as
+     * report-final-26f0724.md was printed from c06c061's, so CeilingReport.checkPrinted holds the one
+     * to the other (PLAN_PAGE.md 2.4).
+     */
+    Path reportFinal() throws Exception {
+        CeilingReport.Published p = CeilingReport.read(stored);
+        ComparisonReport.Scored sc = new ComparisonReport.Scored();
+        sc.results = p.results;
+        sc.nullCount = p.nullCount();
+        sc.hiLo = p.of("Hi-Lo");
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ComparisonReport.headline(sc, ComparisonReport.rows(sc), new PrintStream(bytes, true, "UTF-8"));
+        return Files.write(dir.resolve("report-final.md"), bytes.toByteArray());
     }
 
     /** RiskReport's data file from c06c061's rows, with swings for its figures as RiskFixture makes the simulator's. */

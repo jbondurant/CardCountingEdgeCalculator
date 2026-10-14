@@ -356,11 +356,22 @@ final class SiteExport {
         Path fullplay;
         String fullplayShown;
         Path fullplayCounts;
+        /**
+         * report-final, whose printed headline the stored rows must give at its printed precision
+         * (PLAN_PAGE.md 2.4, "one number, one value"; CeilingReport.checkPrinted); the command line
+         * requires it, and in code null leaves the check out.
+         */
+        Path reportFinal;
     }
 
     /** The input SiteData reads, from a run's results.ser. */
     static SiteInput export(Options o) throws Exception {
         CeilingReport.Published run = CeilingReport.read(o.stored);
+        if (o.reportFinal != null) {
+            // c06c061's first-decision column against report-final at its printed precision: two
+            // sources of one figure must agree, or the build stops.
+            CeilingReport.checkPrinted(run, o.reportFinal);
+        }
         String commit = CeilingResults.line(run.identity, "commit ");
         SiteInput in = new SiteInput("results", commit, "main");
         in.artifact(o.stored, o.storedShown);
@@ -687,9 +698,9 @@ final class SiteExport {
             }
             a.put(args[k].substring(2), args[++k]);
         }
-        for (String need : new String[]{"stored", "template", "out"}) {
+        for (String need : new String[]{"stored", "template", "out", "report-final"}) {
             if (!a.containsKey(need)) {
-                throw new IllegalArgumentException("usage: SiteExport --stored RESULTS.ser --widening PILOT.txt "
+                throw new IllegalArgumentException("usage: SiteExport --stored RESULTS.ser --report-final REPORT.md --widening PILOT.txt "
                         + "--template site/template.html --out FILE [--states STATES] [--catalog counting-systems.json] "
                         + "[--saved STEP7.ser [--counts custom-counts.json] [--fullplay-run STEP8/results.ser "
                         + "--fullplay-counts custom-counts-fullplay.json]]");
@@ -698,6 +709,7 @@ final class SiteExport {
         Options o = new Options();
         o.stored = Paths.get(a.get("stored"));
         o.storedShown = a.get("stored");
+        o.reportFinal = Paths.get(a.get("report-final"));
         o.widening = a.containsKey("widening") ? Widening.read(Paths.get(a.get("widening"))) : null;
         o.template = new String(Files.readAllBytes(Paths.get(a.get("template"))), StandardCharsets.UTF_8);
         o.catalog = catalog(Paths.get(a.getOrDefault("catalog", "counting-systems.json")));
@@ -716,6 +728,7 @@ final class SiteExport {
             o.fullplayCounts = Paths.get(a.get("fullplay-counts"));
         }
         SiteInput in = export(o);
+        in.artifact(o.reportFinal, a.get("report-final"));
         if (o.widening != null) {
             in.artifact(Paths.get(o.widening.from), o.widening.from);
         }
