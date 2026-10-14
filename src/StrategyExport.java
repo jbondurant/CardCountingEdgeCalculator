@@ -2252,9 +2252,79 @@ final class StrategyExport {
             return out;
         }
 
+        /** The report plans exported by default: SIM_CHECK.md's full-play figures are flat and the 1-8 same schedule. */
+        static final String[] PLANS = {"same-8"};
+
+        /**
+         * The replay's --export rows when no --export-row is given: the full-play figures SIM_CHECK.md
+         * registers on c06c061's strategies (SimCheckPlan.figures, source c06c061 or the replay), as
+         * NAME@P at each figure's penetration among those the replay scores (pens, 0 to 2).
+         */
+        static List<String> registered(int[] pens) {
+            java.util.Set<String> out = new java.util.LinkedHashSet<>();
+            for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+                if (f.play == SimCheckPlan.Play.FULL && (f.source.equals("c06c061") || f.source.equals("replay"))
+                        && contains(pens, penIndex(f.pen))) {
+                    out.add(f.entry() + "@" + f.pen);
+                }
+            }
+            return new ArrayList<>(out);
+        }
+
+        /**
+         * Rows named by --export-row: NAME@P (P 70, 75 or 80, one the replay scores) as given, and a
+         * bare NAME at every penetration the replay scores (pens, 0 to 2). With --only, name each row
+         * at the penetration its item is replayed at, since a row asked for that no item replayed is
+         * refused when the export finishes.
+         */
+        static List<String> named(List<String> names, int[] pens) {
+            List<String> out = new ArrayList<>();
+            for (String n : names) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(.*)@(\\d+)$").matcher(n);
+                if (m.matches()) {
+                    int p = penIndex(Integer.parseInt(m.group(2)));
+                    if (!contains(pens, p)) {
+                        throw new IllegalArgumentException("--export-row " + n + ": the replay scores no "
+                                + m.group(2) + "% items");
+                    }
+                    out.add(n);
+                    continue;
+                }
+                for (int p : pens) {
+                    out.add(n + "@" + ExportBundle.PENS[p]);
+                }
+            }
+            return out;
+        }
+
+        private static boolean contains(int[] a, int x) {
+            for (int y : a) {
+                if (y == x) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         @Override
         public String name() {
             return "export";
+        }
+
+        /** In the replay's identity, so a resume asked for other rows, plans or sample is refused. */
+        @Override
+        public String describe() {
+            return "export (rows " + (rows.isEmpty() ? "every full-play row" : rows.toString()) + "; plans "
+                    + String.join(",", labels) + "; sample seed " + seed + ")";
+        }
+
+        /** Before anything is replayed: a bundle is written once, so one already there is refused now, not after hours. */
+        @Override
+        public void start(SystemScorer scorer, FullIndexReplay.Options o) {
+            Path partial = out.resolveSibling(out.getFileName() + ".partial");
+            if (Files.exists(out) || Files.exists(partial)) {
+                throw new IllegalStateException(out + " or " + partial + " exists already; a bundle is written once");
+            }
         }
 
         boolean wanted(String row, int p) {

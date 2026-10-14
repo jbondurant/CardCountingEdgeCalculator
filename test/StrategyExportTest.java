@@ -851,4 +851,29 @@ public class StrategyExportTest {
             o.writeObject(new java.util.LinkedHashMap<>());
         }
     }
+
+    /**
+     * The rows the replay's --export writes: by default every full-play figure SIM_CHECK.md
+     * registers on c06c061's strategies (the five counts at 70, 75 and 80%, F26 to F48), each once,
+     * at the penetrations replayed; a row named with --export-row at every penetration replayed, or
+     * at the one it names, and refused at one the replay does not score.
+     */
+    @Test
+    public void theReplaysExportRowsAreTheRegisteredFullPlayFigures() {
+        List<String> all = StrategyExport.ReplayExport.registered(new int[]{0, 1, 2});
+        assertEquals(15, all.size(), all.toString());
+        assertEquals(new java.util.HashSet<>(all).size(), all.size(), "each row once");
+        for (String count : new String[]{"Hi-Lo = Hi-Lo Lite", "KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out)",
+                "Zen Count", "Hi-Opt II + ace side count", "Victor Advanced Point Count (Victor APC) + ace side count"}) {
+            for (int pen : ExportBundle.PENS) {
+                assertTrue(all.contains(count + ", full play@" + pen), count + " at " + pen);
+            }
+        }
+        List<String> at80 = StrategyExport.ReplayExport.registered(new int[]{2});
+        assertEquals(5, at80.size(), at80.toString());
+        assertEquals(Arrays.asList("R, full play@75", "R, full play@80", "S, full play@80"),
+                StrategyExport.ReplayExport.named(Arrays.asList("R, full play", "S, full play@80"), new int[]{1, 2}));
+        assertThrows(IllegalArgumentException.class,
+                () -> StrategyExport.ReplayExport.named(Arrays.asList("S, full play@70"), new int[]{1, 2}));
+    }
 }

@@ -29,8 +29,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * one its settings make, a fit not finished, an item with nothing to compare with, an output in the
  * source, a tree store it could write, and registered counts on the main file. Parts and perfect
  * values planted beyond 1e-12 stop it, naming the item or the state; within 1e-12, it reports them
- * and goes on. With the plan's three hooks on (ReplayHooks: the wide plans, the sink, the full-play
- * export), every item is still the run's to the bit, each hook's file holds what the replay scored,
+ * and goes on. With the plan's three hooks on (ReplayHooks' wide plans and sink, and
+ * StrategyExport.ReplayExport for the full-play export, which --export builds since the
+ * integration), every item is still the run's to the bit, each hook's file holds what the replay scored,
  * and a killed and resumed replay writes every one of them to the bit as an uninterrupted one does.
  * It is never pointed at runs/full-index/full-c06c061.
  *
@@ -44,11 +45,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * compared field by field, and the timing compared.
  *
  * Planted for the hooks on 12 October 2026, the same way, each failing the test named: the sink's
- * records handed to the collector at the wrong penetration; the export's later cells read on the
- * other softness, written as the chart, or each turned over; P8 not checked; the bound rows left out
- * of wide.ser; a state's bet taken from the other fold; the export's first decisions refitted on the
- * stored values instead of the full-play ones (theHooksOutputs...); export.txt carrying a time, and
- * the hooks' rows and plans left out of the replay's identity (aReplayKilledAndResumed...).
+ * records handed to the collector at the wrong penetration; P8 not checked; the bound rows left out
+ * of wide.ser (theHooksOutputs...); and the hooks' rows and plans left out of the replay's identity
+ * (aReplayKilledAndResumed...). The export plants of that day (later cells read on the other
+ * softness, written as the chart or turned over; a bet from the other fold; first decisions refitted
+ * on the stored values; export.txt carrying a time) were against ReplayHooks.Export, retired at the
+ * integration for StrategyExport.ReplayExport; this test's checks of the bundle's first moves, later
+ * cells and states.bin now hold that hook, and its own plants are in FullPlayExportTest.
  */
 public class FullIndexReplayTest {
 
@@ -285,9 +288,9 @@ public class FullIndexReplayTest {
     /** The files a replay with every hook writes, by their place in its directory: its own, the hooks', and the bundle's. */
     static List<String> written(Path out) throws Exception {
         List<String> files = new ArrayList<>(Arrays.asList("replay.txt", "perfect.ser", "hook.bin", "wide.ser",
-                "sink/" + ReplayHooks.Sink.FILE, "export.txt"));
-        try (Stream<Path> bundle = Files.list(out.resolve("bundle.partial"))) {
-            bundle.map(p -> "bundle.partial/" + p.getFileName()).sorted().forEach(files::add);
+                "sink/" + ReplayHooks.Sink.FILE));
+        try (Stream<Path> bundle = Files.list(out.resolve("bundle"))) {
+            bundle.map(p -> "bundle/" + p.getFileName()).sorted().forEach(files::add);
         }
         return files;
     }
@@ -330,8 +333,8 @@ public class FullIndexReplayTest {
             }
         };
         assertThrows(Interrupted.class, () -> FullIndexReplay.run(a, "replay", QUIET));
-        assertFalse(Files.exists(dir.resolve("wide.ser")) || Files.exists(dir.resolve("bundle.partial")),
-                "nothing put together before every item is kept");
+        assertFalse(Files.exists(dir.resolve("wide.ser")) || Files.exists(dir.resolve("bundle"))
+                || Files.exists(dir.resolve("bundle.partial")), "nothing put together before every item is kept");
         FullIndexReplay.Options again = withHooks(dir);
         again.batchBytes = 1;
         again.resume = true;
@@ -365,7 +368,8 @@ public class FullIndexReplayTest {
         other.resume = true;
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> FullIndexReplay.run(other, "replay", QUIET));
-        assertTrue(e.getMessage().contains("hooks: wide sink export (rows {F1 start, full play=[0, 1, 2]"), e.getMessage());
+        assertTrue(e.getMessage().contains("hooks: wide sink export (rows [F1 start, full play@75, F1 start, full play@80"),
+                e.getMessage());
         FullIndexReplay.Options fewer = withHooks(third);
         fewer.resume = true;
         fewer.exportRows = fewer.exportRows.subList(0, 1);
@@ -414,7 +418,8 @@ public class FullIndexReplayTest {
      * whose weighted mean is the entry's flat figure. The bundle's strategy files read back as
      * Part B says, play their first moves as the replayed fit and their later cells as the play in
      * force, and its states.bin gives the replayed figures. Planted: a P8 one unit in its last place
-     * off, an entry without its wide figures, a round value or a bet moved in the export: each stops.
+     * off, an entry without its wide figures, a round value or a bet moved in the bundle's states.bin:
+     * each stops.
      */
     @Test
     public void theHooksOutputsHoldWhatTheReplayScored() throws Exception {
@@ -459,11 +464,15 @@ public class FullIndexReplayTest {
                 }
             }
         }
-        assertFalse(Files.exists(h.out.resolve("bundle")), "a bundle without its round trip stays .partial");
-        Path bundle = h.out.resolve("bundle.partial");
+        Path bundle = h.out.resolve("bundle");
+        assertTrue(Files.isDirectory(bundle) && !Files.exists(h.out.resolve("bundle.partial")),
+                "the bundle passed its round trip and was renamed");
+        for (String f : new String[]{"chart.tsv", "states.bin", "keys-sample.tsv", "lookups.tsv", "exact.tsv",
+                "index.tsv", "manifest.sha256"}) {
+            assertTrue(Files.isRegularFile(bundle.resolve(f)), f);
+        }
         ExportBundle.States bin = ExportBundle.readStates(bundle.resolve("states.bin"));
         assertEquals(2 * o.exportRows.size(), bin.sections.size(), "every row at 75% and 80%");
-        String txt = new String(Files.readAllBytes(h.out.resolve("export.txt")), "UTF-8");
         int checkedFiles = 0;
         for (int k = 0; k < h.items.size(); k++) {
             FullIndexReplay.Record rec = h.record(k);
@@ -474,7 +483,6 @@ public class FullIndexReplayTest {
                 if (e.ownValue) {
                     continue;
                 }
-                assertTrue(txt.contains("- " + e.name + " at " + ExportBundle.PENS[p] + "%: "), txt);
                 for (int f = 0; f < 2; f++) {
                     ExportBundle.Strategy s = ExportBundle.readStrategy(bundle.resolve(
                             ExportBundle.Strategy.fileName(e.name, ExportBundle.PENS[p], f)));
@@ -514,21 +522,55 @@ public class FullIndexReplayTest {
                 null));
         assertTrue(x.getMessage().contains("holds no wide figures"), x.getMessage());
 
-        @SuppressWarnings("unchecked")
-        ReplayHooks.Row row = ((List<ReplayHooks.Row>) rec.kept.get("export")).get(0);
-        ExportBundle.Strategy[] pair = new ExportBundle.Strategy[2];
-        for (int f = 0; f < 2; f++) {
-            pair[f] = ExportBundle.readStrategyText(row.text[f]);
+        // The bundle's round trip, as the export's finish ran it: each full section held to the one
+        // checked on the strategies' values as its item was replayed. Then a round value, and a bet,
+        // moved in a copy's states.bin and resealed as a writer with that bug would seal it: refused.
+        StrategyExport.FullSource verified = new StrategyExport.FullSource();
+        List<StrategyExport.Expect> expected = new ArrayList<>();
+        for (int k = 0; k < h.items.size(); k++) {
+            @SuppressWarnings("unchecked")
+            List<StrategyExport.RowExport> kept = (List<StrategyExport.RowExport>) h.record(k).kept.get("export");
+            for (StrategyExport.RowExport r : kept == null ? List.<StrategyExport.RowExport>of() : kept) {
+                verified.verified.put(StrategyExport.FullSource.key(r.expect.row, r.expect.pen), r.section);
+                expected.add(r.expect);
+            }
         }
+        List<CountKeys.Count> catalog = new ArrayList<>();
+        List<CountKeys.Count> own = new ArrayList<>();
+        List<String> catalogNames = new ArrayList<>();
+        for (CountKeys.Count k : CountKeys.catalog()) {
+            catalogNames.add(k.name);
+        }
+        for (CountKeys.Count k : h.counts) {
+            if (!k.name.equals(CountKeys.nullCount().name)) {
+                (catalogNames.contains(k.name) ? catalog : own).add(k);
+            }
+        }
+        List<CountKeys.Count> keyCounts = StrategyExport.keyCounts(catalog, own);
         ScoringStates st = FullIndexPilot.load(states, 12);
-        ReplayHooks.check(st, row.section(), pair, row.estimate, row.shoeSums, "as kept");
-        row.rvPlay[3] += 1e-6;
-        assertThrows(IllegalStateException.class, () -> ReplayHooks.check(st, row.section(), pair, row.estimate,
-                row.shoeSums, "a round value moved"));
-        row.rvPlay[3] -= 1e-6;
-        row.bet[3][1] += 0.001;
-        assertThrows(IllegalStateException.class, () -> ReplayHooks.check(st, row.section(), pair, row.estimate,
-                row.shoeSums, "a bet moved"));
+        StateStore.Header header = StateStore.header(states);
+        assertNotNull(StrategyExport.roundTrip(bundle, st, header, expected, keyCounts, verified));
+        for (String plant : new String[]{"a round value moved", "a bet moved"}) {
+            Path dir = root.resolve("planted " + plant);
+            Files.createDirectories(dir);
+            try (Stream<Path> list = Files.list(bundle)) {
+                for (Path f : (Iterable<Path>) list::iterator) {
+                    Files.copy(f, dir.resolve(f.getFileName()));
+                }
+            }
+            ExportBundle.States moved = ExportBundle.readStates(dir.resolve("states.bin"));
+            ExportBundle.Section sec = moved.sections.get(0);
+            if (plant.startsWith("a round value")) {
+                sec.rvPlay[3] += 1e-6;
+            } else {
+                sec.bet[3][1] += 0.001;
+            }
+            Files.delete(dir.resolve("states.bin"));
+            StrategyExport.writeStates(dir.resolve("states.bin"), header, st, moved.sections);
+            StrategyExportTest.reseal(dir);
+            assertThrows(RuntimeException.class, () -> StrategyExport.roundTrip(dir, st, header, expected, keyCounts,
+                    verified), plant);
+        }
     }
 
     /**
@@ -571,10 +613,22 @@ public class FullIndexReplayTest {
         twice.export = made;
         e = assertThrows(IllegalStateException.class, () -> FullIndexReplay.run(twice, "r", QUIET));
         assertTrue(e.getMessage().contains("a bundle is written once"), e.getMessage());
+        if (Files.exists(out)) {
+            try (Stream<Path> left = Files.walk(out)) {
+                assertEquals(1, left.count(), "refused before any item was replayed, not when the export finished");
+            }
+        }
         FullIndexReplay.Options rowsOnly = options(source, out);
         rowsOnly.exportRows = Arrays.asList("F1 start, full play");
         a = assertThrows(IllegalArgumentException.class, () -> FullIndexReplay.run(rowsOnly, "r", QUIET));
         assertTrue(a.getMessage().contains("no --export directory"), a.getMessage());
+        // Some items only, with the rows SIM_CHECK.md registers: refused now, not when the export finds them missing.
+        FullIndexReplay.Options onlySome = options(source, out);
+        onlySome.export = root.resolve("only-some-bundle");
+        onlySome.only = Arrays.asList("F1 start@80");
+        a = assertThrows(IllegalArgumentException.class, () -> FullIndexReplay.run(onlySome, "r", QUIET));
+        assertTrue(a.getMessage().contains("--only with --export"), a.getMessage());
+        assertFalse(Files.exists(root.resolve("only-some-bundle")));
 
         Path missing = copyOfRun("missing-part");
         Files.delete(missing.resolve("part-1-1-folds.ckpt"));

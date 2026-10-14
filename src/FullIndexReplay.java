@@ -49,15 +49,20 @@ import java.util.List;
  * from those records, never from what is in memory, so an interrupted and resumed replay writes
  * what an uninterrupted one writes (FullIndexReplayTest).
  *
- * What each item adds is a hook's (ReplayHooks): --wide scores the wide plans and writes wide.ser in
- * DIR; --sink SINK_DIR keeps each state's values for the edge at each count (SINK_DIR/run-b.ser);
- * --export EXPORT_DIR writes the full-play rows of the simulator's bundle (EXPORT_DIR.partial, the
- * rows SIM_CHECK.md registers unless --export-row names others, at the 1-8 same schedule unless
- * --export-plans names others), with export.txt in DIR.
+ * What each item adds is a hook's: --wide scores the wide plans and writes wide.ser in DIR
+ * (ReplayHooks.WidePlans); --sink SINK_DIR keeps each state's values for the edge at each count
+ * (SINK_DIR/run-b.ser, ReplayHooks.Sink); --export EXPORT_DIR writes the full-play rows of the
+ * simulator's bundle (StrategyExport.ReplayExport: the rows SIM_CHECK.md registers at the
+ * penetrations replayed unless --export-row names others, at the 1-8 same schedule unless
+ * --export-plans names others), each checked on its strategies' values as its item is replayed,
+ * written as EXPORT_DIR.partial at the end with keys-sample.tsv and lookups.tsv, round-tripped and
+ * renamed EXPORT_DIR. A row that cannot be exported (one whose fold strategies rank a deal two ways,
+ * B2.4) is named in the log as its item is replayed and refused at the end, after the other hooks
+ * have written their files.
  *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --fit-from SOURCE_DIR
  * --states FILE --out DIR (--trees-read-only PATH | --trees none) [--folds-only] [--only COUNT@P,...]
- * [--wide] [--sink SINK_DIR] [--export EXPORT_DIR [--export-row NAME ...] [--export-plans LABEL,...]]
+ * [--wide] [--sink SINK_DIR] [--export EXPORT_DIR [--export-row NAME[@P] ...] [--export-plans LABEL,...]]
  * [--resume], with the source's --shoes, --resamples, --threads and --pens.
  */
 final class FullIndexReplay {
@@ -87,12 +92,15 @@ final class FullIndexReplay {
         boolean wide;
         /** Where the state sink's per-state values go, run B of PLAN_COMPUTE.md 5.3 (ReplayHooks.Sink); null for none. */
         Path sink;
-        /** Where the full-play export bundle goes, as DIR.partial until its round trip (ReplayHooks.Export); null for none. */
+        /**
+         * Where the full-play export bundle goes (StrategyExport.ReplayExport): written as DIR.partial
+         * at the end, round-tripped, then renamed DIR; null for none.
+         */
         Path export;
-        /** The full-play rows exported, by entry name; null for those SIM_CHECK.md registers (ReplayHooks.Export.registered). */
+        /** The full-play rows exported, by entry name; null for those SIM_CHECK.md registers (StrategyExport.ReplayExport.registered). */
         List<String> exportRows;
         /** The report plans the exported rows' bets are written for (B2.5 labels). */
-        String[] exportPlans = ReplayHooks.Export.PLANS.clone();
+        String[] exportPlans = StrategyExport.ReplayExport.PLANS.clone();
         /** Hooks given in code, by a test or a tool that drives the replay (the page look of 6.3), after those the options make. */
         final List<Hook> hooks = new ArrayList<>();
         /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the replay holds. */
@@ -374,7 +382,7 @@ final class FullIndexReplay {
      * The hooks the options ask for, the wide plans, the sink and the export in that order, then
      * those given in code; two of one name are refused.
      */
-    static List<Hook> hooks(Options o) {
+    static List<Hook> hooks(Options o, PrintStream log) {
         List<Hook> out = new ArrayList<>();
         if (o.wide) {
             out.add(new ReplayHooks.WidePlans());
@@ -383,8 +391,18 @@ final class FullIndexReplay {
             out.add(new ReplayHooks.Sink(o.sink));
         }
         if (o.export != null) {
-            out.add(new ReplayHooks.Export(o.export, o.exportRows == null ? ReplayHooks.Export.registered()
-                    : ReplayHooks.Export.everyPen(o.exportRows), o.exportPlans));
+            // StrategyExport's own full-play builder (site-int-spec), not a second one here: it also writes
+            // keys-sample.tsv and lookups.tsv, which the simulator's D2 and D5 read, and round-trips the
+            // bundle before renaming it DIR.
+            if (o.only != null && o.exportRows == null) {
+                throw new IllegalArgumentException("--only with --export: name the rows to export with --export-row "
+                        + "NAME@P, since the rows SIM_CHECK.md registers are not all among the items replayed, and the "
+                        + "export refuses a row it was asked for that no item replayed");
+            }
+            List<String> rows = o.exportRows == null ? StrategyExport.ReplayExport.registered(o.pens)
+                    : StrategyExport.ReplayExport.named(o.exportRows, o.pens);
+            out.add(new StrategyExport.ReplayExport(o.export.toAbsolutePath().normalize(), o.states, o.shoes, rows,
+                    o.exportPlans, StrategyExport.SAMPLE_SEED, log));
         } else if (o.exportRows != null) {
             throw new IllegalArgumentException("export rows were named but no --export directory was given");
         }
@@ -455,7 +473,7 @@ final class FullIndexReplay {
                         + ", where the replay writes nothing");
             }
         }
-        List<Hook> hooks = hooks(o);
+        List<Hook> hooks = hooks(o, log);
         FullIndexCheckpoint src = FullIndexCheckpoint.source(source);
         Path fitFile = source.resolve("fit.ckpt");
         if (!Files.isRegularFile(fitFile)) {
