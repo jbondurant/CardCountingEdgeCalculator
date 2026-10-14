@@ -25,6 +25,10 @@ public class SiteLiteratureTest {
 
     /** The check on the fixture's cached page, the Stand cell of 6,5 against an ace planted 1e-4 high if asked. */
     LiteratureCheck.Result check(boolean planted) throws Exception {
+        return check(dir, planted);
+    }
+
+    static LiteratureCheck.Result check(Path dir, boolean planted) throws Exception {
         double[] v = LiteratureCheckTest.madeUp();
         String page = LiteratureCheckTest.appendix9(v);
         String sha = LiteratureSources.sha256(page.getBytes(StandardCharsets.UTF_8));
@@ -41,6 +45,10 @@ public class SiteLiteratureTest {
 
     /** The page's file as LiteratureCheck.main writes it, the cached page listed with its SHA-256. */
     Path file(LiteratureCheck.Result r, String name) throws Exception {
+        return file(dir, r, name);
+    }
+
+    static Path file(Path dir, LiteratureCheck.Result r, String name) throws Exception {
         Map<String, String> artifacts = new LinkedHashMap<>();
         artifacts.put("fixture/a9.html", LiteratureSources.sha256(dir.resolve("a9.html")));
         Path f = dir.resolve(name);

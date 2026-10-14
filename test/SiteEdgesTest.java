@@ -21,9 +21,8 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class SiteEdgesTest {
 
-    @Test
-    @SuppressWarnings("unchecked")
-    public void theEdgesAreTheFilesOwnUnderTheirRowsKeys(@TempDir Path dir) throws Exception {
+    /** The key-edges file KeyEdgesReport writes from KeyEdgesRun's two parts on a synthetic state file, in dir. */
+    static Path keyEdges(Path dir) throws Exception {
         Path file = ComparisonReportTest.syntheticRun(dir, 131, 131, 24);
         ScoringStates st = KeyEdgesRun.load(file);
         int resamples = CeilingReportTest.RESAMPLES;
@@ -39,7 +38,13 @@ public class SiteEdgesTest {
         KeyEdgesRun.runAPrime(file, ser, out, "test", resamples, 1, log);
         KeyEdgesReport.write(out.resolve("a-test.ser"), new ArrayList<>(), out.resolve("a-prime-test.ser"),
                 new ArrayList<>(), ser, null, out, "test", resamples, log);
-        Path json = out.resolve("key-edges-test.json");
+        return out.resolve("key-edges-test.json");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theEdgesAreTheFilesOwnUnderTheirRowsKeys(@TempDir Path dir) throws Exception {
+        Path json = keyEdges(dir);
 
         SiteInput in = SiteEdges.adapt(json, "runs/site/key-edges-test.json");
         Map<String, Object> d = SiteAdapt.read(json);

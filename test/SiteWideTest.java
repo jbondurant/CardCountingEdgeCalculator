@@ -22,9 +22,8 @@ public class SiteWideTest {
     @TempDir
     Path dir;
 
-    @Test
-    @SuppressWarnings("unchecked")
-    public void theWidePlansLandAsSpreadsAndTheWongingGrid() throws Exception {
+    /** The spreads file WideReport writes from wide.ser of WideReportTest's scoring, widened by a pilot, in dir. */
+    static Path spreads(Path dir) throws Exception {
         List<WideReport.Row> rows = WideReportTest.scored(FullIndexFitTest.capped(), 6);
         Path ser = dir.resolve("wide.ser");
         WideReport.save(ser, "test scoring\ncommit test", SystemScorer.WIDE_PLANS, rows);
@@ -33,6 +32,14 @@ public class SiteWideTest {
                 red, 1.04, "flat", red, 1.60, "P16 same schedule", red, 1.30)).getBytes(StandardCharsets.UTF_8));
         Path json = dir.resolve("spreads.json");
         WideReport.run(ser, pilot, "wide-fixture", dir.resolve("report.md"), json);
+        return json;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theWidePlansLandAsSpreadsAndTheWongingGrid() throws Exception {
+        Path json = spreads(dir);
+        String red = FullIndexFitTest.RED_SEVEN.name;
         SiteInput in = SiteWide.adapt(json, "runs/site/spreads-fixture.json");
         Map<String, Object> d = SiteAdapt.read(json);
 

@@ -53,6 +53,11 @@ public class SiteSimTest {
     }
 
     Path[] write(String plants) throws Exception {
+        return summaries(dir, plants);
+    }
+
+    /** The P3 and P2 summaries the simulator's own writer writes, in dir: z scores known, planted bugs as given. */
+    static Path[] summaries(Path dir, String plants) throws Exception {
         List<sim.Summary.Comparison> p3 = new ArrayList<>();
         p3.add(c("P3", "Chart, no count, flat", 70, "flat", 0.4, 106_000_000));
         p3.add(c("P3", "Chart, no count, flat", 80, "flat", -1.1, 121_000_000));
