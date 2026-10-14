@@ -316,7 +316,10 @@ final class SiteBuild {
         return "searched".equals(kind) ? "c2" : "perfect".equals(kind) || "reference".equals(kind) ? "ref" : "fg";
     }
 
-    /** {{dots:ID …}}: a chart-table (SiteSvg.dots). */
+    /**
+     * {{dots:ID …}}: a chart-table (SiteSvg.dots). A row line draws one row; an each line one row
+     * for every row its first key's alias names that has every figure the line names.
+     */
     static String dots(String id, String body, SiteData d) {
         List<String> head = null;
         List<SiteSvg.Column> cols = new ArrayList<>();
@@ -350,6 +353,12 @@ final class SiteBuild {
                         for (int j = 1; j < keys.length; j++) {
                             String p = keys[j].trim();
                             ks.add(p.substring(0, p.lastIndexOf('.') + 1) + rid);
+                        }
+                        if (l[0].equals("each") && !ks.stream().allMatch(d::has)) {
+                            // An each line draws the rows that have every figure it names, as a rows
+                            // table lists those that have its order figure: a registered count scored
+                            // at first decisions but not at full play (F1 flat) is not drawn half.
+                            continue;
                         }
                         Map<String, Object> r = row(d, rid);
                         boolean b = bound || "perfect".equals(r.get("kind"));
