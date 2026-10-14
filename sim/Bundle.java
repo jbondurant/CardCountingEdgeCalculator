@@ -111,6 +111,41 @@ public final class Bundle {
                 }
             }
         }
+        // SHOE_SPEC.md answer 10: the exporter writes both folds of a row at a penetration or
+        // neither, each with its exact.tsv lines; a bundle that breaks this was not written by it.
+        for (Strategy s : strategies.values()) {
+            if (!strategies.containsKey(key(s.row, s.pen, 1 - s.fold))) {
+                throw new IOException(s.row + " at " + s.pen + "% has a fold " + s.fold + " file and no fold "
+                        + (1 - s.fold) + " file");
+            }
+            List<String> figures = new ArrayList<>(List.of("flat"));
+            for (Strategy.Plan p : s.plans) {
+                figures.add("ev:" + p.label);
+            }
+            for (String figure : figures) {
+                if (exact.line(s.row, s.pen, s.fold, figure) == null) {
+                    throw new IOException(s.row + " at " + s.pen + "%, fold " + s.fold + ": no exact.tsv line for " + figure);
+                }
+            }
+        }
+    }
+
+    /** The strategy files' paths, in index.tsv's order (path order): lookups.tsv's columns. */
+    public List<String> strategyPaths() {
+        List<String> out = new ArrayList<>();
+        for (String[] f : index.values()) {
+            if (!f[2].equals("-")) {
+                out.add(f[0]);
+            }
+        }
+        return out;
+    }
+
+    /** The strategy file at this path of the bundle. */
+    public Strategy strategyAt(String path) {
+        String[] f = index.get(path);
+        return f == null || f[2].equals("-") ? null
+                : strategies.get(key(f[2], Integer.parseInt(f[3]), Integer.parseInt(f[4])));
     }
 
     /** Every row with both fold files, at every penetration it has, laid out in order; the chart's walk first. */

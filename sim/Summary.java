@@ -19,7 +19,7 @@ public final class Summary {
 
     /** One figure compared by one check. NaN where the bundle has no engine figure for it. */
     public record Comparison(String check, String row, int pen, String figure, double exact, double exactSe,
-                             double simulated, double simulatedSe, double rounds, double shoes, double unseen) {
+                             double simulated, double simulatedSe, double rounds, double shoes, double unseen, String fig) {
         public double difference() {
             return simulated - exact;
         }
@@ -41,11 +41,32 @@ public final class Summary {
         }
     }
 
+    /**
+     * A paired difference, reported and never tested (SIM_CHECK.md section 9): {@code row}'s figure
+     * less {@code less}'s on the same shoes or states, with its SE and σ_eff of the per-round
+     * difference (P3), or the engine's difference on the same states (P2).
+     */
+    public record Difference(String check, String row, int pen, String figure, String less, double difference,
+                             double se, double sigmaEff, double first, double second, double exact, double rounds,
+                             double shoes) {
+    }
+
     private Summary() {
+    }
+
+    /** The registered id of a figure, or "" when the registry has none for it (or there is no registry). */
+    static String fig(Registry registry, String row, int pen, String figure) {
+        Registry.Fig f = registry == null ? null : registry.of(row, pen, figure);
+        return f == null ? "" : f.id();
     }
 
     /** P3's comparisons: every row and figure, the folds pooled by exact.tsv's test weights (swapped under the other-fold plant). */
     public static List<Comparison> p3(List<Row> rows, double[] sums, Exact exact, Plants plants) {
+        return p3(rows, sums, exact, plants, null);
+    }
+
+    /** The same, each comparison named by its registered id where it has one. */
+    public static List<Comparison> p3(List<Row> rows, double[] sums, Exact exact, Plants plants, Registry registry) {
         List<Comparison> out = new ArrayList<>();
         boolean swap = plants.on(Plants.OTHER_FOLD);
         for (Row row : rows) {
@@ -60,7 +81,8 @@ public final class Summary {
                 double[] e = row.estimate(sums, j, w0, w1);
                 double unseen = j == 0 ? 0 : row.unseen(sums, 0, j) + (row.instances() == 2 ? row.unseen(sums, 1, j) : 0);
                 out.add(new Comparison("P3", row.name, row.pen, fig, exact.estimate(row.name, row.pen, fig),
-                        exact.standardError(row.name, row.pen, fig), e[0], e[1], e[2], e[3], unseen));
+                        exact.standardError(row.name, row.pen, fig), e[0], e[1], e[2], e[3], unseen,
+                        fig(registry, row.name, row.pen, fig)));
             }
         }
         return out;
@@ -86,6 +108,12 @@ public final class Summary {
 
     /** summary.json: the run's facts, then every comparison with its sums' results. */
     public static void write(Path file, Map<String, String> facts, List<Comparison> comparisons) throws IOException {
+        write(file, facts, comparisons, List.of());
+    }
+
+    /** summary.json with the paired differences after the comparisons. */
+    public static void write(Path file, Map<String, String> facts, List<Comparison> comparisons,
+                             List<Difference> differences) throws IOException {
         StringBuilder b = new StringBuilder("{\n");
         for (Map.Entry<String, String> f : facts.entrySet()) {
             b.append("  ").append(json(f.getKey())).append(": ").append(json(f.getValue())).append(",\n");
@@ -101,9 +129,21 @@ public final class Summary {
                     .append(", \"shoes\": ").append(num(c.shoes())).append(", \"difference\": ").append(num(c.difference()))
                     .append(", \"z\": ").append(num(c.z())).append(", \"pass\": ").append(c.passes())
                     .append(", \"flagged\": ").append(c.flagged()).append(", \"unseenKeyRounds\": ").append(num(c.unseen()))
+                    .append(", \"fig\": ").append(json(c.fig())).append("}");
+        }
+        b.append("\n  ],\n  \"differences\": [");
+        for (int i = 0; i < differences.size(); i++) {
+            Difference d = differences.get(i);
+            b.append(i == 0 ? "\n" : ",\n").append("    {\"check\": ").append(json(d.check()))
+                    .append(", \"row\": ").append(json(d.row())).append(", \"pen\": ").append(d.pen())
+                    .append(", \"figure\": ").append(json(d.figure())).append(", \"less\": ").append(json(d.less()))
+                    .append(", \"difference\": ").append(num(d.difference())).append(", \"se\": ").append(num(d.se()))
+                    .append(", \"sigmaEff\": ").append(num(d.sigmaEff())).append(", \"first\": ").append(num(d.first()))
+                    .append(", \"second\": ").append(num(d.second())).append(", \"exact\": ").append(num(d.exact()))
+                    .append(", \"rounds\": ").append(num(d.rounds())).append(", \"shoes\": ").append(num(d.shoes()))
                     .append("}");
         }
-        b.append("\n  ]\n}\n");
+        b.append(differences.isEmpty() ? "]\n}\n" : "\n  ]\n}\n");
         Files.writeString(file, b.toString(), StandardCharsets.UTF_8);
     }
 }

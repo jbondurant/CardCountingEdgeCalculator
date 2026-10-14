@@ -93,6 +93,37 @@ final class BundleFixture {
         return f;
     }
 
+    /**
+     * After a test changed, added or deleted files of a bundle: index.tsv keeps its lines for the
+     * files still there (with their new sizes) and gains the extra lines given, and manifest.sha256
+     * is written again, so the bundle is sealed as the exporter would seal it.
+     */
+    static void reseal(Path dir, String... extraIndexLines) throws IOException {
+        TreeMap<String, String> lines = new TreeMap<>();
+        List<String> old = Files.readAllLines(dir.resolve("index.tsv"));
+        for (String line : old.subList(1, old.size())) {
+            String[] f = line.split("\t", -1);
+            if (Files.exists(dir.resolve(f[0]))) {
+                lines.put(f[0], f[2] + "\t" + f[3] + "\t" + f[4] + "\t" + f[5]);
+            }
+        }
+        for (String extra : extraIndexLines) {
+            String[] f = extra.split("\t", -1);
+            lines.put(f[0], f[1] + "\t" + f[2] + "\t" + f[3] + "\t" + f[4]);
+        }
+        List<String> idx = new ArrayList<>(List.of("path\tbytes\trow\tpen\tfold\tscope"));
+        for (var en : lines.entrySet()) {
+            idx.add(en.getKey() + "\t" + Files.size(dir.resolve(en.getKey())) + "\t" + en.getValue());
+        }
+        write(dir.resolve("index.tsv"), idx);
+        lines.put("index.tsv", "");
+        List<String> manifest = new ArrayList<>();
+        for (String path : lines.keySet()) {
+            manifest.add(Bundle.sha256(dir.resolve(path)) + "  " + path);
+        }
+        write(dir.resolve("manifest.sha256"), manifest);
+    }
+
     static void write(Path file, List<String> lines) throws IOException {
         StringBuilder b = new StringBuilder();
         for (String l : lines) {

@@ -378,8 +378,10 @@ public final class Strategy {
                     }
                     case "group" -> {
                         int[] v = ints(f, 3);
+                        need(f, 4, b.groupHi != null && groupsRead < b.groupHi.length, "groups before its group lines");
+                        // SHOE_SPEC.md answer 11: consecutive ranges, lo <= hi, and each lo above the last hi.
                         need(f, 4, v[0] == groupsRead && v[1] <= v[2]
-                                && (groupsRead == 0 || v[2] > b.groupHi[groupsRead - 1]), "group g lo hi, by g, hi increasing");
+                                && (groupsRead == 0 || v[1] > b.groupHi[groupsRead - 1]), "group g lo hi, by g, lo above the last hi");
                         b.groupHi[groupsRead++] = v[2];
                     }
                     case "first" -> readFirst(b, f, firstRead++);
@@ -392,8 +394,9 @@ public final class Strategy {
                     }
                     case "lgroup" -> {
                         int[] v = ints(f, 3);
+                        need(f, 4, b.laterHi != null && laterGroupsRead < b.laterHi.length, "lgroups before its lgroup lines");
                         need(f, 4, v[0] == laterGroupsRead && v[1] <= v[2]
-                                && (laterGroupsRead == 0 || v[2] > b.laterHi[laterGroupsRead - 1]), "lgroup l lo hi, by l, hi increasing");
+                                && (laterGroupsRead == 0 || v[1] > b.laterHi[laterGroupsRead - 1]), "lgroup l lo hi, by l, lo above the last hi");
                         b.laterHi[laterGroupsRead++] = v[2];
                     }
                     case "later" -> readLater(b, f, laterRead++);
