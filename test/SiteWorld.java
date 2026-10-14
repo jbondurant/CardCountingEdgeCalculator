@@ -197,9 +197,9 @@ final class SiteWorld {
         return r;
     }
 
-    /** A bound row: fitted on nothing, bet on its own value; the full-play one marked full play. */
+    /** A bound row as SystemScorer makes one: fitted on nothing, bet on its own value; the full-play one marked full play. */
     SystemScorer.Entry bound(String name, boolean full, double flat, double s8) {
-        return entry(new SystemScorer.Entry(name, null, false, full, full), flat, s8, NOISE, draws(seed++));
+        return entry(new SystemScorer.Entry(name, null, false, full, true), flat, s8, NOISE, draws(seed++));
     }
 
     /** Builds the world's Results and writes its saved files into dir. */
