@@ -103,6 +103,14 @@ final class FullIndexReplay {
         String[] exportPlans = StrategyExport.ReplayExport.PLANS.clone();
         /** Hooks given in code, by a test or a tool that drives the replay (the page look of 6.3), after those the options make. */
         final List<Hook> hooks = new ArrayList<>();
+        /**
+         * The full-play registration's git blob when the page look (PageLook, PLAN_COMPUTE.md 6.3)
+         * drives this replay of step 8's run on the main file, after its one ledger line is
+         * written; null otherwise. Set in code only, never from the command line: with it the
+         * replay takes registered counts on the main file, and the source's identity is held to
+         * the one step 8 wrote (its counts line naming that blob).
+         */
+        String look;
         /** What a scoring batch may hold, in bytes; when 0 or less, heapFill of the heap less what the replay holds. */
         double batchBytes;
         double heapFill = 0.8;
@@ -494,7 +502,7 @@ final class FullIndexReplay {
             throw new IllegalStateException(source + " holds no fit.ckpt to replay");
         }
         CustomCounts.Listing listing = o.countsFile == null ? null : CustomCounts.read(o.countsFile);
-        if (listing != null && CustomCounts.isMain(o.states)) {
+        if (listing != null && CustomCounts.isMain(o.states) && o.look == null) {
             throw new IllegalStateException("counts from " + o.countsFile + " on the main state file: replaying them is "
                     + "the page look of PLAN_COMPUTE.md 6.3, which goes through CustomCounts.lookOnMain with its one "
                     + "ledger line, not this mode");
@@ -512,7 +520,7 @@ final class FullIndexReplay {
             counts.addAll(listing.counts());
         }
         String expected = FullIndexRun.identity(commit, o.states, shoes, st.size, o.resamples, o.threads, counts, o.pens,
-                listing == null ? null : listing.file + ", a file not registered");
+                listing == null ? null : listing.file + (o.look != null ? ", blob " + o.look : ", a file not registered"));
         String differ = differences(src.identity, expected, counts);
         if (!differ.isEmpty()) {
             throw new IllegalStateException("the run in " + source + " is not the one these settings and classes run, "
