@@ -63,6 +63,38 @@ class SimCommandsTest {
         assertEquals(2, ((List<Object>) v.get("differences")).size());
     }
 
+    /**
+     * INTEGRATION.md open item 2: on a bundle whose rows hold no registered figure with paths
+     * (part 1's: no F27 or F29), p3 kept no per-shoe records and then asked writeRecords for a part
+     * of every chunk, so it stopped after its chunks, before summary-p3.json. It must finish, with
+     * or without --registry (without, it reads SIM_CHECK.md from the working directory, the
+     * repository's root, where Hi-Lo's first-decision figures at 80% have swings but no paths).
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void p3FinishesOnABundleWithNoFigureWithPaths() throws Exception {
+        Path bundle = BundleFixture.write(tmp.resolve("b"));
+        Path registry = tmp.resolve("SIM_CHECK.md");
+        Files.write(registry, List.of("```sim-registry", Registry.HEADER,
+                "F03\t1\tChart, no count, flat\t80\tflat\tP3,P2\tstep 7\t1\t0",
+                "F18\t1\tHi-Lo = Hi-Lo Lite\t80\tev:same-8\tP3,P2\tc06c061\t1\t0", "```"));
+        for (boolean given : new boolean[]{true, false}) {
+            Path out = tmp.resolve(given ? "with" : "without");
+            String[] args = {"--bundle", bundle.toString(), "--out", out.toString(), "--sim-commit", "test",
+                    "--chunks", "3", "--chunk-size", "20"};
+            Sim.p3(given ? concat(args, "--registry", registry.toString()) : args);
+            Map<String, Object> summary = (Map<String, Object>) Json.parse(Files.readString(out.resolve("summary-p3.json")));
+            List<Object> comparisons = (List<Object>) summary.get("comparisons");
+            assertTrue(comparisons.stream().anyMatch(c -> "F18".equals(((Map<String, Object>) c).get("fig"))),
+                    "F18 is registered in both registries");
+            assertTrue(Files.readAllLines(out.resolve("swings.tsv")).get(0).startsWith("shoes\tF03\t60\t"));
+            try (var files = Files.list(out)) {
+                assertFalse(files.anyMatch(f -> f.getFileName().toString().matches("(records|fan|ruin|trip)-.*")),
+                        "no figure here keeps paths");
+            }
+        }
+    }
+
     static String[] concat(String[] a, String... b) {
         String[] c = java.util.Arrays.copyOf(a, a.length + b.length);
         System.arraycopy(b, 0, c, a.length, b.length);

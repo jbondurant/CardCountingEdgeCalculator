@@ -397,9 +397,14 @@ public final class P3 {
     /**
      * SHOE_SPEC.md C2's records-FIG.tsv for each figure with paths: one line {@code Y N M} a shoe,
      * shoes 0 to recordShoes - 1 in order, from the parts the chunks wrote (each chunk's part is on
-     * disk before its sums are). Refuses a missing part or one short of its shoes.
+     * disk before its sums are). Refuses a missing part or one short of its shoes. A run that keeps
+     * no records (no registered figure with paths among the bundle's rows, as on part 1's bundle)
+     * wrote no parts and writes no file (INTEGRATION.md open item 2).
      */
     public void writeRecords(Path out, int chunkSize) throws IOException {
+        if (recordsDir == null || records.isEmpty()) {
+            return;
+        }
         List<List<String>> by = new ArrayList<>();
         for (int k = 0; k < recordIds.size(); k++) {
             by.add(new ArrayList<>());
