@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -40,25 +39,47 @@ public class SitePageTest {
         return new String(Files.readAllBytes(Paths.get(p)), StandardCharsets.UTF_8);
     }
 
+    /** Runs a command line's main as build-site's steps run it, its line of output kept out of the test's. */
+    interface Main {
+        void run(String[] args) throws Exception;
+    }
+
+    static void run(Main main, String... args) throws Exception {
+        PrintStream was = System.out;
+        System.setOut(new PrintStream(new ByteArrayOutputStream(), true, "UTF-8"));
+        try {
+            main.run(args);
+        } finally {
+            System.setOut(was);
+        }
+    }
+
+    /**
+     * The inputs as the pipeline writes them, each by its command line (SiteExport, then SiteAdapt
+     * once per computation) from the files the producing code wrote, then the page from them.
+     */
     @BeforeAll
     static void built() throws Exception {
         world = SiteWorld.make(Files.createDirectories(dir.resolve("world")));
         String template = read("site/template.html");
         inputs = Files.createDirectories(dir.resolve("inputs"));
-        SiteExport.export(world.export(template)).write(inputs.resolve("results-world.json"));
-        SiteCeiling.adapt(world.ceilingData(), "world/ceiling.json", SiteCeilingTest.paragraphs(world.dir),
-                world.registration).write(inputs.resolve("ceiling-world.json"));
-        SiteRisk.adapt(world.risk(), "world/risk.json").write(inputs.resolve("risk-world.json"));
+        run(SiteExport::main, "--stored", world.stored.toString(), "--widening", world.pilot.toString(), "--template",
+                "site/template.html", "--states", world.states.toString(), "--saved", world.saved.toString(), "--counts",
+                world.registration.toString(), "--fullplay-run", world.runFile.toString(), "--fullplay-counts",
+                world.fullRegistration.toString(), "--out", inputs.resolve("results-world.json").toString());
+        run(SiteAdapt::main, "ceiling", world.ceilingData().toString(), SiteCeilingTest.paragraphs(world.dir).toString(),
+                world.registration.toString(), "--out", inputs.resolve("ceiling-world.json").toString());
+        run(SiteAdapt::main, "risk", world.risk().toString(), "--out", inputs.resolve("risk-world.json").toString());
         // The other computations' files, each written on its own test's fixture: their keys are their own.
-        SiteWide.adapt(SiteWideTest.spreads(Files.createDirectories(dir.resolve("wide"))), "fixture/spreads.json")
-                .write(inputs.resolve("spreads-fixture.json"));
-        SiteEdges.adapt(SiteEdgesTest.keyEdges(Files.createDirectories(dir.resolve("edges"))), "fixture/key-edges.json")
-                .write(inputs.resolve("key-edges-fixture.json"));
+        run(SiteAdapt::main, "wide", SiteWideTest.spreads(Files.createDirectories(dir.resolve("wide"))).toString(),
+                "--out", inputs.resolve("spreads-fixture.json").toString());
+        run(SiteAdapt::main, "edges", SiteEdgesTest.keyEdges(Files.createDirectories(dir.resolve("edges"))).toString(),
+                "--out", inputs.resolve("key-edges-fixture.json").toString());
         Path[] sim = SiteSimTest.summaries(Files.createDirectories(dir.resolve("sim")), "a=off b=off");
-        SiteSim.adapt(sim[0], sim[1]).write(inputs.resolve("sim-fixture.json"));
+        run(SiteAdapt::main, "sim", sim[0].toString(), sim[1].toString(), "--out", inputs.resolve("sim-fixture.json").toString());
         Path lit = Files.createDirectories(dir.resolve("literature"));
-        Files.write(inputs.resolve("literature-fixture.json"), SiteAdapt.literature(SiteLiteratureTest.file(lit,
-                SiteLiteratureTest.check(lit, false), "literature.json")));
+        run(SiteAdapt::main, "literature", SiteLiteratureTest.file(lit, SiteLiteratureTest.check(lit, false),
+                "literature.json").toString(), "--out", inputs.resolve("literature-fixture.json").toString());
         page = SiteBuild.build(SiteData.read(inputs), template, read("site/page.css"), read("site/page.js"),
                 SiteBuild.tokens(SiteBuildTest.INDEX), "world-1", "2026-10-13", "0123456789abcdef0123456789abcdef01234567");
     }

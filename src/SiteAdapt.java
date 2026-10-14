@@ -15,7 +15,8 @@ import java.util.Map;
  * - risk: RiskReport's risk-SHA.json (SiteRisk);
  * - wide: WideReport's spreads-SHA.json (SiteWide);
  * - edges: KeyEdgesReport's key-edges-SHA.json (SiteEdges);
- * - ceiling: CeilingResults' ceiling-SHA.json and CEILING_RESULT_PARAGRAPHS.md (SiteCeiling);
+ * - ceiling: CeilingResults' ceiling-SHA.json, CEILING_RESULT_PARAGRAPHS.md and, for the searched
+ *   counts' tags, the registration step 7 scored (SiteCeiling);
  * - literature: LiteratureCheck's literature-SHA.json, already in the contract, checked and copied;
  * - sim: the simulator's summary-p3.json and summary-p2.json (SiteSim).
  * An adapter carries figures across and computes nothing the page shows but a change of unit
@@ -24,7 +25,7 @@ import java.util.Map;
  * input directory (runs/site/), so an input the generator reads is always one of these.
  *
  * java -cp build/classes:lib/mongo-java-driver-3.12.14.jar SiteAdapt KIND FILE... --out OUT.json
- *   risk RISK.json | wide SPREADS.json | edges KEY-EDGES.json | ceiling CEILING.json PARAGRAPHS.md
+ *   risk RISK.json | wide SPREADS.json | edges KEY-EDGES.json | ceiling CEILING.json PARAGRAPHS.md [COUNTS.json]
  *   | literature LITERATURE.json | sim SUMMARY-P3.json [SUMMARY-P2.json]
  */
 final class SiteAdapt {
@@ -131,7 +132,8 @@ final class SiteAdapt {
             case "risk": made = SiteRisk.adapt(in, files.get(0)); break;
             case "wide": made = SiteWide.adapt(in, files.get(0)); break;
             case "edges": made = SiteEdges.adapt(in, files.get(0)); break;
-            case "ceiling": made = SiteCeiling.adapt(in, files.get(0), Paths.get(files.get(1))); break;
+            case "ceiling": made = SiteCeiling.adapt(in, files.get(0), Paths.get(files.get(1)),
+                    files.size() > 2 ? Paths.get(files.get(2)) : null); break;
             case "sim": made = SiteSim.adapt(in, files.size() > 1 ? Paths.get(files.get(1)) : null); break;
             case "literature": {
                 byte[] b = literature(in);
