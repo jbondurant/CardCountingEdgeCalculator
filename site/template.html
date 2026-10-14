@@ -217,7 +217,7 @@ series full.70.{x}.perfect
 <h2>Is there a better count?</h2>
 {{#if has:ceiling_paragraphs}}<p class="headline">{{para:same}}</p>
 <p>{{para:flat}}</p>{{else}}<p><span class="pending">Not yet computed: the searched count's result, picked from the ceiling count's figures by the rule committed before they were read.</span></p>{{/if}}
-<p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it. <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span> Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
+<p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it.{{#if has:search.}} <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span>{{/if}} Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
 {{#if has:ledger.}}<div class="box" id="registration"></div>{{else}}<p><span class="pending">Not yet computed: the registration box, printed from the ledger once the registered counts have been scored.</span></p>{{/if}}
 <figure>
 {{tags:f1,f2,zen_count,hi_lo}}
