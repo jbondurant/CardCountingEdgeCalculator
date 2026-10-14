@@ -30,12 +30,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * made up; part 1 of the real check is what tests them.
  *
  * Then p3 on one small chunk, and the engine side's readers on what it wrote (SiteSim on both
- * summaries, RiskReport.readSwings on swings.tsv). Disabled: the simulator's p3 stops at its end
- * on any bundle without a figure that keeps paths (F27, F29), part 1's among them, because
- * P3.writeRecords asks for a records part of every chunk although none is written when no figure
- * keeps records ("records-000000000000.part is missing", 13 October 2026). The fix is the
- * clean-room session's (sim/); enable this test with it. With it mended in a scratch copy of the
- * simulator (never committed), both halves passed.
+ * summaries, RiskReport.readSwings on swings.tsv). Until site-fix-sim's 78cd388, merged into
+ * site-integration on 14 October 2026, the simulator's p3 stopped at its end on any bundle without
+ * a figure that keeps paths (F27, F29), part 1's among them, because P3.writeRecords asked for a
+ * records part of every chunk although none is written when no figure keeps records
+ * ("records-000000000000.part is missing", 13 October 2026), and this half was disabled. Enabled
+ * with the merge; with writeRecords's early return taken out of a scratch copy of the merged
+ * simulator (never committed), it fails again with that message.
  *
  * Planted on 13 October 2026, in scratch copies, never committed. On the engine side, each was
  * refused by the export's own round trip before the simulator ran, so this class failed in its
@@ -124,7 +125,6 @@ public class SimReadsExportTest {
      * RiskReport's reader takes swings.tsv with those two figures' swings.
      */
     @Test
-    @org.junit.jupiter.api.Disabled("sim.P3.writeRecords stops p3 on a bundle without F27 or F29 (see the class comment)")
     @SuppressWarnings("unchecked")
     public void theEnginesReadersTakeWhatTheSimulatorWrote() throws Exception {
         Path l3 = dir.resolve("p3.log");
