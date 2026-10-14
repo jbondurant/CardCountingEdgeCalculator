@@ -281,6 +281,11 @@ public final class P2 {
 
     /** P2's paired differences from a run's sums: the simulator's with its SE, beside the engine's on the same states. */
     public List<Summary.Difference> differences(double[] sums) {
+        return differences(sums, null);
+    }
+
+    /** The same, each figure named by its registered id where it has one. */
+    public List<Summary.Difference> differences(double[] sums, Registry registry) {
         List<Summary.Difference> out = new ArrayList<>();
         for (int[] p : pairs) {
             Row a = rows.get(p[0]);
@@ -290,7 +295,8 @@ public final class P2 {
             int ob = offset[p[2]] + 4 * p[3];
             out.add(new Summary.Difference("P2", a.name, a.pen, a.figures.get(p[1]), b.name, sums[o] / sums[o + 1],
                     Math.sqrt(sums[o + 2]) / sums[o + 1], Double.NaN, sums[oa] / sums[oa + 1], sums[ob] / sums[ob + 1],
-                    sums[o + 3] / sums[o + 1], (double) k * sections.get(p[0]).index.length, sections.get(p[0]).index.length));
+                    sums[o + 3] / sums[o + 1], (double) k * sections.get(p[0]).index.length, sections.get(p[0]).index.length,
+                    Summary.fig(registry, a.name, a.pen, a.figures.get(p[1])), Summary.fig(registry, b.name, b.pen, b.figures.get(p[3]))));
         }
         return out;
     }

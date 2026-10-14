@@ -227,7 +227,8 @@ public final class Variants {
                         + "\t" + r[i][2] + "\t" + rounds + "\t" + (long) sums[t * BLOCK]);
                 if (i >= 3) {
                     differences.add(new Summary.Difference("variants", row.name, row.pen, row.figures.get(figures.get(t)),
-                            what[i], r[i][0], r[i][1], r[i][2], r[i][3], r[i][4], Double.NaN, rounds, sums[t * BLOCK]));
+                            what[i], r[i][0], r[i][1], r[i][2], r[i][3], r[i][4], Double.NaN, rounds, sums[t * BLOCK],
+                            ids.get(t), ids.get(t)));
                 }
             }
         }

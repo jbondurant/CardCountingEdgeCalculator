@@ -48,9 +48,19 @@ class SimCommandsTest {
         List<String> fan = Files.readAllLines(out.resolve("fan-F18.tsv"));
         assertEquals(2, fan.size());
         assertEquals(4, fan.get(1).split("\t").length);
+        // Trip risk and being behind (open item 11): a behind line for each hours and pace, and,
+        // when the records' mean is above 0, a trip line for each of B_25%, B_5% and B_1%.
+        List<String> trip = Files.readAllLines(out.resolve("trip-F18.tsv"));
+        assertEquals("kind\thours\tpace\trounds\tblocks\tmeanRounds\trisk\tbankroll\tsimulated\tse\tformula", trip.get(3));
+        assertEquals(Files.exists(out.resolve("ruin-F18.tsv")) ? 4 + 9 * 4 : 4 + 9, trip.size());
+        assertTrue(trip.get(4).startsWith("behind\t10\t50\t500\t"), trip.get(4));
         // P2 with a plant goes on past the failed exact checks (the fixture has no keys-sample.tsv)
         assertFalse(Sim.p2(concat(common, "--k", "20", "--plant", "s17")));
         assertTrue(Files.readString(out.resolve("checks.txt")).contains("D2\tnot run"));
+        Map<String, Object> facts = (Map<String, Object>) Json.parse(Files.readString(out.resolve("summary-p2.json")));
+        assertEquals("not run", facts.get("D2"), "each exact check's outcome is in the summary (open item 10)");
+        assertEquals("not run", facts.get("D5"));
+        assertEquals("failed", facts.get("D4"), "the fixture's bets are made up");
         swings = Files.readAllLines(out.resolve("swings.tsv"));
         int p3z = swings.indexOf(swings.stream().filter(l -> l.startsWith("z\tF18\tP3\t")).findFirst().orElseThrow());
         assertTrue(swings.get(p3z + 1).startsWith("z\tF18\tP2\t"), "P2's z follows P3's");
