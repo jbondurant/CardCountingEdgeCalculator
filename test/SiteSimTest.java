@@ -39,12 +39,23 @@ public class SiteSimTest {
     static final long CHUNKS = 2;
     static final long K = 1_200;
 
-    /** SIM_CHECK.md with its identity table and section 8's blocks filled for the fixture. */
+    /**
+     * SIM_CHECK.md with its identity table and section 8's blocks filled for the fixture. The fixture's
+     * commit and bundles replace whatever the identity cells hold, recorded or not, so this world
+     * names only its own (the real table names the merged simulator's commit since item 8).
+     */
     static Path plan(Path dir, boolean filled) throws Exception {
         String doc = new String(Files.readAllBytes(Path.of("SIM_CHECK.md")), StandardCharsets.UTF_8);
-        doc = doc.replaceFirst("(\\| The simulator's commit \\(`sim/`\\) \\| [^|]*\\| )not yet written", "$1" + COMMIT)
-                .replaceFirst("(\\| Part 1's bundle[^|]*\\| [^|]*\\| )not yet exported", "$1" + BUNDLE1)
-                .replaceFirst("(\\| Part 2's bundle[^|]*\\| [^|]*\\| )not yet exported", "$1" + BUNDLE2);
+        String[][] cells = {{"The simulator's commit \\(`sim/`\\)", COMMIT}, {"Part 1's bundle[^|]*", BUNDLE1},
+                {"Part 2's bundle[^|]*", BUNDLE2}};
+        for (String[] c : cells) {
+            String was = doc;
+            doc = doc.replaceFirst("(\\| " + c[0] + " \\| [^|]*\\| )[^|\n]*\\|", "$1" + c[1] + " |");
+            assertNotEquals(was, doc, c[0]);
+        }
+        SiteSim.Plan read = SiteSim.Plan.read(Files.write(dir.resolve("SIM_CHECK-cells.md"), doc.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(List.of(COMMIT), read.commits);
+        assertEquals(Map.of(1, List.of(BUNDLE1), 2, List.of(BUNDLE2)), read.bundles);
         if (filled) {
             for (int part = 1; part <= 2; part++) {
                 doc = doc.replace("Not filled: part " + part + "'s pilot has not run.", "- f = 0.053: P3 " + CHUNKS
@@ -233,6 +244,44 @@ public class SiteSimTest {
         assertTrue(refusal(options(plan, run)).contains("K = 1300"));
         Path unfilled = Files.createDirectories(dir.resolve("unfilled"));
         assertTrue(refusal(options(plan(unfilled, false), part1(dir.resolve("p")))).contains("is not filled"));
+    }
+
+    /**
+     * SIM_CHECK.md's identity table (INTEGRATION.md open item 8) as the code reads it: SiteSim takes
+     * the simulator's commit from it, and each of the three recorded files' last commits is one its
+     * row names, so a change to sim/, SHOE_SPEC.md or D3's test after the record fails here before a
+     * pilot runs on it. Skipped where the tree is not a git checkout (a clean archive of it).
+     */
+    @Test
+    public void theIdentityTableNamesTheLastCommitOfEachFileItRecords() throws Exception {
+        SiteSim.Plan plan = SiteSim.Plan.read(Path.of("SIM_CHECK.md"));
+        assertFalse(plan.commits.isEmpty(), "SIM_CHECK.md's identity table names no simulator commit");
+        String doc = new String(Files.readAllBytes(Path.of("SIM_CHECK.md")), StandardCharsets.UTF_8);
+        String[][] rows = {{"The simulator's commit (`sim/`)", "sim"}, {"SHOE_SPEC.md's commit", "SHOE_SPEC.md"},
+                {"`test/SimVsExactSmallShoeTest.java`'s commit (D3)", "test/SimVsExactSmallShoeTest.java"}};
+        for (String[] r : rows) {
+            String last;
+            try {
+                Process p = new ProcessBuilder("git", "log", "-1", "--format=%H", "--", r[1]).redirectErrorStream(true).start();
+                last = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+                org.junit.jupiter.api.Assumptions.assumeTrue(p.waitFor() == 0 && last.matches("[0-9a-f]{40}"),
+                        "not a git checkout: " + last);
+            } catch (java.io.IOException e) {
+                org.junit.jupiter.api.Assumptions.abort("no git: " + e.getMessage());
+                return;
+            }
+            List<String> named = null;
+            for (String line : doc.split("\n")) {
+                String[] cells = line.split("\\|");
+                if (line.startsWith("| ") && cells.length > 3 && cells[1].trim().startsWith(r[0])) {
+                    named = SiteSim.hex(cells[3], 7, 40);
+                }
+            }
+            assertNotNull(named, "the identity table's row " + r[0]);
+            String l = last;
+            assertTrue(named.stream().anyMatch(c -> l.startsWith(c)), r[1] + "'s last commit is " + last
+                    + ", which its row of the identity table does not name: " + named);
+        }
     }
 
     /** Two parts, three runs: part 2's tests split over two bundles' runs (the replay's and the page look's), the rule over their union. */

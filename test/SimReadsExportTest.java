@@ -120,6 +120,52 @@ public class SimReadsExportTest {
     }
 
     /**
+     * Row 5's gate across the two programs (SIM_CHECK.md section 8): the simulator's blind pilot of
+     * part 1 on the engine's bundle, at 1% of tiny sizes (sim/test/PilotTest's), writes
+     * sim-pilot-part1.tsv, and the reader `SimCheckPlan fill` uses takes every line of it, in the
+     * units fill prints (a one-unit bet: the chart flat's SD a round near section 8's assumed 1.16).
+     * The bundle holds only some of part 1's figures, so the pilot names the others and exits 1, and
+     * the reader then refuses the file for those alone; the lines it does hold come in the
+     * registry's order.
+     */
+    @Test
+    public void fillReadsThePilotsFile() throws Exception {
+        Path pilot = dir.resolve("pilot");
+        Path log = dir.resolve("pilot.log");
+        int exit = sim(log, "pilot", "--part", "1", "--bundle", bundle.toString(), "--out", pilot.toString(),
+                "--sim-commit", "fixture", "--registry", "SIM_CHECK.md", "--catalog", "counting-systems.json",
+                "--threads", "1", "--chunks", "2", "--chunk-size", "600", "--k", "2000", "--planted-k", "2000",
+                "--fan-paths", "2", "--fan-rounds", "30000", "--ruin-paths", "100", "--scale", "100");
+        String said = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+        Path file = pilot.resolve("sim-pilot-part1.tsv");
+        assertTrue(Files.isRegularFile(file), said);
+        assertEquals(1, exit, "the bundle lacks most of part 1's figures: " + said);
+        List<String> want = new ArrayList<>();
+        for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+            if (f.part == 1) {
+                want.add(f.id);
+            }
+        }
+        List<String> sd = new ArrayList<>();
+        for (String l : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String[] t = l.split("\t", -1);
+            if (t[0].equals("sd")) {
+                sd.add(t[1]);
+                if (t[1].equals("F03")) {
+                    double v = Double.parseDouble(t[2]);
+                    assertTrue(v > 1.16 / 2 && v < 1.16 * 2, "F03's SD a round " + v + ", in a one-unit bet");
+                }
+            }
+        }
+        assertTrue(sd.containsAll(List.of("F03", "F18")), sd.toString());
+        List<String> inOrder = new ArrayList<>(want);
+        inOrder.retainAll(sd);
+        assertEquals(inOrder, sd, "the pilot's sd lines in the registry's order");
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> SimCheckPlan.Pilot.read(file));
+        assertTrue(refused.getMessage().startsWith("the pilot's sd lines must be, in order, " + want), refused.getMessage());
+    }
+
+    /**
      * What the simulator wrote, read by the engine side: SiteSim takes the two summaries, the
      * chart flat at 80% and Hi-Lo's 1-8 at 80% among the registered figures compared, and
      * RiskReport's reader takes swings.tsv with those two figures' swings.
@@ -149,6 +195,22 @@ public class SimReadsExportTest {
         assertTrue(refused.getMessage().contains("identity table"), refused.getMessage());
         for (String f : new String[]{"P3 F03", "P2 F03", "P3 F18", "P2 F18"}) {
             assertTrue(figures.contains(f), f + " in " + figures);
+        }
+        // The reported figures' readers (SiteSimReported) on the simulator's own depth.tsv and
+        // ev-by-key.tsv, as sim/QUESTIONS.md item 27's sim-formats block and SHOE_SPEC.md C4 give them:
+        // depth.tsv's header as the reader expects it, its 13 bands of 26 cards with the exact side from
+        // the chart's section, and a line of ev-by-key.tsv read for every row and key, each fold's mean.
+        SiteInput reported = new SiteInput("sim", "fixture", "main");
+        SiteSimReported.depth(reported, o);
+        SiteSimReported.evByKey(reported, o);
+        List<Object> depth = (List<Object>) reported.tables.get("sim_depth");
+        assertNotNull(depth, "depth.tsv read with its exact side");
+        assertEquals(13, depth.size());
+        List<Object> byKey = (List<Object>) reported.tables.get("sim_ev_by_key");
+        assertNotNull(byKey, "ev-by-key.tsv read");
+        assertFalse(byKey.isEmpty());
+        for (Object r : byKey) {
+            assertTrue(((Map<String, Object>) r).keySet().stream().anyMatch(k -> k.startsWith("sim")), r.toString());
         }
         Map<String, RiskReport.Swing> swings = RiskReport.readSwings(Files.readAllLines(out.resolve("swings.tsv"),
                 StandardCharsets.UTF_8));

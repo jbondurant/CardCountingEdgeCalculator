@@ -15,13 +15,14 @@ SEs the rule implies; no exact figure is copied into it.
 **What is left to fill in, and only this.** Section 8's two blocks, one a part, each printed by
 `java SimCheckPlan fill sim-pilot-partN.tsv` from that part's pilot: its measured speeds, the SD
 of every figure, P2's weight dispersion, and the sizes and SEs the rule then gives. And the
-identities in the table below, which are facts to record, not choices.
+bundles' identities in the table below, which are facts to record, not choices (its three commits
+were recorded on 14 October 2026, before any pilot).
 
 | Identity | Recorded when | Value |
 |---|---|---|
-| SHOE_SPEC.md's commit (branch site-shoe-spec) | before the first pilot | not yet committed |
-| The simulator's commit (`sim/`) | before each part's pilot | not yet written |
-| `test/SimVsExactSmallShoeTest.java`'s commit (D3) | before the first pilot | not yet written |
+| SHOE_SPEC.md's commit (branch site-shoe-spec) | before the first pilot | c8d9b5a (c8d9b5ab990a3d2278c109ead692b175b170b4bc), its last commit, made on site-int-spec, which continued site-shoe-spec; merged into site-integration as 2c99a56 |
+| The simulator's commit (`sim/`) | before each part's pilot | fe9a91e (fe9a91ea88f49b73c86278eec075d2b17e4bd4bd), the last commit touching sim/, made on site-fix-sim; merged into site-integration with sim/ unchanged on 14 October 2026; for part 1, and for part 2 unless sim/ changes |
+| `test/SimVsExactSmallShoeTest.java`'s commit (D3) | before the first pilot | 283c62c (283c62c5a133f518608f27d10249230bd0735126), made on site-fix-engine; merged into site-integration as 32422c1 |
 | Part 1's bundle, `runs/sim/export-<sha>/manifest.sha256`, its SHA-256 | before part 1's pilot | not yet exported |
 | Part 2's bundle(s), the same | before part 2's pilot | not yet exported |
 
