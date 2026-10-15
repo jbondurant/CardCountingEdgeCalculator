@@ -47,10 +47,12 @@ dl dd { margin: 0; }
   dl dd { margin-bottom: .5rem; }
 }
 
-/* Contents: in the text column, and in the left margin on wide screens. */
+/* Contents: in the text column, and in the left margin on screens wide enough that it clears the
+   wide figures, which reach 28rem left of the centre (figure.wide): 13rem of list and 2rem of gap
+   beside them need 2 x (28 + 15) = 86rem. */
 .toc ol { padding-left: 1.4rem; font-size: .92rem; }
-@media (min-width: 75rem) {
-  .toc { position: fixed; top: 2rem; left: calc(50% - 20rem - 15rem); width: 13rem; }
+@media (min-width: 88rem) {
+  .toc { position: fixed; top: 2rem; left: calc(50% - 28rem - 15rem); width: 13rem; }
   .toc h2 { margin-top: 0; }
 }
 
@@ -146,6 +148,9 @@ html.js table.sortable th button { cursor: pointer; text-decoration: underline d
 html.js table.sortable th[aria-sort=ascending] button::after { content: " ↑"; }
 html.js table.sortable th[aria-sort=descending] button::after { content: " ↓"; }
 table.files code.hash { font-size: 11px; }
+/* The evidence table's words: wide enough to read, the table scrolling in its box on a phone. */
+#evidence-table td { min-width: 8rem; }
+#evidence-table td:nth-child(2) { min-width: 15rem; }
 
 footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .85rem; color: var(--mute); }
 @media print { .toc, button, nav.crumbs, .controls { display: none !important; } body { max-width: none; } }

@@ -35,9 +35,18 @@ import java.util.regex.Pattern;
  *   it fails. {@code {{pairs:ranked|KEYS}}} and {@code {{pairs:unseparated|KEYS}}} print the pair
  *   lists of PLAN_PAGE.md 5a.</li>
  *   <li>{@code {{#if has:PREFIX}} … {{else}} … {{/if}}}: a section shown only when its data exists;
- *   the else branch says "Not yet computed".</li>
+ *   the else branch says "Not yet computed". Clauses join with " and ": has:, lacks:, and
+ *   any:TABLE|FILTER or none:TABLE|FILTER for an input table's entries (meets reads a filter).</li>
  *   <li>Blocks: {@code {{dots:ID …}}} a chart-table, {@code {{lines:ID …}}} an SVG panel,
- *   {@code {{rows:ID …}}} a sortable table of every count (see the methods below).</li>
+ *   {@code {{rows:ID …}}} a sortable table of every count, {@code {{table:NAME …}}} an input's
+ *   table, {@code {{fan:TABLE …}}} the risk fan, {@code {{scatter:ID …}}} a table's entries as points
+ *   against the line y = x (see the methods below).</li>
+ *   <li>{@code {{count:TABLE|FILTER}}}: how many entries of an input's table meet a filter, a figure
+ *   computed here on the inputs, as a range is; {@code {{cell:TABLE|FILTER|FIELD}}}: a field of the
+ *   first entry that meets it.</li>
+ *   <li>{@code {{#view NAME}} … {{#body}} … {{/view}}}: a figure the reader switches among cut cards,
+ *   spreads and wonging, every view rendered into assets/views/ and the default held in the page
+ *   (views).</li>
  *   <li>{@code {{style}}}, {@code {{jsonld}}}: the style sheet with the site's colour tokens, and the
  *   JSON-LD block.</li>
  * </ul>

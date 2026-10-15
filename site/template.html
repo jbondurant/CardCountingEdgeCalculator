@@ -357,8 +357,8 @@ col why
 <p class="headline">QFIT gives the insurance correlation of {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}} of the counts scored here, and this study's measured insurance correlation agrees with QFIT's for {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict=agrees}} of them.</p>{{/if}}
 {{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<p class="headline">Once this study's betting correlation is divided by R, the highest betting correlation any linear count reaches on the same states, it is within the check's tolerance of QFIT's for {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict^=agrees}} of the {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}} counts QFIT gives one for. The table under its chart gives each verdict, which says "agrees in direction" where QFIT's figure is for another game than this one.</p>{{/if}}
 {{#if any:literature_claims|id^=bc.;source=qfit-table and none:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<p>The betting correlations are not compared yet. This study's must first be divided by R, the highest betting correlation any linear count reaches on the same states, and R waits for {{cell:literature_claims|id^=bc.;source=qfit-table|ours_waits_for}}. Until then the page shows this study's betting correlation as it is, beside QFIT's, and judges neither.</p>{{/if}}
-{{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}}<p>The insurance correlations that do not agree, {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}} of them, are in the table under the chart with the reason the check gives for each.</p>{{/if}}
-{{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}}<p>The betting correlations that do not agree once divided by R, {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}} of them, are in the table under their chart with the reason the check gives for each.</p>{{/if}}
+{{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}}<p>The insurance correlations that do not agree, {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}} of them, are in the table under the chart; the table of claims above gives the reason the check gives for each.</p>{{/if}}
+{{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}}<p>The betting correlations that do not agree once divided by R, {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}} of them, are in the table under their chart; the table of claims above gives the reason the check gives for each.</p>{{/if}}
 {{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}}<p>The two betting correlations measure different things. QFIT's correlates a count's tags with the effects of removal, how much taking one card of a rank out of the shoe moves the player's expected value. This study's correlates the count's true count with each sampled state's actual advantage under the chart, on eight-deck states. No count of one number per card follows that advantage exactly, so this study's correlation is not on QFIT's scale until it is divided by R. The insurance correlation needs no such step: both measure how well the count tracks the share of ten-valued cards left.</p>
 <figure class="scatter">
 {{scatter:corr-ic
@@ -377,12 +377,11 @@ yname This study
 {{table:literature_claims
 id corr-ic-table
 where id^=ic.;source=qfit-table
-head Claim|QFIT|This study|Verdict|Why
+head Claim|QFIT|This study|Verdict
 col what
 col theirs
 col ours
 col verdict
-col why
 }}{{/if}}
 {{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<figure class="scatter">
 {{scatter:corr-bc
@@ -401,12 +400,11 @@ yname This study, divided by R
 {{table:literature_claims
 id corr-bc-table
 where id^=bc.;source=qfit-table
-head Claim|QFIT|This study, divided by R|Verdict|Why
+head Claim|QFIT|This study, divided by R|Verdict
 col what
 col theirs
 col ours
 col verdict
-col why
 }}{{/if}}
 {{#if any:literature_qfit and none:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<figure class="scatter">
 {{scatter:corr-bc
@@ -450,7 +448,7 @@ col rerun
 col catches
 col misses
 }}{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
-{{#if has:evidence.suite_tests}}<p>The whole test suite, re-run at {{cell:evidence_suite|at!=null|at}}: {{evidence.suite_tests|n}} tests, of which {{evidence.suite_failed|n}} failed and {{evidence.suite_skipped|n}} were skipped.</p>{{/if}}
+{{#if has:evidence.suite_tests}}<p>The whole test suite, re-run at {{cell:evidence_suite|at!=null|at}}: {{evidence.suite_tests|n}} tests, {{evidence.suite_failed|n}} of them failed and {{evidence.suite_skipped|n}} skipped.</p>{{/if}}
 <div class="box" id="hash">
 <h3>What a hash proves, and what it doesn't</h3>
 <p>A SHA-256 hash proves that the file you downloaded is, byte for byte, the file listed here. That these commits produced it is my statement. You can test it by reproducing the file (see <a href="#downloads">Downloads</a>): the states file byte for byte, the saved results only to within {{repro.ser_tolerance|e}}. For the first segment of the states file and for the search file, the build that made them is inferred, not recorded. A hash says nothing about whether the code is right; a bug is hashed just as faithfully. The checks above are the evidence that the code is right, and they are evidence, not proof.</p>

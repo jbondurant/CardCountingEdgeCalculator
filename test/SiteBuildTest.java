@@ -45,6 +45,21 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  * The rule that a data-file="search" element print the words "search file", added with that
  * test, was planted off too and fails aSearchFileFigureIsPrintedOnlyInsideItsLabel.
+ *
+ * <p>Plants for INTEGRATION.md item 12's blocks, each in a scratch copy of the working tree on 15
+ * October 2026, run against the test named; all were caught on their first run:
+ * <ul>
+ *   <li>the view fragments not checked: aViewFragmentIsCheckedAsThePageIs;</li>
+ *   <li>the scatter drawn with x and y swapped, and a filter's !^= read as ^=:
+ *   theCorrelationScattersAndTheirVerdictSentenceFollowTheCheck;</li>
+ *   <li>a view made where its key is had only as a prefix (SiteData.hasPrefix): the fixture's build
+ *   stops in fixture(), so every test of the class fails; the direct assertion in
+ *   theEveryCountChartSwitchesAmongItsViewsEachTracedToTheInputs was added after;</li>
+ *   <li>SiteSimReported's tables left in fractions of a unit:
+ *   theSimulatorsDepthAndEdgeByKeyRenderFromTheAdaptersTables (and its NaN kept: SiteSimTest's
+ *   theReportedFiguresAreReadBesideTheTests; a number found inside a longer one: SiteEvidenceTest's
+ *   aRowIsPrintedOnlyWhenItsRecordBearsItOut).</li>
+ * </ul>
  */
 public class SiteBuildTest {
 
@@ -816,6 +831,11 @@ public class SiteBuildTest {
         assertFalse(views.containsKey("80-s20-off"), "1-20 is not in the fixture, so it is neither made nor offered");
         assertFalse(p.contains("value=\"s20\""));
         assertFalse(views.containsKey("80-s12-on"), "no B plan at 1-12, so no wonging view there");
+        // A view needs its keys themselves: fd.80.s20.hi_lo is not had because some fd cell is
+        // (SiteData.hasPrefix would say so), and a view made on it could not be rendered.
+        SiteData in = SiteData.read(small);
+        assertFalse(SiteBuild.views(SiteBuild.conditionals(template, in), in).bodies
+                .containsKey("assets/views/every-80-s20-off.html"));
         Matcher box = Pattern.compile("<div class=\"views\" id=\"views-every\" data-src=\"assets/views/every-\" data-views=\"([^\"]*)\"")
                 .matcher(p);
         assertTrue(box.find());
