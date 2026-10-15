@@ -818,13 +818,17 @@ final class SimCheckPlan {
                         + "chart and %d at full play.%n", instances(0), instances(0, Play.CHART, Play.FIRST),
                 instances(0, Play.FULL)));
         List<String> planted = new ArrayList<>();
+        List<List<String>> byPart = List.of(new ArrayList<>(), new ArrayList<>());
         for (Figure f : figures()) {
             if (plantedFigure(f)) {
                 planted.add(f.id);
+                byPart.get(f.part - 1).add(f.id);
             }
         }
         b.append(String.format(Locale.ROOT, "- Each planted-bug run is scored on %d figures (%s), by P3 and P2: "
-                + "%d z tests a run.%n", planted.size(), String.join(", ", planted), 2 * planted.size()));
+                        + "%d z tests a run, in two halves (section 10): %s on part 1's bundle, %s on part 2's.%n",
+                planted.size(), String.join(", ", planted), 2 * planted.size(), String.join(", ", byPart.get(0)),
+                String.join(", ", byPart.get(1))));
         List<String> swings = new ArrayList<>();
         for (Figure f : figures()) {
             if (swings(f)) {
@@ -852,8 +856,8 @@ final class SimCheckPlan {
                 grouped(P2_TARGET_K), grouped(VALUED_80), grouped((long) P2_TARGET_K * VALUED_80), p2Chunks,
                 grouped(P2_CHUNK_STATES)));
         b.append(String.format(Locale.ROOT, "- Not scaled (part 2): mode B and the moving count each on P3's first "
-                        + "%d chunks (%s shoes); each planted-bug run, and the clean control beside them, P3 on the "
-                        + "first %d chunk and P2 at K = %s.%n", MODE_B_CHUNKS,
+                        + "%d chunks (%s shoes); each planted-bug run, and the clean control beside them, on part 1's "
+                        + "bundle and on part 2's (section 10), P3 on the first %d chunk and P2 at K = %s.%n", MODE_B_CHUNKS,
                 grouped(MODE_B_CHUNKS * P3_CHUNK_SHOES), PLANTED_CHUNKS, grouped(PLANTED_K)));
         b.append(String.format(Locale.ROOT, "- Kept on the way, not extra runs: the per-shoe records (Y, N, m) on "
                         + "P3's first %d chunks; the %d fan paths, each %s rounds, the cumulative win written every "
