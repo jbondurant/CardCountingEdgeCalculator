@@ -44,6 +44,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * cards; and Omega II's bet key one up, a count no row exports, so only keys-sample.tsv carries
  * it. On the simulator side, its key rounding moved from a half to 0.4: D2, D4 and D5 failed
  * (46,019, 2,694 and 53,196 mismatches), and theSimulatorsExactChecksPass... with them.
+ *
+ * Planted on 14 October 2026, the same way: SiteSimReported's depth.tsv header with exactWeight
+ * renamed failed theEnginesReadersTakeWhatTheSimulatorWrote; the pilot writing its SDs in percent
+ * (F03's 98.3 a round) failed fillReadsThePilotsFile.
  */
 public class SimReadsExportTest {
 

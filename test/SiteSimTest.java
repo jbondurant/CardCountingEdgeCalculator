@@ -251,6 +251,10 @@ public class SiteSimTest {
      * the simulator's commit from it, and each of the three recorded files' last commits is one its
      * row names, so a change to sim/, SHOE_SPEC.md or D3's test after the record fails here before a
      * pilot runs on it. Skipped where the tree is not a git checkout (a clean archive of it).
+     * Planted on 14 October 2026: a copy of the table whose simulator row names 4bf4830, the
+     * simulator before site-fix-sim, failed it. The fixture's plan above, as it was before that day
+     * (filling only cells that read "not yet written" or "not yet exported"), failed 5 of the
+     * class's tests once the real table was filled.
      */
     @Test
     public void theIdentityTableNamesTheLastCommitOfEachFileItRecords() throws Exception {
