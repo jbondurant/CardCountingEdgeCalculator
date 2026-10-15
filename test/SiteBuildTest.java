@@ -874,6 +874,39 @@ public class SiteBuildTest {
         }
     }
 
+    /**
+     * INTEGRATION.md open item 12, the evidence table (PLAN_PAGE.md 3.5): SiteEvidence's input,
+     * made from rows SiteEvidenceTest's records bear out and its JUnit report, is printed as the
+     * table of what was checked, every cell a data-t span the page check holds to the input, with
+     * the suite's re-run beneath; the pending line goes; and a cell printed otherwise is caught.
+     */
+    @Test
+    public void theEvidenceTableRendersFromItsInput() throws Exception {
+        Path in = copy("evidence");
+        java.util.List<String> lines = SiteEvidenceTest.lines(SiteEvidenceTest.GOOD, SiteEvidenceTest.row("b", "3,000 cases",
+                SiteEvidenceTest.COMMIT, "3,000 on shoes", "ExactVsBruteForceTest"));
+        Path tsv = Files.write(dir.resolve("evidence-rows.tsv"), String.join("\n", lines).getBytes(StandardCharsets.UTF_8));
+        SiteInput e = SiteEvidence.adapt(lines, SiteEvidenceTest.COMMIT, tsv, SiteEvidenceTest.RECORDS,
+                SiteEvidenceTest.report(Files.createDirectories(dir.resolve("junit"))), "1234abc");
+        e.source.put("fixture", true);
+        Files.write(in.resolve("evidence-fixture.json"), e.text("evidence-fixture.json").getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output b = build(in, template);
+        assertEquals(List.of(), b.problems);
+        String q = b.text("index.html");
+        assertFalse(q.contains("Not yet computed: the evidence table"));
+        assertTrue(q.contains("<table class=\"data\" id=\"evidence-table\">"));
+        assertTrue(q.contains("<span data-t=\"evidence/0/recorded\">3,000 cases on 14 to 24 cards: 11,420 rounds valued by both, "
+                + "worst gap 1.3e-15</span>"), "the record, as the row gives it");
+        assertTrue(q.contains("<span data-t=\"evidence/0/commit\">abcdef0</span>"));
+        assertTrue(q.contains("<span data-t=\"evidence/1/rerun\">re-run at 1234abc: 3 of 3 tests passed</span>"));
+        assertTrue(q.contains("re-run at <span data-t=\"evidence_suite/0/at\">1234abc</span>: <span data-k=\"evidence.suite_tests\""
+                + " data-f=\"n\">5</span> tests"), "the suite's re-run");
+        assertTrue(trace(in, b) > 200);
+        String moved = q.replace("<span data-t=\"evidence/0/commit\">abcdef0</span>", "<span data-t=\"evidence/0/commit\">abcdef1</span>");
+        b.files.put("index.html", moved.getBytes(StandardCharsets.UTF_8));
+        assertTrue(SiteBuild.check(b, css).stream().anyMatch(p -> p.contains("evidence/0/commit") && p.contains("abcdef0")));
+    }
+
     // ---- light and dark ----
 
     @Test

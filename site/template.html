@@ -436,7 +436,21 @@ col ic_ours|d3
 <section id="checks">
 <h2>How it was checked</h2>
 <p>AI agents wrote the code, the tests and the reviews this section reports (see <a href="#ai">How AI was used</a>).</p>
-{{#if has:evidence.}}<div id="evidence"></div>{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
+{{#if has:evidence.}}<h3 id="evidence">The evidence that the code is right</h3>
+<p>Each row says what was checked, its result as the commit beside it records it, and whether it was re-run for this page. Every figure in the column "As recorded" was found word for word in that commit's message, or in a file committed at it, by the build's evidence check; that shows only that the record says so, since AI agents wrote the commit messages. A row re-run for this page gives its tests' result at the commit they ran at.</p>
+{{table:evidence
+id evidence-table
+head Check|As recorded|Commit|Date|Where it is recorded|Re-run for this page|What it would catch|What it cannot catch
+col check
+col recorded
+col commit
+col date
+col where
+col rerun
+col catches
+col misses
+}}{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
+{{#if has:evidence.suite_tests}}<p>The whole test suite, re-run at {{cell:evidence_suite|at!=null|at}}: {{evidence.suite_tests|n}} tests, of which {{evidence.suite_failed|n}} failed and {{evidence.suite_skipped|n}} were skipped.</p>{{/if}}
 <div class="box" id="hash">
 <h3>What a hash proves, and what it doesn't</h3>
 <p>A SHA-256 hash proves that the file you downloaded is, byte for byte, the file listed here. That these commits produced it is my statement. You can test it by reproducing the file (see <a href="#downloads">Downloads</a>): the states file byte for byte, the saved results only to within {{repro.ser_tolerance|e}}. For the first segment of the states file and for the search file, the build that made them is inferred, not recorded. A hash says nothing about whether the code is right; a bug is hashed just as faithfully. The checks above are the evidence that the code is right, and they are evidence, not proof.</p>
