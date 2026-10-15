@@ -240,13 +240,15 @@ final class SiteSimReported {
     }
 
     /**
-     * The planted-bug runs (SIM_CHECK.md section 10): each run's switch on and every other off, at
-     * one chunk and K = 6,000, on a bundle the identity table names for the part its figures are of
-     * (F03, F15 and F18 are part 1's, F26 to F29 part 2's, so a run on one bundle scores only its
-     * part's planted figures); which D checks failed, each planted figure's z by
-     * P3 and P2, the largest, whether it was caught (a D check failed or |z| reached 3.5) and by the z
-     * tests alone, and the bias each test would catch 90% and 95% of the time at this size. The clean
-     * control (none) must pass, or the planted runs say nothing about the z tests.
+     * The planted-bug runs (SIM_CHECK.md section 10), each in two halves (open item 18): one on the
+     * bundle the identity table names for part 1, scoring F03, F15 and F18, one on part 2's,
+     * scoring F26 to F29, each half with the run's switch on and every other off, at one chunk and
+     * K = 6,000. Refused: a run with a half missing or two halves on one part's bundle, and a run
+     * whose halves do not make its 14 tests once. Given for each: which D checks failed in either
+     * half, each planted figure's z by P3 and P2, the largest, whether it was caught (a D check
+     * failed or |z| reached 3.5) and by the z tests alone, and the bias each test would catch 90%
+     * and 95% of the time at this size. The clean control (none) must pass on both halves, or the
+     * planted runs say nothing about the z tests.
      */
     static void planted(SiteInput in, SiteSim.Options o) throws IOException {
         if (o.planted.isEmpty()) {
@@ -258,46 +260,89 @@ final class SiteSimReported {
         SiteSim.Plan plan = SiteSim.Plan.read(o.plan);
         double m90 = SimCheckPlan.detectionMultiple(0.90);
         double m95 = SimCheckPlan.detectionMultiple(0.95);
+        List<String> want = new ArrayList<>();
+        for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+            if (SimCheckPlan.plantedFigure(f)) {
+                for (String check : SiteSim.checks(f)) {
+                    want.add(f.id + "." + check);
+                }
+            }
+        }
         List<Object> runs = new ArrayList<>();
         List<Object> tests = new ArrayList<>();
         int caught = 0;
         boolean controlPasses = false;
-        for (Map.Entry<String, Path> e : o.planted.entrySet()) {
+        for (Map.Entry<String, List<Path>> e : o.planted.entrySet()) {
             String name = e.getKey();
             if (!name.equals("none") && !SiteSim.SWITCHES.contains(name)) {
                 throw new IllegalArgumentException("no planted bug " + name + "; SIM_CHECK.md section 10 names "
                         + SiteSim.SWITCHES);
             }
-            List<String> failedD = SiteSim.checkNames(SiteSim.failedChecks(e.getValue().resolve("checks.txt")));
+            java.util.Set<String> failedD = new java.util.TreeSet<>();
+            Map<Integer, Path> halves = new java.util.TreeMap<>();
+            java.util.Set<String> made = new java.util.LinkedHashSet<>();
             double zMax = 0;
-            for (SiteSim.Summary s : SiteSim.summaries(e.getValue())) {
-                List<String> on = SiteSim.on(s);
-                if (!on.equals(name.equals("none") ? List.of() : List.of(name))) {
-                    throw new IllegalArgumentException(s.file + " has " + on + " on; the run " + name + " has "
-                            + (name.equals("none") ? "none" : "its own switch alone"));
-                }
-                List<SiteSim.Test> ts = SiteSim.tests(s);
-                SiteSim.holdFacts(s, plan, SiteSim.part(s, ts), true);
-                in.artifact(s.file, s.file.toString());
-                for (SiteSim.Test t : ts) {
-                    if (t.fig == null || !SimCheckPlan.plantedFigure(t.fig) || Double.isNaN(t.z)) {
-                        continue;
+            for (Path dir : e.getValue()) {
+                failedD.addAll(SiteSim.checkNames(SiteSim.failedChecks(dir.resolve("checks.txt"))));
+                Integer half = null;
+                String bundle = null;
+                for (SiteSim.Summary s : SiteSim.summaries(dir)) {
+                    List<String> on = SiteSim.on(s);
+                    if (!on.equals(name.equals("none") ? List.of() : List.of(name))) {
+                        throw new IllegalArgumentException(s.file + " has " + on + " on; the run " + name + " has "
+                                + (name.equals("none") ? "none" : "its own switch alone"));
                     }
-                    zMax = Math.max(zMax, Math.abs(t.z));
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("run", name);
-                    row.put("test", t.test());
-                    row.put("z", t.z);
-                    row.put("caught90", m90 * t.se);
-                    row.put("caught95", m95 * t.se);
-                    tests.add(row);
+                    List<SiteSim.Test> all = SiteSim.tests(s);
+                    int part = SiteSim.part(s, all);
+                    SiteSim.holdFacts(s, plan, part, true);
+                    if (half != null && half != part || bundle != null && !bundle.equals(s.fact("bundleSha256"))) {
+                        throw new IllegalArgumentException(dir + ": the planted run " + name + "'s P3 and P2 played other bundles");
+                    }
+                    if (half == null && halves.containsKey(part)) {
+                        throw new IllegalArgumentException("the planted run " + name + " has two halves on part " + part
+                                + "'s bundle, " + halves.get(part) + " and " + dir + "; SIM_CHECK.md section 10 makes one on "
+                                + "each part's");
+                    }
+                    halves.put(part, dir);
+                    half = part;
+                    bundle = s.fact("bundleSha256");
+                    in.artifact(s.file, s.file.toString());
+                    for (SiteSim.Test t : SiteSim.ofPart(all, part)) {
+                        if (t.fig == null || !SimCheckPlan.plantedFigure(t.fig) || Double.isNaN(t.z)) {
+                            continue;
+                        }
+                        if (!made.add(t.test())) {
+                            throw new IllegalArgumentException("the planted run " + name + " makes " + t.test() + " twice");
+                        }
+                        zMax = Math.max(zMax, Math.abs(t.z));
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("run", name);
+                        row.put("part", part);
+                        row.put("test", t.test());
+                        row.put("z", t.z);
+                        row.put("caught90", m90 * t.se);
+                        row.put("caught95", m95 * t.se);
+                        tests.add(row);
+                    }
                 }
+            }
+            for (int part = 1; part <= 2; part++) {
+                if (!halves.containsKey(part)) {
+                    throw new IllegalArgumentException("the planted run " + name + " has no half on part " + part + "'s bundle; "
+                            + "SIM_CHECK.md section 10 makes each planted run, and the control, on both parts' bundles");
+                }
+            }
+            List<String> lack = new ArrayList<>(want);
+            lack.removeAll(made);
+            if (!lack.isEmpty()) {
+                throw new IllegalArgumentException("the planted run " + name + " lacks " + lack.size() + " of its " + want.size()
+                        + " tests, the first " + lack.get(0) + " (SIM_CHECK.md section 10)");
             }
             boolean byZ = zMax >= SimCheckPlan.Z_FAIL;
             boolean isCaught = byZ || !failedD.isEmpty();
             Map<String, Object> run = new LinkedHashMap<>();
             run.put("run", name);
-            run.put("d_failed", failedD);
+            run.put("d_failed", new ArrayList<>(failedD));
             run.put("z_max", zMax);
             run.put("caught", isCaught);
             run.put("caught_by_z", byZ);

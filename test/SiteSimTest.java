@@ -105,9 +105,19 @@ public class SiteSimTest {
             + "D3\tengine side: test/SimVsExactSmallShoeTest.java; D6: sim/test/P3Test, chunks on 1 and 6 threads\n";
 
     /**
+     * The chart's walk as the simulator compares it on a bundle without the chart's row (part 2's):
+     * registered as F01 to F03, with no exact side, so no z and no pass.
+     */
+    static sim.Summary.Comparison chartWalk(String check, SimCheckPlan.Figure f) {
+        return new sim.Summary.Comparison(check, "Chart, no count, flat", f.pen, "flat", Double.NaN, Double.NaN, -0.006,
+                0.0001, check.equals("P3") ? 121_000_000 : 60_743, 2_000_000, 0, f.id);
+    }
+
+    /**
      * A run directory of one part: summary-p3.json and summary-p2.json with every registered test of
      * the part (z 0.1 but those given), the figures kept by keep, one comparison the registry does
-     * not name (Zen flat at 70%), the differences given, and checks.txt.
+     * not name (Zen flat at 70%), the differences given, and checks.txt. A part 2 run also holds the
+     * chart's walk, which P3 and P2 play on every bundle, with no exact side (chartWalk).
      */
     static Path run(Path dir, int part, String plants, String bundle, Map<String, Double> zs,
                     Predicate<SimCheckPlan.Figure> keep, String differences) throws Exception {
@@ -117,6 +127,12 @@ public class SiteSimTest {
     /** The same, at a planted run's sizes (one chunk, K = 6,000) when planted, the clean control's too. */
     static Path run(Path dir, int part, String plants, String bundle, Map<String, Double> zs,
                     Predicate<SimCheckPlan.Figure> keep, String differences, boolean planted) throws Exception {
+        return run(dir, part, plants, bundle, zs, keep, differences, planted ? 1 : CHUNKS, planted ? 6000 : K);
+    }
+
+    /** The same at the sizes given: P3 on chunks of a million shoes, P2 at K. */
+    static Path run(Path dir, int part, String plants, String bundle, Map<String, Double> zs,
+                    Predicate<SimCheckPlan.Figure> keep, String differences, long chunks, long k) throws Exception {
         Files.createDirectories(dir);
         List<sim.Summary.Comparison> p3 = new ArrayList<>();
         List<sim.Summary.Comparison> p2 = new ArrayList<>();
@@ -131,9 +147,23 @@ public class SiteSimTest {
         if (part == 1) {
             p3.add(new sim.Summary.Comparison("P3", "Zen Count", 70, "flat", 0, Double.NaN, 0.001, 0.001, 106_000_000,
                     2_000_000, 0, ""));
+        } else {
+            // First, as the simulator lays out a bundle's rows: the chart's walk at 70, 75 and 80%.
+            List<sim.Summary.Comparison> w3 = new ArrayList<>();
+            List<sim.Summary.Comparison> w2 = new ArrayList<>();
+            for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+                if (f.play == SimCheckPlan.Play.CHART) {
+                    w3.add(chartWalk("P3", f));
+                    if (f.p2()) {
+                        w2.add(chartWalk("P2", f));
+                    }
+                }
+            }
+            p3.addAll(0, w3);
+            p2.addAll(0, w2);
         }
-        sim.Summary.write(dir.resolve("summary-p3.json"), facts("P3", plants, bundle, planted ? 1 : CHUNKS, 0), p3);
-        sim.Summary.write(dir.resolve("summary-p2.json"), facts("P2", plants, bundle, 0, planted ? 6000 : K), p2);
+        sim.Summary.write(dir.resolve("summary-p3.json"), facts("P3", plants, bundle, chunks, 0), p3);
+        sim.Summary.write(dir.resolve("summary-p2.json"), facts("P2", plants, bundle, 0, k), p2);
         if (differences != null) {
             Path s = dir.resolve("summary-p3.json");
             String t = new String(Files.readAllBytes(s), StandardCharsets.UTF_8).replace("\"differences\": []",
@@ -364,21 +394,35 @@ public class SiteSimTest {
         new SiteData().add("sim.json", in.text("sim.json").getBytes(StandardCharsets.UTF_8));
     }
 
-    /** The planted runs beside their clean control: one caught by its D checks and its z, one by neither; the control passes. */
+    /**
+     * The planted runs in two halves beside their control (SIM_CHECK.md section 10, open item 18):
+     * each run on part 1's bundle, scoring F03, F15 and F18, and on part 2's, scoring F26 to F29.
+     * s17 is caught by its D1 on part 1's half and by F27's z on part 2's; truncate by neither; the
+     * control passes on both. Refused: a run with a half missing, two halves on one part's bundle, a
+     * half lacking a planted test, a half at a main run's sizes, and a half with another switch on.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    public void thePlantedRunsAreReadBesideTheirControl() throws Exception {
+    public void thePlantedRunsAreReadInTwoHalvesBesideTheirControl() throws Exception {
         Path plan = plan(dir, true);
         Predicate<SimCheckPlan.Figure> planted = SimCheckPlan::plantedFigure;
-        Path none = run(dir.resolve("none"), 2, plants(null), BUNDLE2, Map.of(), planted, null, true);
-        Path s17 = run(dir.resolve("s17"), 2, plants("s17"), BUNDLE2, Map.of("F27.P3", 6.0), planted, null);
-        edit(s17.resolve("checks.txt"), "408 of 408 records card for card and in q to the bit; 408 valued by the walk; 0 mismatches",
+        Map<String, Path[]> halves = new LinkedHashMap<>();
+        for (String name : new String[]{"none", "s17", "truncate"}) {
+            Path[] h = new Path[2];
+            for (int part = 1; part <= 2; part++) {
+                Map<String, Double> zs = name.equals("s17") && part == 2 ? Map.of("F27.P3", 6.0) : Map.of();
+                h[part - 1] = run(dir.resolve(name + "-" + part), part, plants(name.equals("none") ? null : name),
+                        part == 1 ? BUNDLE1 : BUNDLE2, zs, planted, null, true);
+            }
+            halves.put(name, h);
+        }
+        edit(halves.get("s17")[0].resolve("checks.txt"),
+                "408 of 408 records card for card and in q to the bit; 408 valued by the walk; 0 mismatches",
                 "400 of 408 records card for card and in q to the bit; 400 valued by the walk; 8 mismatches");
-        Path truncate = run(dir.resolve("truncate"), 2, plants("truncate"), BUNDLE2, Map.of(), planted, null);
         SiteSim.Options o = options(plan, part1(dir.resolve("p1")));
-        o.planted.put("none", none);
-        o.planted.put("s17", s17);
-        o.planted.put("truncate", truncate);
+        for (Map.Entry<String, Path[]> e : halves.entrySet()) {
+            o.planted.put(e.getKey(), new ArrayList<>(List.of(e.getValue())));
+        }
         SiteInput in = SiteSim.adapt(o);
         assertEquals(2.0, value(in, "sim.planted"));
         assertEquals(1.0, value(in, "sim.planted_caught"));
@@ -386,16 +430,79 @@ public class SiteSimTest {
         List<Object> runs = (List<Object>) in.tables.get("sim_planted");
         Map<?, ?> r = (Map<?, ?>) runs.get(1);
         assertEquals("s17", r.get("run"));
-        assertEquals(List.of("D1"), r.get("d_failed"));
-        assertEquals(true, r.get("caught_by_z"));
-        assertEquals(8, ((List<Object>) in.tables.get("sim_planted_tests")).stream()
-                .filter(x -> "s17".equals(((Map<?, ?>) x).get("run"))).count(), "part 2's 4 planted figures by P3 and P2");
-        // A planted run at a main run's sizes, or with another switch on, is refused.
-        Path big = run(dir.resolve("big"), 2, plants("truncate"), BUNDLE2, Map.of(), planted, null);
+        assertEquals(List.of("D1"), r.get("d_failed"), "part 1's half's D1");
+        assertEquals(true, r.get("caught_by_z"), "part 2's half's F27");
+        assertEquals(false, ((Map<?, ?>) runs.get(2)).get("caught"), "truncate: nothing caught it at this fixture");
+        List<Object> tests = (List<Object>) in.tables.get("sim_planted_tests");
+        for (String name : halves.keySet()) {
+            List<String> made = new ArrayList<>();
+            for (Object x : tests) {
+                if (name.equals(((Map<?, ?>) x).get("run"))) {
+                    made.add((String) ((Map<?, ?>) x).get("test"));
+                }
+            }
+            assertEquals(14, made.size(), name + ": the totals' 14 tests, F03, F15 and F18 with F26 to F29, by P3 and P2");
+            assertTrue(made.containsAll(List.of("F03.P2", "F15.P3", "F18.P2", "F26.P3", "F29.P2")), made.toString());
+        }
+        o.planted.put("truncate", new ArrayList<>(List.of(halves.get("truncate")[1])));
+        assertTrue(refusal(o).contains("no half on part 1's bundle"), refusal(o));
+        o.planted.put("truncate", new ArrayList<>(List.of(halves.get("truncate")[1], halves.get("truncate")[1])));
+        assertTrue(refusal(o).contains("two halves on part 2's bundle"), refusal(o));
+        Path short1 = run(dir.resolve("short"), 1, plants("truncate"), BUNDLE1, Map.of(),
+                planted.and(f -> !f.id.equals("F15")), null, true);
+        o.planted.put("truncate", new ArrayList<>(List.of(short1, halves.get("truncate")[1])));
+        assertTrue(refusal(o).contains("lacks 2 of its 14 tests, the first F15.P3"), refusal(o));
+        Path big = run(dir.resolve("big"), 2, plants("truncate"), BUNDLE2, Map.of(), planted, null, true);
         edit(big.resolve("summary-p3.json"), "\"shoes\": \"1000000\"", "\"shoes\": \"2000000\"");
-        o.planted.put("truncate", big);
+        o.planted.put("truncate", new ArrayList<>(List.of(halves.get("truncate")[0], big)));
         assertTrue(refusal(o).contains("a planted run plays"));
-        o.planted.put("truncate", s17);
+        o.planted.put("truncate", new ArrayList<>(List.of(halves.get("truncate")[0], halves.get("s17")[1])));
         assertTrue(refusal(o).contains("its own switch alone"));
+    }
+
+    /**
+     * Part 2's runs across its three bundles (INTEGRATION.md open item 17), held to the one section 8
+     * block SimCheckPlan fills from part 2's four pilot files (SimCheckPlanTest's: 26 chunks, K =
+     * 84,000), each bundle named in the identity table. The chart's walk in each part 2 summary, with
+     * no exact side, is not a test there: every registered test is made once, the chart's F03 by
+     * part 1's run alone. A part 2 run at other sizes is refused, and so is a part 2 summary whose
+     * chart walk has an exact side, as figures of both parts.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void partTwosRunsAcrossItsBundlesAreHeldToTheBlockItsPilotFilesFill() throws Exception {
+        Predicate<SimCheckPlan.Figure> look = f -> f.count.equals("F1") || f.count.equals("F2");
+        Predicate<SimCheckPlan.Figure> first = f -> look.test(f) && f.play == SimCheckPlan.Play.FIRST;
+        Predicate<SimCheckPlan.Figure> full = f -> look.test(f) && f.play == SimCheckPlan.Play.FULL;
+        Path pilots = Files.createDirectories(dir.resolve("pilots"));
+        SimCheckPlanTest.pilotFile(pilots, "sim-pilot-part2-replay.tsv", 2, look.negate(), 40, 50, 40, 40);
+        SimCheckPlanTest.pilotFile(pilots, "sim-pilot-part2-look-first.tsv", 2, first, 10, 10, 10, 9);
+        SimCheckPlanTest.pilotFile(pilots, "sim-pilot-part2-look-full.tsv", 2, full, 11, 10, 10, 8);
+        SimCheckPlanTest.pilotFile(pilots, "sim-pilot-part2-part1-bundle.tsv", 2, f -> false, 12, 20, 20, 30);
+        String block = SimCheckPlan.fill(SimCheckPlan.Pilots.read(SimCheckPlan.pilotFiles(pilots, 2)));
+        Path plan = plan(dir, false);
+        String third = "3333333333333333333333333333333333333333333333333333333333333333";
+        String fourth = "4444444444444444444444444444444444444444444444444444444444444444";
+        String doc = new String(Files.readAllBytes(plan), StandardCharsets.UTF_8)
+                .replace(BUNDLE2, BUNDLE2 + ", " + third + " and " + fourth)
+                .replace(SimCheckPlan.unfilled(1), "- f = 0.053: P3 " + CHUNKS + " chunks (2,000,000 shoes), P2 K = 1,200 "
+                        + "(72,891,600 re-deals); predicted wall time 100 s, 0.03 h.\n")
+                .replace(SimCheckPlan.unfilled(2), block);
+        Files.write(plan, doc.getBytes(StandardCharsets.UTF_8));
+        Path p1 = part1(dir.resolve("p1"));
+        Path replay = run(dir.resolve("replay"), 2, plants(null), BUNDLE2, Map.of(), look.negate(), null, 26, 84_000);
+        Path lookFirst = run(dir.resolve("first"), 2, plants(null), third, Map.of(), first, null, 26, 84_000);
+        Path lookFull = run(dir.resolve("full"), 2, plants(null), fourth, Map.of(), full, null, 26, 84_000);
+        SiteInput in = SiteSim.adapt(options(plan, p1, replay, lookFirst, lookFull));
+        assertEquals(82.0, value(in, "sim.tests"), "SIM_CHECK.md's 82 z tests, the chart's walk on part 2's bundles not among them");
+        long f03 = ((List<Object>) in.tables.get("sim_z")).stream().filter(x -> "F03".equals(((Map<?, ?>) x).get("figure"))).count();
+        assertEquals(2, f03, "F03 by P3 and P2 on part 1's bundle alone");
+        Path small = run(dir.resolve("small"), 2, plants(null), fourth, Map.of(), full, null, CHUNKS, K);
+        assertTrue(refusal(options(plan, p1, replay, lookFirst, small)).contains("section 8 fixes"));
+        Path withExact = run(dir.resolve("exact"), 2, plants(null), fourth, Map.of(), full, null, 26, 84_000);
+        edit(withExact.resolve("summary-p3.json"), "(\"row\": \"Chart, no count, flat\", \"pen\": 70, \"figure\": \"flat\", "
+                + "\"exact\": )null", "$1-0.006");
+        edit(withExact.resolve("summary-p3.json"), "\"z\": null, \"pass\": false", "\"z\": 0.0, \"pass\": true");
+        assertTrue(refusal(options(plan, p1, replay, lookFirst, withExact)).contains("figures of both parts"));
     }
 }

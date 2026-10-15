@@ -177,6 +177,28 @@ the two lanes' commits:
   failed its test: the reader's depth.tsv header one name off, and the pilot writing its SDs in
   percent.
 
+**On site-last-a** (14 October, late: open items 17 to 20), each class alone in the same way,
+compiled from the worktree at 67c655d with nothing uncommitted, beside the real 7.2 run and
+another lane's tests. src/ changed only in SimCheckPlan, SiteSim, SiteSimReported and RiskReport;
+sim/ not at all.
+
+| Class | Passed | Skipped | Failed | Seconds |
+|---|---|---|---|---|
+| SimCheckPlanTest | 10 of 10 | 0 | 0 | 4 |
+| SiteSimTest | 7 of 7 | 0 | 0 | 5 |
+| SimReadsExportTest | 3 of 3 | 0 | 0 | 18 |
+| SimReadsWidePlansTest (new) | 3 of 3 | 0 | 0 | 77 |
+| RiskSwingsAndRuinTest | 2 of 2 | 0 | 0 | 8 |
+| RiskReportTest | 16 of 16 | 0 | 0 | 21 |
+| SiteRiskTest | 2 of 2 | 0 | 0 | 4 |
+| WidePlansExportTest | 8 of 8 | 0 | 0 | 70 |
+| SitePageTest | 5 of 5 | 0 | 0 | 68 |
+| CeilingScoringTest | 9 of 9 | 0 | 0 | 29 |
+
+Not run there: StoredResultsTest, which reads c06c061's results.ser in place (that lane did not
+touch runs/full-index/full-c06c061/); no scoring class changed, and CeilingScoringTest holds the
+published counts' scores to the bit.
+
 ## 3. What is wired end to end
 
 "Wired" means each stage writes a file the next stage's code reads, with the formats held by a
@@ -262,24 +284,28 @@ Nothing has met a real file.
 
 Rewritten 14 October 2026, after site-fix-sim (merged as d27b5f8) and site-fix-engine (merged as
 32422c1). The numbers are the ones of 13 October, so earlier references still find their item;
-items 17 to 20 are new. Closed items are in the first table, with the commit on its lane's
+items 17 to 20 are new, and were closed the same night on branch site-last-a. Closed items are in the first table, with the commit on its lane's
 branch and the test that fails without it. The open ones follow, in the order they block the
 7.2 runs.
 
 | Item | Closed by | Test |
 |---|---|---|
 | 2. p3 stopped on a bundle with no figure that keeps paths | 78cd388 (sim/P3.java, writeRecords returns when no figure keeps records); SimReadsExportTest's second half enabled in 1eb8240 | SimCommandsTest.p3FinishesOnABundleWithNoFigureWithPaths; SimReadsExportTest.theEnginesReadersTakeWhatTheSimulatorWrote (with the early return taken out of a scratch copy of the simulator, it fails with "records-000000000000.part is missing") |
-| 3. no pilot | 2bf5aa2: `sim.Sim pilot` (sim/Pilot.java), blind, writes OUT/sim-pilot-partN.tsv; part 2 is not settled (item 17) | PilotTest; SimReadsExportTest.fillReadsThePilotsFile (ebc7761): the pilot run on the engine's bundle, its file read by the reader `SimCheckPlan fill` uses, in a one-unit bet as fill prints it (sim/QUESTIONS.md 25a) |
+| 3. no pilot | 2bf5aa2: `sim.Sim pilot` (sim/Pilot.java), blind, writes OUT/sim-pilot-partN.tsv, one bundle a pilot; part 2's several are filled together (item 17) | PilotTest; SimReadsExportTest.fillReadsThePilotsFile (ebc7761): the pilot run on the engine's bundle, its file read by the reader `SimCheckPlan fill` uses, in a one-unit bet as fill prints it (sim/QUESTIONS.md 25a) |
 | 4. no page-look tool | 893dbfd: `PageLook` (row 7); F1's full play on its fixture meets item 1 | PageLookTest |
 | 5. wide plans not exported | 2e4c97d: P16, B0,8 and X-1.0,8 for F43 to F48's rows when the replay has `--wide`; `--plans`/`--export-plans` take wide labels | WidePlansExportTest |
-| 6. one bundle per reader | 569c858: `SiteAdapt sim --run DIR` once a run, `RiskReport --swings` once a file, each figure from one; the pilot still takes one bundle (item 17) | SiteSimTest, RiskSwingsAndRuinTest |
+| 6. one bundle per reader | 569c858: `SiteAdapt sim --run DIR` once a run, `RiskReport --swings` once a file, each figure from one; the pilot takes one bundle and fill a part's files together (item 17) | SiteSimTest, RiskSwingsAndRuinTest |
 | 7. SiteSim did less than SIM_CHECK.md section 12 | 569c858: all of section 12 (checks.txt, identity table, section 8's sizes, chart fingerprint, registered tests, planted sizes) | SiteSimTest |
 | 8. identity table unfilled | ebc7761: SHOE_SPEC.md c8d9b5a, the simulator fe9a91e (the last commit touching sim/), D3 283c62c; the bundles are recorded when exported (rows 5 and 8) | SiteSimTest.theIdentityTableNamesTheLastCommitOfEachFileItRecords (each recorded row holds its file's last commit, so a later change to sim/, SHOE_SPEC.md or D3 fails it) |
 | 9. no D3 | 283c62c: test/SimVsExactSmallShoeTest.java, 16,125 comparisons on six 9-card shoes within 1e-12 | SimVsExactSmallShoeTest (a dealer standing on soft 17 fails it) |
 | 10. simulator outputs no engine code read | simulator side 2bf5aa2 (fig and lessFig on every paired difference, the D checks' outcomes in summary-p2.json) and fe9a91e (its formats in sim/QUESTIONS.md item 27, held by FormatsTest); engine side 569c858 (`SiteSimReported`: `sim.rounds_needed` with `--published`, summary-variants.json, depth.tsv, ev-by-key.tsv, the planted runs; `RiskReport --ruin FIG=PATH`). KeyEdgesReport does not read ev-by-key.tsv; SiteSim carries it to the page | P2DifferencesTest, P3ExtrasTest, FormatsTest, SiteSimTest, RiskSwingsAndRuinTest; SimReadsExportTest (ebc7761) reads the simulator's own depth.tsv and ev-by-key.tsv (a reader header one name off fails it) |
-| 11. no trip risk on the simulator side | 2bf5aa2: sim/Trip.java, trip-FIG.tsv beside ruin-FIG.tsv; no engine code reads it (item 19) | TripTest |
+| 11. no trip risk on the simulator side | 2bf5aa2: sim/Trip.java, trip-FIG.tsv beside ruin-FIG.tsv; RiskReport reads it since item 19 | TripTest |
 | 13. two widening rules | 2e4c97d: CeilingResults takes `--widening` and uses SiteExport's rule | CeilingResultsTest, SiteCeilingTest, SiteExportCeilingTest |
 | 14. the money sentence stopped the build | 2e4c97d: it names the highest-ranked row with swings and says the others were not simulated | SiteBuildTest |
+| 17. part 2's pilot could not write a whole file | f9c3b90: `SimCheckPlan fill` takes a part's pilot files together, one a bundle, and prints one block; a figure in two files or in none is refused; the bundles' setups, P3s and P2s are added, the extras only where the main run plays them (the bundle holding F26 to F29, and part 1's, whose part 2 pilot holds no figure). 1fe01cf: SiteSim holds part 2's runs to that block and leaves out the chart's walk, which P3 and P2 compare on every bundle with no exact side where the chart's row is not exported (part 2's) | SimCheckPlanTest.severalFilesOneABundleFillOnePartsBlock (the page look's extras counted, the two-files check dropped, or part 1's P3 and P2 counted each fail it); SiteSimTest.partTwosRunsAcrossItsBundlesAreHeldToTheBlockItsPilotFilesFill and thePartsAndBundlesAreTakenTogether (with the chart walk counted, they fail as "figures of both parts"); SimReadsWidePlansTest shows the simulator writing that chart walk |
+| 18. planted runs scored only their own bundle's part | decided 14 October, before any pilot, and recorded in SIM_CHECK.md section 10 (5e8bece): every planted run and its control on both bundles. 1fe01cf: `SiteAdapt sim --planted NAME=DIR` twice a run, one half on each part's bundle as the identity table names them, the 14 tests made once | SiteSimTest.thePlantedRunsAreReadInTwoHalvesBesideTheirControl (without the both-halves check it fails) |
+| 19. trip-FIG.tsv had no engine reader | 4084ae9: `RiskReport --trip FIG=PATH`, each line beside the report's own blocks and formula at the simulator's bankrolls and T = hours x pace, the agreement stated in the report; refused when the moments, bankrolls, blocks, counts or formula part; the page's figures unchanged | RiskSwingsAndRuinTest.theSimulatorsTripRiskSitsBesideThisReportsFormula, on a trip file sim.Trip writes (the formula at the blocks' mean rounds, or the blocks check dropped, each fail it) |
+| 20. no test played the simulator on the wide plans | 4fe443d: test/SimReadsWidePlansTest.java, the compiled simulator's p2 on WidePlansExportTest's bundle: D4 671 of 671, the five wide plans among them | SimReadsWidePlansTest (with the exit ignored in a scratch copy of the simulator's D4, 32 mismatches and two of its three tests fail) |
 | 12, in part | 743e3a5: `{{table:NAME}}` and `{{fan:TABLE}}`, each cell held to its input; the risk fan and ruin table, the simulator's sentence, z table, planted runs and mode B, the literature claims, the registration box (`SiteAdapt ledger`); SiteExport takes `--report-final` and holds the stored rows to it at its printed precision (PLAN_PAGE.md 2.4) | SiteBuildTest, SiteLedgerTest, SiteExportCeilingTest |
 
 Open:
@@ -297,35 +323,10 @@ Open:
    replay. A refusal at the end of row 6 costs only the bundle: the export hook finishes last,
    after wide.ser and run-b.ser are written, and it names each refused row in the log as its
    item is replayed. The page look's F50 and F52 (row 7's export-full) meet the same refusal.
-17. **Part 2's pilot cannot write a whole file.** (sim/Pilot.java, or src/SimCheckPlan.java;
-   sim/QUESTIONS.md 25b.) `sim.Sim pilot` takes one bundle, and `SimCheckPlan fill` refuses a
-   pilot file that lacks any figure of its part. Part 1 is one bundle, so row 5 is not affected.
-   Part 2's figures are in three bundles: row 6's (F43 to F48 among them, now that the replay
-   exports the wide plans) and row 7's two (F49 and F51; F50 and F52). Either the pilot takes
-   `--bundle` more than once and writes one file, or fill takes the three pilot files and
-   refuses a figure in two. Until one is written, row 8 has no gate and SiteSim, which holds
-   part 2's runs to section 8's part 2 block, refuses them.
-18. **Planted runs score only their own bundle's part.** (SIM_CHECK.md section 10; row 8.) F03,
-   F15 and F18 are part 1's figures, in part 1's bundle; row 8 plants on part 2's bundle, so
-   its planted runs score only F26 to F29. SiteSimReported reads planted runs on a bundle the
-   identity table names for the part each figure is of. Justin's decision: run each plant on
-   both bundles (twice the planted runs, part 1's bundle being the small one), or let section
-   10 name part 2's figures only. Decided before row 5's pilot: after the first pilot a change to
-   section 10 is a deviation (SIM_CHECK.md, "Changes").
-19. **trip-FIG.tsv has no engine reader.** The simulator writes trip risk at B_25%, B_5% and B_1%
-   and the chance of being behind, for H = 10, 100 and 1,000 hours at 50, 80 and 100 rounds an
-   hour (sim/QUESTIONS.md 24); RiskReport works its own from the records, at bankrolls of 200,
-   500 and 1,000 units. The page shows RiskReport's. Comparing the two needs a reader and a
-   common set of bankrolls (src/RiskReport.java).
 12. **The page's blocks not yet rendered** (src/SiteBuild.java, site/template.html): the BC/IC
     scatter and its verdict sentence, the 5c spread and wonging toggles (the adapters carry
     wide_plans), and the evidence table. SiteSimReported also carries sim_depth and
     sim_ev_by_key, which no block prints yet.
-20. **No test plays the simulator on a bundle with the wide plans.** WidePlansExportTest holds
-    the engine's side of SHOE_SPEC.md B2.5 (PLAY, the exit key, states.bin's bets 0 after the
-    exit) and sim/test's P2Test and P3Test the simulator's, each against the spec alone. Running
-    `sim.Sim p2` on WidePlansExportTest's bundle (D4 checks every bet key and bet) would meet the
-    two, as SimReadsExportTest does for the plain plans. Before row 8.
 15. **Not yet run here:** the simulator's D6 determinism on six threads (sim/test ran with
     `-Dsim.test.threads=1`; once without it when the machine is free); RealCountTest and
     FullIndexFitTest (no scoring class changed in either merge: SystemScorer, FullIndexFit,
@@ -350,12 +351,12 @@ and run A are short single-threaded reads that can sit beside nothing heavier th
 | 2 | KeyEdges runs A and A′ | yes |
 | 3 | FullIndexPilot `--wide` | yes |
 | 4 | Replay gate 0 | yes; it also answers open item 1 |
-| 5 | Simulator part 1 | yes, after rows 1 and 2, with the bundle's SHA-256 recorded before the pilot; item 18 decided before the pilot |
+| 5 | Simulator part 1 | yes, after rows 1 and 2, with the bundle's SHA-256 recorded before the pilot (item 18 is decided: SIM_CHECK.md section 10) |
 | 6 | Replay of c06c061 | after row 4; its export depends on open item 1 |
 | 7 | Page look | yes, after row 6 and custom-count-design's merge; its full-play export depends on open item 1 |
-| 8 | Simulator part 2 | the runs yes, the gate no: its pilot cannot write a whole file (open item 17); the planted runs wait on item 18 |
+| 8 | Simulator part 2 | yes: a pilot a bundle, then one fill (open item 17, closed); the planted runs on both bundles (item 18, closed) |
 | 9 | SplitMargin on the twin | yes |
-| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled (item 17 for part 2); open item 12 limits what the page shows |
+| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; open item 12 limits what the page shows |
 
 **Setup, once: freeze the classes at the commit that runs them**, as FULL_INDEX_PLAYS.md does,
 so every output names its commit (commit.txt) and the replay's classes stay fixed:
@@ -441,9 +442,10 @@ cd $C && caffeinate -i nice -n 5 java -Xmx10g -cp "$C:$M" FullIndexRun --fit-fro
 
 **Row 5. Simulator part 1: export, pilot, run (0.5 to 1.25 h, budget 1.5 h).** SIM_CHECK.md's
 identity table already names SHOE_SPEC.md's, the simulator's and D3's commits (open item 8,
-ebc7761); open item 18 is decided before the pilot. The export is part 1's rows (SIM_CHECK.md
-section 3) with the chart's row from step 7's save, at the plans part 1's figures use (flat is
-always written):
+ebc7761); open item 18 is decided (SIM_CHECK.md section 10: the planted runs on both bundles, so
+this bundle is played again after part 2's main run, row 8). The export is part 1's rows
+(SIM_CHECK.md section 3) with the chart's row from step 7's save, at the plans part 1's figures use
+(flat is always written):
 
 ```sh
 B1=$R/runs/sim/export-part1-$SHA && cd $C
@@ -525,34 +527,60 @@ rank a deal two ways (open item 1), export-full is refused; PageLook keeps the o
 exits 1 saying so. The two bundles' SHA-256 go into the identity table's part 2 row too.
 
 **Row 8. Simulator part 2: pilot, run (2.5 to 4 h, budget 4.5 h).** On the replay's bundle and
-the page look's two. The gate does not run yet (open item 17): `sim.Sim pilot --part 2` takes one
-bundle, so on $B2 it names the figures not in it (F49 to F52 at least) and exits 1, and
-`SimCheckPlan fill` refuses a file that lacks them. Once item 17 is closed: the three bundles in the identity table, then the
-pilot, sim-pilot-part2.tsv and the fill-2 block committed as in row 5, giving N and K. Then mode
-B and the moving count, and after the main run the planted bugs, each at one chunk and K = 6,000,
-with a clean control beside them; on part 2's bundle these score F26 to F29 only (open item 18):
+the page look's two, with the planted runs' first halves on part 1's bundle. First the three part 2
+bundles' SHA-256 in the identity table (rows 6 and 7), committed. Then the pilot, one a bundle
+(open item 17, closed by f9c3b90): the replay's, the page look's two, and part 1's, where the
+planted runs' first halves are timed (SIM_CHECK.md section 10). Each names the figures of part 2
+its bundle lacks and exits 1, which is expected; the one on part 1's bundle holds none. A pilot
+that writes no file stopped on an exact check, and the part stops there. The four files are
+copied beside SIM_CHECK.md, and `SimCheckPlan fill` takes them at once and prints section 8's part
+2 block: the bundles' setups, P3s and P2s added, the extras only of the replay's bundle and part
+1's, where the main run plays them. The four files and the block (between the fill-2 markers) are
+committed before the main run, which then plays each bundle at the block's N and K:
 
 ```sh
-B2=$R/runs/sim/export-part2-replay-$SHA && O2=$R/runs/sim/part2-$SHA && cd $W
+B2=$R/runs/sim/export-part2-replay-$SHA && O2=$R/runs/sim/part2-$SHA && PI2=$R/runs/sim/pilot-part2-$SHA && cd $W
+for X in replay=$B2 look-first=$L/export-first look-full=$L/export-full part1-bundle=$B1; do
+  java -cp $CS sim.Sim pilot --part 2 --bundle ${X#*=} --out $PI2/${X%%=*} --sim-commit $SIMSHA \
+    --registry $W/SIM_CHECK.md --catalog $W/counting-systems.json --threads 6
+  cp $PI2/${X%%=*}/sim-pilot-part2.tsv $W/sim-pilot-part2-${X%%=*}.tsv
+done
+java -cp $C SimCheckPlan fill sim-pilot-part2-*.tsv     # section 8's fill-2 block, committed with the four files
 java -cp $CS sim.Sim p2 --bundle $B2 --out $O2 --sim-commit $SIMSHA --catalog $W/counting-systems.json \
   --registry $W/SIM_CHECK.md --threads 6 --k K
 java -cp $CS sim.Sim p3 --bundle $B2 --out $O2 --sim-commit $SIMSHA --registry $W/SIM_CHECK.md \
   --threads 6 --chunks N --fan-paths 20 --fan-rounds 100000 --ruin-paths 20000
 java -cp $CS sim.Sim variants --bundle $B2 --out $O2 --sim-commit $SIMSHA --chunks 4 --threads 6
-for PL in none s17 no-das split-aces-hit hole-card truncate insure-whole-bet other-fold bet-key-plus-one; do
-  A=""; [ $PL = none ] || A="--plant $PL"
-  java -cp $CS sim.Sim p3 --bundle $B2 --out $O2-plant-$PL --sim-commit $SIMSHA --registry $W/SIM_CHECK.md \
-    --threads 6 --chunks 1 $A
-  java -cp $CS sim.Sim p2 --bundle $B2 --out $O2-plant-$PL --sim-commit $SIMSHA --registry $W/SIM_CHECK.md \
-    --catalog $W/counting-systems.json --threads 6 --k 6000 $A
+O2L1=$R/runs/sim/part2-look-first-$SHA && O2L2=$R/runs/sim/part2-look-full-$SHA
+for X in $O2L1=$L/export-first $O2L2=$L/export-full; do
+  java -cp $CS sim.Sim p2 --bundle ${X#*=} --out ${X%%=*} --sim-commit $SIMSHA --catalog $W/counting-systems.json \
+    --registry $W/SIM_CHECK.md --threads 6 --k K
+  java -cp $CS sim.Sim p3 --bundle ${X#*=} --out ${X%%=*} --sim-commit $SIMSHA --registry $W/SIM_CHECK.md \
+    --threads 6 --chunks N
 done
 ```
 
-The page look's two bundles (row 7), $L/export-first (F49, F51) and $L/export-full (F50, F52), are
-played the same way, p2 then p3, into O2L1=$R/runs/sim/part2-look-first-$SHA and
-O2L2=$R/runs/sim/part2-look-full-$SHA; SIM_CHECK.md's identity table names all three part 2
-bundles. Each run directory's checks.txt, summaries, swings, records and ruin files stay together:
-SiteAdapt sim reads them by directory.
+After the main run, the planted bugs, each at one chunk and K = 6,000, with a clean control beside
+them, every one in two halves (SIM_CHECK.md section 10, open item 18): on part 1's bundle ($B1, into
+$O1-plant-NAME), scoring F03, F15 and F18, and on the replay's ($B2, into $O2-plant-NAME), scoring
+F26 to F29:
+
+```sh
+for PL in none s17 no-das split-aces-hit hole-card truncate insure-whole-bet other-fold bet-key-plus-one; do
+  A=""; [ $PL = none ] || A="--plant $PL"
+  for H in $O1=$B1 $O2=$B2; do
+    java -cp $CS sim.Sim p3 --bundle ${H#*=} --out ${H%%=*}-plant-$PL --sim-commit $SIMSHA \
+      --registry $W/SIM_CHECK.md --threads 6 --chunks 1 $A
+    java -cp $CS sim.Sim p2 --bundle ${H#*=} --out ${H%%=*}-plant-$PL --sim-commit $SIMSHA \
+      --registry $W/SIM_CHECK.md --catalog $W/counting-systems.json --threads 6 --k 6000 $A
+  done
+done
+```
+
+SIM_CHECK.md's identity table names all three part 2 bundles. Each run directory's checks.txt,
+summaries, swings, records, ruin and trip files stay together: SiteAdapt sim reads them by
+directory. P3 and P2 compare the chart's walk on every bundle; on part 2's, which do not export
+the chart's row, it has no exact side, and SiteAdapt sim leaves it out.
 
 **Row 9. SplitMargin on the twin, 1.25 to 2.25 h, any daytime gap.** The stride given is
 SplitMargin's default; check that its first line names the 890 states calibration-b99ccbf
@@ -571,9 +599,9 @@ runs/site/; an adapter puts each input into runs/site/, the only directory SiteB
 RiskReport and WideReport take row 3's wide pilot; SiteExport and CeilingResults take
 pilot-1417-100.txt, by one widening rule (open item 13, closed). RiskReport takes every run's
 swings file, each figure from one, and the simulator's ruin paths beside its own (open items 6
-and 10, closed). `SiteAdapt sim` refuses every run until both parts' section 8 blocks are filled
-and every bundle is in the identity table, naming what is missing (part 2's waits on open item
-17).
+and 10, closed), and the simulator's trip files beside its own trip risk (open item 19, closed).
+`SiteAdapt sim` refuses every run until both parts' section 8 blocks are filled and every bundle is
+in the identity table, naming what is missing; it takes each planted run's two halves (item 18).
 
 ```sh
 cd $C && mkdir -p $R/runs/site $R/runs/risk $R/runs/wide
@@ -609,14 +637,17 @@ java -Xmx3g -cp "$C:$M" RiskReport --commit $SHA --source c06c061=$C06/results.s
   --source step7=$R/runs/report-ceiling-$REG.ser --source step8=$S8/results.ser --source replay=$P/wide.ser \
   --widening $WPILOT --swings $O1/swings.tsv --swings $O2/swings.tsv --swings $O2L2/swings.tsv \
   --records F27=$O2/records-F27.tsv --records F29=$O2/records-F29.tsv --ruin F27=$O2/ruin-F27.tsv \
-  --ruin F29=$O2/ruin-F29.tsv --fan F27=$O2/fan-F27.tsv --md $R/runs/risk/report-risk-$SHA.md \
+  --ruin F29=$O2/ruin-F29.tsv --trip F27=$O2/trip-F27.tsv --trip F29=$O2/trip-F29.tsv --fan F27=$O2/fan-F27.tsv \
+  --md $R/runs/risk/report-risk-$SHA.md \
   --json $R/runs/risk/risk-$SHA.json
 java -cp "$C:$M" SiteAdapt risk $R/runs/risk/risk-$SHA.json --out $R/runs/site/risk-$SHA.json
 # The simulator: every run, part 1's and part 2's (the replay's bundle, $O2, and the page look's two, $O2L1 and $O2L2),
-# held to SIM_CHECK.md section 12; mode B, the planted runs beside their control, {N} from c06c061's SEs.
+# held to SIM_CHECK.md section 12; mode B, the planted runs beside their control, each in its two halves, {N} from
+# c06c061's SEs.
+PLANTED=""; for PL in none s17 no-das split-aces-hit hole-card truncate insure-whole-bet other-fold bet-key-plus-one; do
+  PLANTED="$PLANTED --planted $PL=$O1-plant-$PL --planted $PL=$O2-plant-$PL"; done
 java -Xmx4g -cp "$C:$M" SiteAdapt sim --plan $W/SIM_CHECK.md --published $C06/results.ser --run $O1 --run $O2 \
-  --run $O2L1 --run $O2L2 --variants $O2/summary-variants.json --planted none=$O2-plant-none --planted s17=$O2-plant-s17 \
-  --out $R/runs/site/sim-$SHA.json      # and --planted NAME=$O2-plant-NAME for each of section 10's
+  --run $O2L1 --run $O2L2 --variants $O2/summary-variants.json $PLANTED --out $R/runs/site/sim-$SHA.json
 # The registration box, from the ledger's one home.
 java -cp "$C:$M" SiteAdapt ledger $CD/custom-count-ledger.tsv --count-design $CD --out $R/runs/site/ledger-$SHA.json
 # The literature (it reads step 7's save and report; run from $C for the catalog and commit.txt).

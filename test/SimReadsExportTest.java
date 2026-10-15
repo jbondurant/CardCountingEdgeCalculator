@@ -128,9 +128,10 @@ public class SimReadsExportTest {
      * part 1 on the engine's bundle, at 1% of tiny sizes (sim/test/PilotTest's), writes
      * sim-pilot-part1.tsv, and the reader `SimCheckPlan fill` uses takes every line of it, in the
      * units fill prints (a one-unit bet: the chart flat's SD a round near section 8's assumed 1.16).
-     * The bundle holds only some of part 1's figures, so the pilot names the others and exits 1, and
-     * the reader then refuses the file for those alone; the lines it does hold come in the
-     * registry's order.
+     * The bundle holds only some of part 1's figures, so the pilot names the others and exits 1.
+     * The reader takes the file as one bundle's pilot, its lines in the registry's order, and fill,
+     * which takes a part's files together (INTEGRATION.md open item 17), refuses it for the figures
+     * no file holds, and for those alone.
      */
     @Test
     public void fillReadsThePilotsFile() throws Exception {
@@ -165,8 +166,13 @@ public class SimReadsExportTest {
         List<String> inOrder = new ArrayList<>(want);
         inOrder.retainAll(sd);
         assertEquals(inOrder, sd, "the pilot's sd lines in the registry's order");
-        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class, () -> SimCheckPlan.Pilot.read(file));
-        assertTrue(refused.getMessage().startsWith("the pilot's sd lines must be, in order, " + want), refused.getMessage());
+        assertEquals(sd, new ArrayList<>(SimCheckPlan.Pilot.read(file).sd.keySet()));
+        List<String> none = new ArrayList<>(want);
+        none.removeAll(sd);
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> SimCheckPlan.Pilots.read(List.of(file)));
+        assertTrue(refused.getMessage().startsWith("no pilot file of part 1 holds " + SimCheckPlan.ranges(none) + " "),
+                refused.getMessage());
     }
 
     /**
