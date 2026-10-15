@@ -13,7 +13,7 @@ uses are a few of report-final's standard errors, as assumptions for section 8's
 SEs the rule implies; no exact figure is copied into it.
 
 **What is left to fill in, and only this.** Section 8's two blocks, one a part, each printed by
-`java SimCheckPlan fill sim-pilot-partN.tsv` from that part's pilot: its measured speeds, the SD
+`java SimCheckPlan fill` from that part's pilot files, one a bundle: its measured speeds, the SD
 of every figure, P2's weight dispersion, and the sizes and SEs the rule then gives. And the
 bundles' identities in the table below, which are facts to record, not choices (its three commits
 were recorded on 14 October 2026, before any pilot).
@@ -493,13 +493,24 @@ filled blocks.
 | 0.50 | 19, 60,000 | P2, 1-8, 80%, D = 1 | 2.40 | none | 0.0040% | 0.0040% | 0.0190% | 0.0205% |
 <!-- /SimCheckPlan implied -->
 
-**Filling in.** The pilot writes `sim-pilot-partN.tsv`, which is committed beside this file:
-tab-separated lines `part N`; `setup SECONDS`; `time P3 SECONDS`, `time P2 SECONDS` and
-`time extra SECONDS` (each at 1%; extra is 0 in part 1); `sd FIGURE σ_eff` for every figure of
-the part; `v FIGURE V` for every one at 80%; and `exact FIGURE SE_exact` for every one, from
-exact.tsv. `java SimCheckPlan fill sim-pilot-partN.tsv` prints the block below; it refuses a file
-that misses a figure, names one of the other part or repeats one. SimCheckPlanTest holds each
-block equal to its file's output, and to "Not filled" while there is none. The block is
+**Filling in.** The pilot runs on one bundle and writes `sim-pilot-partN.tsv`: tab-separated
+lines `part N`; `setup SECONDS`; `time P3 SECONDS`, `time P2 SECONDS` and `time extra SECONDS`
+(each at 1%; extra is 0 in part 1); `sd FIGURE σ_eff` for every figure of the part its bundle
+holds; `v FIGURE V` for every one of them at 80%; and `exact FIGURE SE_exact` for every one, from
+exact.tsv. Part 1 is one bundle. Part 2's figures are in three (the replay's, F26 to F48, and the
+page look's two, F49 and F51, F50 and F52), so its pilot runs once on each, and once on part 1's
+bundle, where it times the planted runs' first halves (section 10) and holds no figure of part 2.
+Each file is committed beside this one as `sim-pilot-partN.tsv` or `sim-pilot-partN-NAME.tsv`, and
+`java SimCheckPlan fill FILE ...` takes a part's files together and prints the block below. It adds
+the bundles' setups, P3s and P2s, each bundle being a main run of its own, and the fixed extras
+only of the bundles the main run plays them on: the one holding F26 to F29 (mode B, the moving
+count and the planted runs' second halves) and part 1's (their first halves; that file's P3 and P2
+are part 1's main run and are not added). The extras so counted include mode B's walk over shoes
+on part 1's bundle, which holds none of its instances, a small cost the main run does not have, so
+the rule errs toward a smaller run. Fill refuses a file that names another part's figure or a V at
+70% or 75%, repeats a line, or lacks a time; files of two parts; a figure in two files or in none;
+and a file with no figure, but for part 2's one on part 1's bundle. SimCheckPlanTest holds each
+block equal to its committed files' output, and to "Not filled" while there are none. The block is
 committed before the main run starts.
 
 Part 1:
@@ -668,7 +679,7 @@ shows the failed run beside it. There is no rerun without a fix: a fail is never
 `src/SimCheckPlan.java` holds the registry (the figures, the strategies, the tests), the normal
 arithmetic of section 7 (an upper tail by Simpson's rule, its quantiles by bisection), the
 scaling rule and the SEs of section 8, and prints every marked block: `java SimCheckPlan` all of
-them, `java SimCheckPlan block NAME` one, `java SimCheckPlan fill FILE` a pilot's.
+them, `java SimCheckPlan block NAME` one, `java SimCheckPlan fill FILE ...` a part's pilot files'.
 `test/SimCheckPlanTest.java` holds this file equal to that output; the registry to the plan's
 counts and cap; the entry names to the ones the scorer gives (the catalog, the null count, and
 F1 and F2 read from custom-counts.json, F2 with its betting vector); the arithmetic to published
