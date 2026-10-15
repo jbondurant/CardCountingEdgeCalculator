@@ -343,6 +343,90 @@ final class SiteSvg {
         return b.append("</tbody></table></div>").toString();
     }
 
+    /** A table field as a number: a number, or a string that is a number as a source prints one (".76", "−0.5"); else NaN. */
+    static double number(Object v) {
+        if (v instanceof Number) {
+            return ((Number) v).doubleValue();
+        }
+        if (v instanceof String) {
+            String s = ((String) v).trim().replace('−', '-');
+            if (s.matches("[+-]?(\\d+\\.?\\d*|\\.\\d+)")) {
+                return Double.parseDouble(s);
+            }
+        }
+        return Double.NaN;
+    }
+
+    static final int SCATTER_TOP = 22;
+    static final int SCATTER_BOTTOM = 40;
+
+    /**
+     * A scatter panel (SiteBuild.scatter): the entries at of a table, each drawn at its x and y field
+     * on one shared scale, square, so the dashed line y = x is the diagonal: a point on it is a
+     * published figure this study matches, a point under it one this study finds lower. Each point's
+     * native tooltip is its label field, a data-t span; the numbers are only in the table the
+     * template prints beside it, which the page check holds to the same entries.
+     */
+    @SuppressWarnings("unchecked")
+    static String scatter(String id, java.util.Map<String, String> a, List<Integer> at, SiteData d) {
+        String table = a.get("table");
+        List<double[]> pts = new ArrayList<>();
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
+        for (int i : at) {
+            java.util.Map<String, Object> e = SiteText.entry(d, table, i);
+            double x = number(e.get(a.get("x")));
+            double y = number(e.get(a.get("y")));
+            if (Double.isNaN(x) || Double.isNaN(y)) {
+                continue;
+            }
+            pts.add(new double[]{i, x, y});
+            min = Math.min(min, Math.min(x, y));
+            max = Math.max(max, Math.max(x, y));
+        }
+        if (pts.isEmpty()) {
+            throw new IllegalArgumentException("scatter:" + id + ": no entry of " + table + " has a number in both "
+                    + a.get("x") + " and " + a.get("y"));
+        }
+        Axis ax = axis(min, max, 4);
+        double side = W - LEFT - RIGHT;
+        int h = (int) (SCATTER_TOP + side + SCATTER_BOTTOM);
+        StringBuilder b = new StringBuilder();
+        b.append("<svg class=\"panel scatter\" id=\"").append(esc(id)).append("\" viewBox=\"0 0 ").append(W).append(' ')
+                .append(h).append("\" role=\"img\" aria-labelledby=\"").append(esc(id)).append("-t ").append(esc(id))
+                .append("-d\" xmlns=\"http://www.w3.org/2000/svg\">");
+        b.append("<title id=\"").append(esc(id)).append("-t\">").append(esc(a.get("title"))).append("</title><desc id=\"")
+                .append(esc(id)).append("-d\">").append(esc(a.get("desc"))).append("</desc>");
+        for (double t : ax.ticks) {
+            double y = SCATTER_TOP + side * (1 - ax.pos(t) / 100);
+            double x = LEFT + side * ax.pos(t) / 100;
+            String l = ax.label(t);
+            b.append("<line class=\"gl\" x1=\"").append(LEFT).append("\" x2=\"").append(n1(LEFT + side)).append("\" y1=\"")
+                    .append(n1(y)).append("\" y2=\"").append(n1(y)).append("\"/>");
+            b.append("<line class=\"gl\" x1=\"").append(n1(x)).append("\" x2=\"").append(n1(x)).append("\" y1=\"")
+                    .append(SCATTER_TOP).append("\" y2=\"").append(n1(SCATTER_TOP + side)).append("\"/>");
+            b.append("<text class=\"tl\" x=\"").append(LEFT - 4).append("\" y=\"").append(n1(y + 4))
+                    .append("\" text-anchor=\"end\" data-tick=\"").append(l).append("\">").append(l).append("</text>");
+            b.append("<text class=\"tl\" x=\"").append(n1(x)).append("\" y=\"").append(n1(SCATTER_TOP + side + 14))
+                    .append("\" text-anchor=\"middle\" data-tick=\"").append(l).append("\">").append(l).append("</text>");
+        }
+        b.append("<line class=\"diag\" x1=\"").append(LEFT).append("\" y1=\"").append(n1(SCATTER_TOP + side)).append("\" x2=\"")
+                .append(n1(LEFT + side)).append("\" y2=\"").append(SCATTER_TOP).append("\"/>");
+        b.append("<text class=\"tl\" x=\"").append(n1(LEFT + side / 2)).append("\" y=\"").append(h - 6)
+                .append("\" text-anchor=\"middle\">").append(esc(a.get("xname"))).append("</text>");
+        b.append("<text class=\"tl\" x=\"").append(LEFT).append("\" y=\"").append(SCATTER_TOP - 8).append("\">")
+                .append(esc(a.get("yname"))).append("</text>");
+        for (double[] p : pts) {
+            int i = (int) p[0];
+            Object label = SiteText.entry(d, table, i).get(a.get("label"));
+            b.append("<circle class=\"pt\" cx=\"").append(n1(LEFT + side * ax.pos(p[1]) / 100)).append("\" cy=\"")
+                    .append(n1(SCATTER_TOP + side * (1 - ax.pos(p[2]) / 100))).append("\" r=\"4\"><title data-t=\"")
+                    .append(esc(table + "/" + i + "/" + a.get("label"))).append("\">")
+                    .append(esc(SiteText.cell(label, null, null))).append("</title></circle>");
+        }
+        return b.append("</svg>").toString();
+    }
+
     /**
      * {{fan:TABLE …}}: the fan chart of PLAN_COMPUTE.md 2.5, each path of an input's table (risk_fan:
      * entries {path, step, points}, the cumulative win in units after every step rounds) drawn as a

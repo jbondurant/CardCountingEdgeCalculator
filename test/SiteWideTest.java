@@ -77,6 +77,12 @@ public class SiteWideTest {
                 ((Map<String, Object>) in.figures.get("wide.bet.80.p16")).get("value"));
         assertEquals(SystemScorer.WIDE_PLANS.length + 0.0, ((Map<String, Object>) in.figures.get("wide.plans")).get("value"));
 
+        // Each spread written is named from its plan, for the page's spread controls.
+        assertEquals("1-12", in.names.get("s12"));
+        assertEquals("1-16", in.names.get("s16"));
+        assertEquals("1-20", in.names.get("s20"));
+        assertEquals("1-16, a unit for every 0.125% of advantage", in.names.get("s16_steep"), "S16: half the 1-8 unit");
+
         // Hi-Lo's key at the entry threshold of 0.
         Map<String, Object> keys = (Map<String, Object>) ((Map<String, Object>) row(d, FullIndexFitTest.HI_LO.name)
                 .get("thresholdKeys")).get("80%");

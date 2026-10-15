@@ -5,7 +5,9 @@ lanes that finished PLAN_COMPUTE.md 7.1 were merged. It says what is wired end t
 still open and where, and the order of the 7.2 runs with each command as the code now takes it.
 Updated 14 October 2026 after the two lanes that worked through section 4's items were merged
 (site-fix-sim as d27b5f8, site-fix-engine as 32422c1): sections 1 and 2 add the merges and their
-test run, and sections 4 and 5 say how things stand now.
+test run, and sections 4 and 5 say how things stand now. On 15 October branch site-last-b closed
+item 12 (section 4's table) and added item 21, what it left; section 5's row 10 gains the evidence
+table's command.
 Nothing here wrote under runs/ or read a state file there. Every test below is a fixture test,
 run one class at a time at `nice -n 15` with `-Xmx1g`, one processor and the serial collector,
 apart from two reproduction tests that read c06c061's files in place: StoredResultsTest reads its
@@ -307,6 +309,7 @@ branch and the test that fails without it. The open ones follow, in the order th
 | 19. trip-FIG.tsv had no engine reader | 4084ae9: `RiskReport --trip FIG=PATH`, each line beside the report's own blocks and formula at the simulator's bankrolls and T = hours x pace, the agreement stated in the report; refused when the moments, bankrolls, blocks, counts or formula part; the page's figures unchanged | RiskSwingsAndRuinTest.theSimulatorsTripRiskSitsBesideThisReportsFormula, on a trip file sim.Trip writes (the formula at the blocks' mean rounds, or the blocks check dropped, each fail it) |
 | 20. no test played the simulator on the wide plans | 4fe443d: test/SimReadsWidePlansTest.java, the compiled simulator's p2 on WidePlansExportTest's bundle: D4 671 of 671, the five wide plans among them | SimReadsWidePlansTest (with the exit ignored in a scratch copy of the simulator's D4, 32 mismatches and two of its three tests fail) |
 | 12, in part | 743e3a5: `{{table:NAME}}` and `{{fan:TABLE}}`, each cell held to its input; the risk fan and ruin table, the simulator's sentence, z table, planted runs and mode B, the literature claims, the registration box (`SiteAdapt ledger`); SiteExport takes `--report-final` and holds the stored rows to it at its printed precision (PLAN_PAGE.md 2.4) | SiteBuildTest, SiteLedgerTest, SiteExportCeilingTest |
+| 12, the rest | site-last-b (15 October): fd97b8a, 34d2959 and the commit that adds this row. The BC/IC scatter (`{{scatter:ID}}`, SiteSvg.scatter) from the literature check's own claims and verdicts, with a verdict sentence of count figures SiteBuild works out on the inputs (`{{count:TABLE\|FILTER}}`, like a range); the 5c toggles (`{{#view}}`: every setting the data has rendered into assets/views/, the default static in the page, page.js swapping whole fragments); the evidence table (`SiteAdapt evidence`, SiteEvidence, verification/evidence.tsv); the simulator's depth and edge-by-key tables. Section 4's item 21 says what is left | SiteBuildTest (correlations, views, a fragment checked as the page, evidence, depth and edge by key), SiteEvidenceTest, SiteSimTest, SiteWideTest |
 
 Open:
 
@@ -323,10 +326,33 @@ Open:
    replay. A refusal at the end of row 6 costs only the bundle: the export hook finishes last,
    after wide.ser and run-b.ser are written, and it names each refused row in the log as its
    item is replayed. The page look's F50 and F52 (row 7's export-full) meet the same refusal.
-12. **The page's blocks not yet rendered** (src/SiteBuild.java, site/template.html): the BC/IC
-    scatter and its verdict sentence, the 5c spread and wonging toggles (the adapters carry
-    wide_plans), and the evidence table. SiteSimReported also carries sim_depth and
-    sim_ev_by_key, which no block prints yet.
+21. **What item 12 left, and what it found** (site-last-b; src/SiteBuild.java, site/template.html,
+    site/page.css). Decided there, for Justin to overrule: the every-count table keeps 80% and 1-8
+    and says so, since the chart above it switches; the controls are cut card, spread and wonging,
+    not "which decisions use the count" (the chart shows first decisions and full play together);
+    wonging is the B plans entering at 0, labelled "where back-counting is allowed (it may be
+    refused at the Casino de Montreal)", each view giving the share of rounds played and the
+    average bet. Found and fixed: the contents list, fixed in the left margin from 75rem, overlapped
+    every wide figure at any width (wide figures reach 28rem left of the centre, the list ended 22rem
+    left of it); it is fixed from 88rem now. A headless Chrome run on a fixture build (a scratch
+    harness, not committed) worked the toggles, the failed-fetch path and the page without its
+    script, at 375px light and dark with no sideways scroll, and at 1280 and 1440px. Open:
+    - **The page's weight.** A fixture build with every new block but no risk, ledger or
+      simulator z tables is 196,264 bytes of the 200 KB budget; the full claims table (29 KB with
+      claims.json's claims), the every-count chart (36 KB) and the counts table (37 KB) are most
+      of it. Row 10's real build may go over, and SiteBuild then writes nothing. If it does, the
+      plain cut is the counts table's three figure columns, which repeat the chart's.
+    - **The views' size on disk.** 39 fragments on the small fixture, 1.4 MB, each fetched only
+      when asked for (5 to 6 KB compressed); PLAN_PAGE.md 2.1 guessed about 1 MB for all of
+      card-counting/. Every fragment is under VIEW_BUDGET (120 KB) at the plan's largest grid.
+    - **The suite's JUnit report.** The evidence table says "not re-run for this page" until row 10
+      gives `--junit` and `--rerun-at`: the whole suite at the site's tag on a free machine, with
+      `--reports-dir`. PLAN_PAGE.md 3.5's "422 tests, a9d1d02" is not in a9d1d02's message, so it
+      is not a row.
+    - **Units.** SiteSimReported's tables are in percent of a unit now (the files' fractions
+      times 100), and mode B's differences print in percentage points; they had printed fractions
+      beside percent figures. A key one fold never met had made a NaN that Json.write refuses, so
+      `SiteAdapt sim` would have stopped on a real ev-by-key.tsv; it is null and prints a dash.
 15. **Not yet run here:** the simulator's D6 determinism on six threads (sim/test ran with
     `-Dsim.test.threads=1`; once without it when the machine is free); RealCountTest and
     FullIndexFitTest (no scoring class changed in either merge: SystemScorer, FullIndexFit,
@@ -356,7 +382,7 @@ and run A are short single-threaded reads that can sit beside nothing heavier th
 | 7 | Page look | yes, after row 6 and custom-count-design's merge; its full-play export depends on open item 1 |
 | 8 | Simulator part 2 | yes: a pilot a bundle, then one fill (open item 17, closed); the planted runs on both bundles (item 18, closed) |
 | 9 | SplitMargin on the twin | yes |
-| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; open item 12 limits what the page shows |
+| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; the page may pass its 200 KB budget (open item 21) |
 
 **Setup, once: freeze the classes at the commit that runs them**, as FULL_INDEX_PLAYS.md does,
 so every output names its commit (commit.txt) and the replay's classes stay fixed:
@@ -657,6 +683,9 @@ java -cp "$C:$M" LiteratureCheck --claims $W/literature/claims.json --cache $R/r
   --out $R/runs/literature --json $R/runs/literature/literature-$SHA.json
 java -cp "$C:$M" SiteAdapt literature $R/runs/literature/literature-$SHA.json \
   --out $R/runs/site/literature-$SHA.json
+# The evidence table, each row found in the commit it cites; with the suite's JUnit report at the site's tag
+# (the whole suite on a free machine, --reports-dir) add --junit .../TEST-junit-jupiter.xml --rerun-at TAG.
+java -cp "$C:$M" SiteAdapt evidence $W/verification/evidence.tsv --repo $W --out $R/runs/site/evidence-$SHA.json
 # The page, into a directory outside the website's tree; nothing is copied there without Justin's yes.
 cd $W && sh site/build-site.sh --out $R/runs/page-$SHA --inputs $R/runs/site
 ```

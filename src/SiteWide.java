@@ -20,6 +20,9 @@ import java.util.Map;
  *   for every row (WideReport's check 4; refused here too unless every row agrees to 1e-12): keys
  *   wide.bet.PEN.PLAN and wide.share.PEN.PLAN; the plans themselves in the table wide_plans; and
  *   Hi-Lo's key at each threshold, wide.threshold.PEN.TAU.hi_lo, for "enter at a true count of".
+ * - The display name of each of those spreads, from its plan in the file: "1-12" for P12, and for
+ *   S16 its cap and its unit ("1-16, a unit for every 0.125% of advantage"), so the page's spread
+ *   controls name each from the plan the scorer ran.
  * EVs are fractions in the file and percent here; a full-play interval carries WideReport's own
  * widening for its plan, and without a pilot the file has none, so neither has the page. The
  * own-rule figures, the other thresholds' and the key tables stay in the file for the views that
@@ -75,6 +78,14 @@ final class SiteWide {
             plans.add(p);
         }
         in.tables.put("wide_plans", plans);
+        for (String[] sp : SPREADS) {
+            for (Object o : plans) {
+                Map<String, Object> p = SiteAdapt.obj(o, "a plan");
+                if (sp[0].equals(p.get("label"))) {
+                    in.names.put(sp[1], spreadName(p));
+                }
+            }
+        }
         Map<String, Object> np = in.figure("wide.plans", plans.size(), "n");
         SiteInput.at(np, null, "plans");
         Map<String, double[]> perPlan = new LinkedHashMap<>();
@@ -131,6 +142,22 @@ final class SiteWide {
             SiteInput.at(s, null, "rows[].pens." + e.getKey() + ".same.share");
         }
         return in;
+    }
+
+    /**
+     * A same-schedule plan's name as a spread: 1 to its cap, and, when its unit is not the 1-8
+     * schedule's 0.25% of advantage, the unit too.
+     */
+    static String spreadName(Map<String, Object> plan) {
+        String label = SiteAdapt.str(plan.get("label"), "label");
+        long cap = Math.round(SiteAdapt.num(plan.get("cap"), label + ".cap"));
+        double unit = SiteAdapt.num(plan.get("unit"), label + ".unit");
+        String name = "1-" + cap;
+        if (Math.abs(unit - SystemScorer.UNIT) > 1e-12) {
+            name += ", a unit for every " + new java.math.BigDecimal(Double.toString(100 * unit)).stripTrailingZeros()
+                    .toPlainString() + "% of advantage";
+        }
+        return name;
     }
 
     static Map<String, Object> same(Map<String, Object> byPlan, String plan) {

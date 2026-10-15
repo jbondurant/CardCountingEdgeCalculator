@@ -20,6 +20,8 @@ import java.util.Map;
  * - literature: LiteratureCheck's literature-SHA.json, already in the contract, checked and copied;
  * - sim: the simulator's runs, planted runs and mode B, held to SIM_CHECK.md (SiteSim).
  * - ledger: the count-design ledger for the registration box (SiteLedger).
+ * - evidence: verification/evidence.tsv, each row checked against the commit it cites, and the
+ *   suite's JUnit report at the site's tag (SiteEvidence).
  * An adapter carries figures across and computes nothing the page shows but a change of unit
  * (fractions to percent) and a pick its computation's rule fixes; each lists the file it read,
  * with its SHA-256, in _source.artifacts. The computations write their files outside the page's
@@ -125,7 +127,7 @@ final class SiteAdapt {
             }
         }
         if (args.length == 0 || out == null || files.isEmpty()) {
-            throw new IllegalArgumentException("usage: SiteAdapt risk|wide|edges|ceiling|literature|sim FILE... --out OUT.json");
+            throw new IllegalArgumentException("usage: SiteAdapt risk|wide|edges|ceiling|literature|sim|ledger|evidence FILE... --out OUT.json");
         }
         Path in = Paths.get(files.get(0));
         SiteInput made;
@@ -142,6 +144,22 @@ final class SiteAdapt {
                     throw new IllegalArgumentException("usage: SiteAdapt ledger LEDGER.tsv --count-design DIR --out OUT.json");
                 }
                 made = SiteLedger.adapt(in, Paths.get(files.get(at + 1)));
+                break;
+            }
+            case "evidence": {
+                Map<String, String> opt = new LinkedHashMap<>();
+                for (int k = 1; k < files.size(); k += 2) {
+                    if (!List.of("--repo", "--junit", "--rerun-at").contains(files.get(k)) || k + 1 >= files.size()) {
+                        throw new IllegalArgumentException("usage: SiteAdapt evidence EVIDENCE.tsv --repo DIR "
+                                + "[--junit TEST-junit-jupiter.xml --rerun-at SHA] --out OUT.json");
+                    }
+                    opt.put(files.get(k), files.get(k + 1));
+                }
+                if (!opt.containsKey("--repo")) {
+                    throw new IllegalArgumentException("SiteAdapt evidence needs --repo, the repository whose commits the rows cite");
+                }
+                made = SiteEvidence.adapt(in, SiteEvidence.git(Paths.get(opt.get("--repo"))),
+                        opt.containsKey("--junit") ? Paths.get(opt.get("--junit")) : null, opt.get("--rerun-at"));
                 break;
             }
             case "literature": {

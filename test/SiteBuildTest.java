@@ -45,6 +45,21 @@ import static org.junit.jupiter.api.Assertions.*;
  * </ul>
  * The rule that a data-file="search" element print the words "search file", added with that
  * test, was planted off too and fails aSearchFileFigureIsPrintedOnlyInsideItsLabel.
+ *
+ * <p>Plants for INTEGRATION.md item 12's blocks, each in a scratch copy of the working tree on 15
+ * October 2026, run against the test named; all were caught on their first run:
+ * <ul>
+ *   <li>the view fragments not checked: aViewFragmentIsCheckedAsThePageIs;</li>
+ *   <li>the scatter drawn with x and y swapped, and a filter's !^= read as ^=:
+ *   theCorrelationScattersAndTheirVerdictSentenceFollowTheCheck;</li>
+ *   <li>a view made where its key is had only as a prefix (SiteData.hasPrefix): the fixture's build
+ *   stops in fixture(), so every test of the class fails; the direct assertion in
+ *   theEveryCountChartSwitchesAmongItsViewsEachTracedToTheInputs was added after;</li>
+ *   <li>SiteSimReported's tables left in fractions of a unit:
+ *   theSimulatorsDepthAndEdgeByKeyRenderFromTheAdaptersTables (and its NaN kept: SiteSimTest's
+ *   theReportedFiguresAreReadBesideTheTests; a number found inside a longer one: SiteEvidenceTest's
+ *   aRowIsPrintedOnlyWhenItsRecordBearsItOut).</li>
+ * </ul>
  */
 public class SiteBuildTest {
 
@@ -194,8 +209,13 @@ public class SiteBuildTest {
      * the paragraph of the table's letter in CEILING_RESULT_PARAGRAPHS.md as committed before the
      * look, read here from git at its commit.
      */
-    @SuppressWarnings("unchecked")
     static int trace(Path inputs, SiteBuild.Output page) throws Exception {
+        return trace(inputs, page, page.text("index.html"));
+    }
+
+    /** The same route on any HTML the build made from page's data: the page itself, or one of its view fragments. */
+    @SuppressWarnings("unchecked")
+    static int trace(Path inputs, SiteBuild.Output page, String p) throws Exception {
         Map<String, double[]> in = inputFields(inputs);
         Map<String, Object> paragraphs = null;
         try (java.util.stream.Stream<Path> s = Files.list(inputs)) {
@@ -206,7 +226,6 @@ public class SiteBuildTest {
                 }
             }
         }
-        String p = page.text("index.html");
         Matcher m = SPAN.matcher(p);
         int figures = 0;
         StringBuffer rest = new StringBuffer();
@@ -228,6 +247,15 @@ public class SiteBuildTest {
                         hi = Math.max(hi, in.get(k)[0]);
                     }
                     v = new double[]{hi - lo, Double.NaN, Double.NaN, Double.NaN};
+                }
+                if (key.startsWith("count.")) {
+                    // A count, the other figure the generator computes: the entries of an input's table
+                    // that meet its filter, counted here from the input files by a reading of the filter
+                    // written apart from SiteBuild.meets.
+                    String at = page.data.resolve(key).at;
+                    Matcher c = Pattern.compile("the entries of (\\S+) where (.*)").matcher(at);
+                    assertTrue(c.matches(), at);
+                    v = new double[]{countHere(inputs, c.group(1), c.group(2)), Double.NaN, Double.NaN, Double.NaN};
                 }
                 assertNotNull(v, key + " is printed but no input gives it");
                 String fmt = f.find() ? f.group(1) : page.data.resolve(key).fmt;
@@ -259,6 +287,33 @@ public class SiteBuildTest {
         Matcher d = Pattern.compile(".{0,40}\\d.{0,40}").matcher(t);
         assertFalse(d.find(), () -> "a digit with no source: " + d.group());
         return figures;
+    }
+
+    /** How many entries of the table named, in the input files, meet every condition of the filter (FIELD=V, FIELD!=V, FIELD^=P; V null for none). */
+    @SuppressWarnings("unchecked")
+    static int countHere(Path inputs, String table, String filter) throws IOException {
+        int n = 0;
+        try (java.util.stream.Stream<Path> s = Files.list(inputs)) {
+            for (Path f : (Iterable<Path>) s::iterator) {
+                Object t = ((Map<String, Object>) json(f).getOrDefault("tables", Map.of())).get(table);
+                if (t == null) {
+                    continue;
+                }
+                for (Object o : (List<Object>) t) {
+                    Map<String, Object> e = (Map<String, Object>) o;
+                    boolean all = true;
+                    for (String cond : filter.split(";")) {
+                        String[] kv = cond.split("!\\^=|\\^=|!=|=", 2);
+                        String got = e.get(kv[0]) == null ? "null" : String.valueOf(e.get(kv[0]));
+                        boolean starts = e.get(kv[0]) != null && got.startsWith(kv[1]);
+                        all &= cond.contains("!^=") ? !starts : cond.contains("^=") ? starts
+                                : cond.contains("!=") ? !got.equals(kv[1]) : got.equals(kv[1]);
+                    }
+                    n += all ? 1 : 0;
+                }
+            }
+        }
+        return n;
     }
 
     @Test
@@ -307,7 +362,8 @@ public class SiteBuildTest {
         // The {{#if}} blocks are chosen once, on the inputs, which hold the resamples the guarded ones need.
         String chosen;
         try {
-            chosen = SiteBuild.conditionals(template, SiteData.read(small));
+            SiteData in = SiteData.read(small);
+            chosen = SiteBuild.views(SiteBuild.conditionals(template, in), in).page;
         } catch (IOException x) {
             throw new IllegalStateException(x);
         }
@@ -545,6 +601,332 @@ public class SiteBuildTest {
                 problems.toString());
     }
 
+    /**
+     * INTEGRATION.md open item 12: the house edge by depth and the edge at each count, which
+     * SiteSimReported carries from the simulator's depth.tsv and ev-by-key.tsv. The input is made by
+     * SiteSimReported's own readers from files in the simulator's formats (sim/QUESTIONS.md item 27,
+     * SHOE_SPEC.md C4), so the blocks are held to the fields the adapter writes: each cell a data-t
+     * span in percent of a unit, a key one side never met a dash; a cell printed otherwise is caught.
+     */
+    @Test
+    public void theSimulatorsDepthAndEdgeByKeyRenderFromTheAdaptersTables() throws IOException {
+        Path run = Files.createDirectories(dir.resolve("sim-run"));
+        Files.write(run.resolve("depth.tsv"), ("band\tfrom\tto\trounds\tshoes\tsimulated\tse\texactWeight\texact\n"
+                + "0\t0\t25\t1200000\t100000\t-0.00652\t0.00031\t5000.0\t-0.00649\n"
+                + "1\t26\t51\t1100000\t100000\t-0.00611\t0.00032\t4800.0\t-0.00598\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(run.resolve("ev-by-key.tsv"), ("# ev-by-key.tsv: SHOE_SPEC.md C4, format 1\n"
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t0\t2\t40\t800\t20000\t8.0\t900.0\t200.0\n"
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t1\t2\t40\t760\t18000\t6.5\t850.0\t160.0\n"
+                + "cross\tHi-Lo = Hi-Lo Lite\t80\t2\t3.0\n"
+                + "exact\tHi-Lo = Hi-Lo Lite\t80\t2\t300.0\t2.7\n"
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t0\t11\t40\t3\t3\t0.9\t0.5\t0.9\n"
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t1\t11\t40\t0\t0\t0\t0\t0\n"
+                + "cross\tHi-Lo = Hi-Lo Lite\t80\t11\t0\n"
+                + "exact\tHi-Lo = Hi-Lo Lite\t80\t11\t0\t0\n").getBytes(StandardCharsets.UTF_8));
+        SiteSim.Options o = new SiteSim.Options();
+        o.runs.add(run);
+        SiteInput reported = new SiteInput("sim", "fixture", "main");
+        reported.source.put("fixture", true);
+        SiteSimReported.depth(reported, o);
+        SiteSimReported.evByKey(reported, o);
+        Path in = copy("sim-reported");
+        Files.write(in.resolve("sim-reported.json"), reported.text("sim-reported.json").getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output b = build(in, template);
+        assertEquals(List.of(), b.problems);
+        String q = b.text("index.html");
+        // The file's fractions in percent: −0.00649 a round is −0.649% of a unit.
+        assertTrue(q.contains("<span data-t=\"sim_depth/0/exact\" data-f=\"s3\">−0.649</span>"), "depth's exact side");
+        assertTrue(q.contains("<span data-t=\"sim_depth/1/rounds\">1,100,000</span>"), "rounds simulated");
+        // Key 2, fold 0: ΣY / ΣN = 8 / 800, 1% of a unit.
+        assertTrue(q.contains("<span data-t=\"sim_ev_by_key/0/sim0\" data-f=\"s3\">+1.000</span>"), "fold 0's mean at key 2");
+        assertTrue(q.contains("<span data-t=\"sim_ev_by_key/0/exact\" data-f=\"s3\">+0.900</span>"), "the exact side at key 2");
+        String unmet = q.substring(q.indexOf("<span data-t=\"sim_ev_by_key/1/key\">"));
+        unmet = unmet.substring(0, unmet.indexOf("</tr>"));
+        assertEquals(3, unmet.split("<td class=\"num\">–</td>|<td>–</td>", -1).length - 1,
+                "key 11: fold 1 and the exact side never met it, so its mean, SE and exact are dashes: " + unmet);
+        String moved = q.replace("<span data-t=\"sim_depth/0/exact\" data-f=\"s3\">−0.649</span>",
+                "<span data-t=\"sim_depth/0/exact\" data-f=\"s3\">−0.0065</span>");
+        b.files.put("index.html", moved.getBytes(StandardCharsets.UTF_8));
+        assertTrue(SiteBuild.check(b, css).stream().anyMatch(p -> p.contains("sim_depth/0/exact") && p.contains("−0.649")));
+        // Without either table, neither block is printed.
+        assertFalse(html().contains("id=\"sim-depth\""));
+        assertFalse(html().contains("id=\"sim-keys\""));
+    }
+
+    /**
+     * The literature check's page file with the correlations, written by LiteratureOutput.page from
+     * a check's Result on the committed claims.json, its verdicts by the check's own rule
+     * (LiteratureClaims.verdict): each of QFIT's insurance correlations ours plus 0.002, the second
+     * planted 0.03 high so that it differs. With R, each betting correlation's BC/R likewise, the
+     * first planted 0.04 low; without R every BC/R waits, as the check leaves it without step 7's
+     * save, and literature_qfit holds QFIT's rows with this study's BC as it is. Every figure here is
+     * made up; the file says it is a fixture.
+     */
+    static Path correlations(Path inputs, boolean withR) throws IOException {
+        LiteratureCheck.Result r = new LiteratureCheck.Result();
+        r.register = LiteratureClaims.parse(read("literature/claims.json"), "claims.json");
+        int ic = 0;
+        int bc = 0;
+        for (LiteratureClaims.Claim c : r.register.claims) {
+            boolean isIc = c.id.startsWith("ic.");
+            if (!"within".equals(c.rule) || !c.source.equals("qfit-table") || !(isIc || c.id.startsWith("bc."))) {
+                continue;
+            }
+            LiteratureClaims.Ours o = new LiteratureClaims.Ours(c.ours);
+            if (isIc || withR) {
+                o.value = c.theirs() + (isIc ? (ic++ == 1 ? 0.03 : 0.002) : (bc++ == 0 ? -0.04 : 0.004));
+                o.printed = String.format(java.util.Locale.ROOT, "%.3f", o.value);
+                o.src = "fixture";
+            } else {
+                o = LiteratureClaims.Ours.pending(c.ours, "R, the betting ceiling on the main file, from step 7's save");
+            }
+            r.put(o);
+        }
+        for (LiteratureClaims.Claim c : r.register.claims) {
+            r.outcomes.put(c.id, LiteratureClaims.verdict(c, r.register.source(c.source), r.ours.get(c.ours), r.tests, null));
+        }
+        List<Map<String, Object>> qfit = new ArrayList<>();
+        String[][] rows = {{"Hi-Lo", ".97", ".76", "0.957", "0.762"}, {"Zen Count", ".96", ".85", "0.959", "0.850"},
+                {"Wong Halves", ".99", ".72", "0.982", "0.725"}};
+        for (String[] q : rows) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("qfit", q[0]);
+            m.put("row", q[0]);
+            m.put("tags_agree", true);
+            m.put("bc_theirs", q[1]);
+            m.put("pe_theirs", ".5");
+            m.put("ic_theirs", q[2]);
+            m.put("bc_ours", Double.parseDouble(q[3]));
+            m.put("ic_ours", Double.parseDouble(q[4]));
+            m.put("pe_ours", null);
+            qfit.add(m);
+        }
+        r.tables.put("literature_qfit", qfit);
+        Map<String, Object> page = LiteratureOutput.page(r, "fixture", Map.of("fixture/qfit.html", "00"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> source = (Map<String, Object>) page.get("_source");
+        source.put("fixture", true);
+        Path f = inputs.resolve("literature-fixture.json");
+        Files.write(f, LiteratureOutput.json(page).getBytes(StandardCharsets.UTF_8));
+        return f;
+    }
+
+    /** The circles of a scatter panel: each its label's entry index, cx and cy. */
+    static List<double[]> points(String page, String id) {
+        int at = page.indexOf("<svg class=\"panel scatter\" id=\"" + id + "\"");
+        assertTrue(at >= 0, "no scatter " + id);
+        String svg = page.substring(at, page.indexOf("</svg>", at));
+        Matcher m = Pattern.compile("<circle class=\"pt\" cx=\"([0-9.]+)\" cy=\"([0-9.]+)\" r=\"4\"><title data-t=\"[a-z_]+/(\\d+)/")
+                .matcher(svg);
+        List<double[]> out = new ArrayList<>();
+        while (m.find()) {
+            out.add(new double[]{Integer.parseInt(m.group(3)), Double.parseDouble(m.group(1)), Double.parseDouble(m.group(2))});
+        }
+        return out;
+    }
+
+    /**
+     * INTEGRATION.md open item 12, the BC/IC scatter and its verdict sentence (PLAN_PAGE.md section
+     * 9): QFIT's insurance and betting correlations against this study's, one point a count on a
+     * square panel whose dashed diagonal is agreement, the sentence counting the check's own
+     * verdicts. A point that agrees sits on the diagonal, the planted one off it on the side its
+     * sign puts it; the counts are the check's verdicts; every number traces to the input; and
+     * without R the betting correlations are drawn as they are and judged by neither the sentence
+     * nor the chart.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theCorrelationScattersAndTheirVerdictSentenceFollowTheCheck() throws Exception {
+        for (boolean withR : new boolean[]{true, false}) {
+            Path in = copy("correlations-" + withR);
+            correlations(in, withR);
+            SiteBuild.Output b = build(in, template);
+            assertEquals(List.of(), b.problems, "with R " + withR);
+            String q = b.text("index.html");
+            assertTrue(trace(in, b) > 200);
+            List<Object> claims = (List<Object>) b.data.tables.get("literature_claims");
+            int icAgree = 0;
+            int icAll = 0;
+            for (Object o : claims) {
+                Map<String, Object> c = (Map<String, Object>) o;
+                if (((String) c.get("id")).startsWith("ic.") && c.get("ours_value") != null && "qfit-table".equals(c.get("source"))) {
+                    icAll++;
+                    icAgree += "agrees".equals(c.get("verdict")) ? 1 : 0;
+                }
+            }
+            assertEquals(6, icAll, "QFIT's six insurance correlations in claims.json");
+            assertEquals(5, icAgree, "one planted to differ");
+            String headline = SiteBuild.textOf(q, "correlations");
+            assertEquals("Betting and insurance correlations", headline);
+            assertTrue(q.contains("QFIT gives the insurance correlation of <span data-k=\"count.literature_claims_where_id_starts_ic_"
+                    + "source_is_qfit_table_ours_value_not_null\" data-f=\"n\">6</span> of the counts scored here"), q);
+            assertTrue(q.contains("agrees with QFIT's for <span data-k=\"count.literature_claims_where_id_starts_ic_source_is_qfit_"
+                    + "table_ours_value_not_null_verdict_is_agrees\" data-f=\"n\">5</span> of them."));
+            assertTrue(q.contains("The insurance correlations that do not agree, <span data-k=\"count.literature_claims_where_id_"
+                    + "starts_ic_source_is_qfit_table_ours_value_not_null_verdict_not_agrees\" data-f=\"n\">1</span> of them"));
+            // On the panel, a point that agrees is on the diagonal (x + y = the side, in panel units, to
+            // the tolerance's width); the planted one, ours above theirs, sits above it.
+            double side = SiteSvg.W - 52;
+            List<double[]> ic = points(q, "corr-ic");
+            assertEquals(6, ic.size());
+            for (double[] p : ic) {
+                Map<String, Object> c = (Map<String, Object>) claims.get((int) p[0]);
+                double off = (p[1] - 44) + (p[2] - SiteSvg.SCATTER_TOP) - side;
+                if ("agrees".equals(c.get("verdict"))) {
+                    assertTrue(Math.abs(off) < 6, c.get("id") + " agrees but sits " + off + " off the diagonal");
+                } else {
+                    assertTrue(off < -20, c.get("id") + " is 0.03 above theirs, so above the diagonal: " + off);
+                }
+            }
+            if (withR) {
+                assertTrue(q.contains("Once this study's betting correlation is divided by R"));
+                List<double[]> bcs = points(q, "corr-bc");
+                assertEquals(5, bcs.size(), "QFIT's five betting correlations");
+                int once = q.indexOf("Once this study's");
+                // Within tolerance on another game is "agrees in direction" (LiteratureClaims.verdict), counted with agrees.
+                assertTrue(q.contains("<span data-k=\"count.literature_claims_where_id_starts_bc_source_is_qfit_table_ours_value_"
+                        + "not_null_verdict_starts_agrees\" data-f=\"n\">4</span> of the <span data-k"), q.substring(once, once + 900));
+                assertTrue(q.contains("<span data-t=\"literature_claims/") && q.contains(">agrees in direction</span>"));
+                assertTrue(q.contains("The betting correlations that do not agree once divided by R, <span data-k=\"count.literature_"
+                        + "claims_where_id_starts_bc_source_is_qfit_table_ours_value_not_null_verdict_not_starts_agrees\" data-f=\"n\">1</span>"));
+                assertFalse(q.contains("The betting correlations are not compared yet"));
+                assertFalse(q.contains("id=\"corr-qfit-table\""));
+            } else {
+                assertTrue(q.contains("The betting correlations are not compared yet."));
+                assertTrue(q.contains("R waits for <span data-t=\"literature_claims/"), "what R waits for, from the check");
+                assertTrue(q.contains("not divided by R"));
+                assertEquals(3, points(q, "corr-bc").size(), "literature_qfit's rows, this study's BC as it is");
+                assertTrue(q.contains("id=\"corr-qfit-table\""));
+                assertFalse(q.contains("Once this study's betting correlation is divided by R"));
+            }
+        }
+        // Without the literature, the section is not printed.
+        assertFalse(html().contains("id=\"correlations\""));
+    }
+
+    /** The fragments of the every-count chart the build made, by view (PEN-SPREAD-WONG). */
+    static Map<String, String> fragments(SiteBuild.Output o) {
+        Map<String, String> out = new java.util.TreeMap<>();
+        for (String f : o.files.keySet()) {
+            if (f.startsWith("assets/views/every-")) {
+                out.put(f.substring("assets/views/every-".length(), f.length() - ".html".length()), o.text(f));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * INTEGRATION.md open item 12, the 5c toggles (PLAN_PAGE.md 5c, 2.5): the chart of every count
+     * switches among the cut card's places, the spreads and wonging. The page holds the default view
+     * as static HTML, the controls shown only once the script has run; every other view the data has
+     * is a fragment the build rendered, listed in the box, and each traces to the inputs as the page
+     * does. A view is made only where its figures exist (wonging at flat, 1-8 and 1-16 here, where the
+     * fixture gives the B plans' share of rounds and average bet), and its caption says what it is.
+     */
+    @Test
+    public void theEveryCountChartSwitchesAmongItsViewsEachTracedToTheInputs() throws Exception {
+        String p = html();
+        Map<String, String> views = fragments(page);
+        assertEquals(3 * 10 + 3 * 3, views.size(), "3 cut cards × 10 spreads, and wonging at 3 spreads: " + views.keySet());
+        assertFalse(views.containsKey("80-s20-off"), "1-20 is not in the fixture, so it is neither made nor offered");
+        assertFalse(p.contains("value=\"s20\""));
+        assertFalse(views.containsKey("80-s12-on"), "no B plan at 1-12, so no wonging view there");
+        // A view needs its keys themselves: fd.80.s20.hi_lo is not had because some fd cell is
+        // (SiteData.hasPrefix would say so), and a view made on it could not be rendered.
+        SiteData in = SiteData.read(small);
+        assertFalse(SiteBuild.views(SiteBuild.conditionals(template, in), in).bodies
+                .containsKey("assets/views/every-80-s20-off.html"));
+        Matcher box = Pattern.compile("<div class=\"views\" id=\"views-every\" data-src=\"assets/views/every-\" data-views=\"([^\"]*)\"")
+                .matcher(p);
+        assertTrue(box.find());
+        assertEquals(views.keySet(), new java.util.TreeSet<>(List.of(box.group(1).split(" "))));
+        // The page holds the default view, byte for byte its fragment, and reads whole without the script.
+        assertTrue(p.contains("<div class=\"view\" id=\"view-every\" data-view=\"80-s8-off\">\n" + views.get("80-s8-off") + "</div></div>"));
+        assertTrue(css.contains(".views .controls { display: none; }") && css.contains("html.js .views .controls { display: block;"),
+                "the controls show only once the script has set html.js");
+        assertTrue(p.contains("<input type=\"radio\" name=\"every-pen\" data-axis=\"pen\" value=\"80\" checked>"));
+        for (Map.Entry<String, String> v : views.entrySet()) {
+            assertTrue(trace(small, page, v.getValue()) > 100, v.getKey());
+        }
+        String on = views.get("75-s16-on");
+        assertTrue(on.contains("data-k=\"fdw.75.s16.hi_lo\"") && on.contains("data-k=\"fullw.75.s16.hi_lo\""), "wonging's scopes");
+        assertTrue(on.contains("each count plays <span data-k=\"wide.share.75.b0_16\" data-f=\"pct1\">"), "its share of rounds");
+        assertTrue(on.contains("it may be refused at the Casino de Montréal"));
+        assertFalse(views.get("75-s16-off").contains("wide.share"), "a view without wonging says nothing of it");
+        assertTrue(views.get("70-s12-off").contains("data-k=\"full.70.s12.hi_lo\""));
+        // The script switches whole fragments: it never formats or computes a figure.
+        for (String no : new String[]{"toFixed", "toPrecision", "toLocaleString", "Intl.", "Math."}) {
+            assertFalse(js.contains(no), "page.js uses " + no);
+        }
+    }
+
+    /** A view fragment is held to every check the page is: a wrong figure, an id of the page's, a view listed but not built. */
+    @Test
+    public void aViewFragmentIsCheckedAsThePageIs() {
+        String f = "assets/views/every-70-s12-off.html";
+        byte[] was = page.files.get(f);
+        String v = page.text(f);
+        Matcher m = Pattern.compile("<span data-k=\"full\\.70\\.s12\\.hi_lo\" data-f=\"s3\">([^<]*)</span>").matcher(v);
+        assertTrue(m.find());
+        try {
+            page.files.put(f, (v.substring(0, m.start(1)) + "+9.999" + v.substring(m.end(1))).getBytes(StandardCharsets.UTF_8));
+            List<String> p = SiteBuild.check(page, css);
+            assertTrue(p.stream().anyMatch(x -> x.startsWith(f + ": full.70.s12.hi_lo is printed \"+9.999\"")), p.toString());
+            page.files.put(f, v.replace("<figcaption>", "<figcaption id=\"answer\">").getBytes(StandardCharsets.UTF_8));
+            p = SiteBuild.check(page, css);
+            assertTrue(p.contains(f + ": the id answer is also the page's, outside the view this fragment replaces"), p.toString());
+            page.files.put(f, v.replace("</figcaption>", " <a href=\"#nowhere\">x</a></figcaption>").getBytes(StandardCharsets.UTF_8));
+            assertTrue(SiteBuild.check(page, css).contains(f + ": a link to #nowhere, which is not on the page"));
+            page.files.remove(f);
+            assertTrue(SiteBuild.check(page, css).stream().anyMatch(x -> x.startsWith("the views the page lists are not the fragments built")));
+        } finally {
+            page.files.put(f, was);
+        }
+        assertEquals(List.of(), SiteBuild.check(page, css));
+        // The page's default view differing from its fragment is caught: the script could not put it back.
+        String d = "assets/views/every-80-s8-off.html";
+        byte[] def = page.files.get(d);
+        try {
+            page.files.put(d, page.text(d).replace("<figcaption>", "<figcaption> ").getBytes(StandardCharsets.UTF_8));
+            assertTrue(SiteBuild.check(page, css).contains("view every: the page does not hold its default view as " + d + " has it"));
+        } finally {
+            page.files.put(d, def);
+        }
+    }
+
+    /**
+     * INTEGRATION.md open item 12, the evidence table (PLAN_PAGE.md 3.5): SiteEvidence's input,
+     * made from rows SiteEvidenceTest's records bear out and its JUnit report, is printed as the
+     * table of what was checked, every cell a data-t span the page check holds to the input, with
+     * the suite's re-run beneath; the pending line goes; and a cell printed otherwise is caught.
+     */
+    @Test
+    public void theEvidenceTableRendersFromItsInput() throws Exception {
+        Path in = copy("evidence");
+        java.util.List<String> lines = SiteEvidenceTest.lines(SiteEvidenceTest.GOOD, SiteEvidenceTest.row("b", "3,000 cases",
+                SiteEvidenceTest.COMMIT, "3,000 on shoes", "ExactVsBruteForceTest"));
+        Path tsv = Files.write(dir.resolve("evidence-rows.tsv"), String.join("\n", lines).getBytes(StandardCharsets.UTF_8));
+        SiteInput e = SiteEvidence.adapt(lines, SiteEvidenceTest.COMMIT, tsv, SiteEvidenceTest.RECORDS,
+                SiteEvidenceTest.report(Files.createDirectories(dir.resolve("junit"))), "1234abc");
+        e.source.put("fixture", true);
+        Files.write(in.resolve("evidence-fixture.json"), e.text("evidence-fixture.json").getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output b = build(in, template);
+        assertEquals(List.of(), b.problems);
+        String q = b.text("index.html");
+        assertFalse(q.contains("Not yet computed: the evidence table"));
+        assertTrue(q.contains("<table class=\"data\" id=\"evidence-table\">"));
+        assertTrue(q.contains("<span data-t=\"evidence/0/recorded\">3,000 cases on 14 to 24 cards: 11,420 rounds valued by both, "
+                + "worst gap 1.3e-15</span>"), "the record, as the row gives it");
+        assertTrue(q.contains("<span data-t=\"evidence/0/commit\">abcdef0</span>"));
+        assertTrue(q.contains("<span data-t=\"evidence/1/rerun\">re-run at 1234abc: 3 of 3 tests passed</span>"));
+        assertTrue(q.contains("re-run at <span data-t=\"evidence_suite/0/at\">1234abc</span>: <span data-k=\"evidence.suite_tests\""
+                + " data-f=\"n\">5</span> tests"), "the suite's re-run");
+        assertTrue(trace(in, b) > 200);
+        String moved = q.replace("<span data-t=\"evidence/0/commit\">abcdef0</span>", "<span data-t=\"evidence/0/commit\">abcdef1</span>");
+        b.files.put("index.html", moved.getBytes(StandardCharsets.UTF_8));
+        assertTrue(SiteBuild.check(b, css).stream().anyMatch(p -> p.contains("evidence/0/commit") && p.contains("abcdef0")));
+    }
+
     // ---- light and dark ----
 
     @Test
@@ -715,6 +1097,14 @@ public class SiteBuildTest {
         assertTrue(o.files.get("assets/page.js").length <= 12 * 1024);
         assertTrue(o.files.get("data/results.json").length <= 500 * 1024, "results.json " + o.files.get("data/results.json").length);
         assertTrue(o.files.get("data/results.csv").length <= 300 * 1024);
+        int views = 0;
+        for (Map.Entry<String, byte[]> f : o.files.entrySet()) {
+            if (f.getKey().startsWith("assets/views/")) {
+                views++;
+                assertTrue(f.getValue().length <= SiteBuild.VIEW_BUDGET, f.getKey() + " " + f.getValue().length);
+            }
+        }
+        assertEquals(39, views, "every view of the every-count chart, each within its budget");
         String filler = "<p>" + "padding words ".repeat(16 * 1024) + "</p>";
         List<String> over = build(small, template.replace("<main>", "<main>" + filler)).problems;
         assertTrue(over.stream().anyMatch(x -> x.startsWith("index.html is ") && x.endsWith("over its budget of 204800")), over.toString());

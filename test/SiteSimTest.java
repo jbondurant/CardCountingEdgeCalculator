@@ -354,7 +354,12 @@ public class SiteSimTest {
                 + "sim\tHi-Lo = Hi-Lo Lite\t80\t0\t-3\t4\t8\t20\t-1.0\t2.0\t-2.0\n"
                 + "sim\tHi-Lo = Hi-Lo Lite\t80\t1\t-3\t4\t6\t12\t-0.5\t1.5\t-1.0\n"
                 + "cross\tHi-Lo = Hi-Lo Lite\t80\t-3\t0.1\n"
-                + "exact\tHi-Lo = Hi-Lo Lite\t80\t-3\t200.0\t-1.2\n").getBytes(StandardCharsets.UTF_8));
+                + "exact\tHi-Lo = Hi-Lo Lite\t80\t-3\t200.0\t-1.2\n"
+                // A key fold 1 and the exact side never met (SHOE_SPEC.md C4: a side that never met it gives zeros).
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t0\t9\t4\t2\t2\t0.5\t0.3\t0.5\n"
+                + "sim\tHi-Lo = Hi-Lo Lite\t80\t1\t9\t4\t0\t0\t0\t0\t0\n"
+                + "cross\tHi-Lo = Hi-Lo Lite\t80\t9\t0\n"
+                + "exact\tHi-Lo = Hi-Lo Lite\t80\t9\t0\t0\n").getBytes(StandardCharsets.UTF_8));
         Path variants = dir.resolve("summary-variants.json");
         Map<String, String> vf = facts("P3", plants(null), BUNDLE2, SimCheckPlan.MODE_B_CHUNKS, 0);
         vf.put("check", "mode B and the moving count beside mode A (reported, not tested)");
@@ -386,11 +391,23 @@ public class SiteSimTest {
         assertEquals("mode B less mode A", ((Map<?, ?>) v.get(0)).get("what"));
         List<Object> depth = (List<Object>) in.tables.get("sim_depth");
         assertEquals(2, depth.size());
-        assertEquals(-0.0041, ((Map<?, ?>) depth.get(1)).get("exact"));
-        Map<?, ?> key = (Map<?, ?>) ((List<Object>) in.tables.get("sim_ev_by_key")).get(0);
+        // In the page's unit, percent of a unit a round, as every figure is: the file's fractions times 100.
+        assertEquals(-0.41, (Double) ((Map<?, ?>) depth.get(1)).get("exact"), 1e-12);
+        assertEquals(-0.4, (Double) ((Map<?, ?>) depth.get(1)).get("simulated"), 1e-12);
+        assertEquals(-0.0001 * 100, (Double) ((Map<?, ?>) v.get(0)).get("difference"), 1e-15);
+        List<Object> byKey = (List<Object>) in.tables.get("sim_ev_by_key");
+        Map<?, ?> key = (Map<?, ?>) byKey.get(0);
         assertEquals(-3, key.get("key"));
-        assertEquals(-1.0 / 8, (Double) key.get("sim0"), 1e-15);
-        assertEquals(-1.2 / 200, (Double) key.get("exact"), 1e-15);
+        assertEquals(-100.0 / 8, (Double) key.get("sim0"), 1e-12);
+        assertEquals(-100 * 1.2 / 200, (Double) key.get("exact"), 1e-12);
+        // A key one fold never met has no mean there, and the exact side none either: null, not NaN,
+        // so the input is written (results.json holds no NaN) and the page prints a dash.
+        Map<?, ?> unmet = (Map<?, ?>) byKey.get(1);
+        assertEquals(9, unmet.get("key"));
+        assertEquals(25.0, (Double) unmet.get("sim0"), 1e-12);
+        assertTrue(unmet.containsKey("sim1") && unmet.get("sim1") == null, unmet.toString());
+        assertNull(unmet.get("se1"));
+        assertNull(unmet.get("exact"));
         new SiteData().add("sim.json", in.text("sim.json").getBytes(StandardCharsets.UTF_8));
     }
 

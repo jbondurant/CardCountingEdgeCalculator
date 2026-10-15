@@ -14,6 +14,12 @@ import java.util.Map;
  * planted-bug runs. None of it enters the pass family. The formats are SHOE_SPEC.md Part C's
  * (ev-by-key.tsv) and the simulator's own, as sim/QUESTIONS.md item 27's sim-formats block gives
  * them (depth.tsv, the summaries' differences with fig and lessFig).
+ *
+ * The tables are in the page's unit, as SiteInput's figures are: a round's result, its mean and
+ * its SE in percent of a unit, multiplied by 100 once here (SiteInput.pct), never in the page; the
+ * simulator's files keep fractions of a unit. A mean or SE with nothing to take it over (a key
+ * one fold never met, a band with no rounds) is null, which the page prints as a dash: results.json
+ * holds no NaN.
  */
 final class SiteSimReported {
 
@@ -132,9 +138,9 @@ final class SiteSimReported {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("fig", d.get("fig"));
                 row.put("what", d.get("less"));
-                row.put("difference", SiteAdapt.num(d.get("difference"), "difference"));
-                row.put("se", SiteAdapt.num(d.get("se"), "se"));
-                row.put("sigma_eff", SiteAdapt.num(d.get("sigmaEff"), "sigmaEff"));
+                row.put("difference", SiteInput.pct(SiteAdapt.num(d.get("difference"), "difference")));
+                row.put("se", SiteInput.pct(SiteAdapt.num(d.get("se"), "se")));
+                row.put("sigma_eff", SiteInput.pct(SiteAdapt.num(d.get("sigmaEff"), "sigmaEff")));
                 row.put("rounds", SiteAdapt.num(d.get("rounds"), "rounds"));
                 table.add(row);
             }
@@ -180,9 +186,9 @@ final class SiteSimReported {
                 row.put("from", Integer.parseInt(f[1]));
                 row.put("to", Integer.parseInt(f[2]));
                 row.put("rounds", Double.parseDouble(f[3]));
-                row.put("simulated", Double.parseDouble(f[5]));
-                row.put("se", Double.parseDouble(f[6]));
-                row.put("exact", Double.parseDouble(f[8]));
+                row.put("simulated", percent(Double.parseDouble(f[5])));
+                row.put("se", percent(Double.parseDouble(f[6])));
+                row.put("exact", percent(Double.parseDouble(f[8])));
                 table.add(row);
             }
             in.artifact(file, file.toString());
@@ -224,11 +230,11 @@ final class SiteSimReported {
                     double mean = n == 0 ? Double.NaN : y / n;
                     double se = n == 0 || s < 2 ? Double.NaN
                             : Math.sqrt(s / (s - 1) * Math.max(0, y2 - 2 * mean * yn + mean * mean * n2)) / n;
-                    r.put("sim" + f[3], mean);
-                    r.put("se" + f[3], se);
+                    r.put("sim" + f[3], percent(mean));
+                    r.put("se" + f[3], percent(se));
                 } else if (f[0].equals("exact")) {
                     double w = Double.parseDouble(f[4]);
-                    r.put("exact", w == 0 ? null : Double.parseDouble(f[5]) / w);
+                    r.put("exact", w == 0 ? null : percent(Double.parseDouble(f[5]) / w));
                 }
             }
             table.addAll(rows.values());
@@ -237,6 +243,11 @@ final class SiteSimReported {
         if (!table.isEmpty()) {
             in.tables.put("sim_ev_by_key", table);
         }
+    }
+
+    /** A fraction of a unit as the page's percent, or null when there is nothing to take it over (NaN). */
+    static Double percent(double fraction) {
+        return Double.isNaN(fraction) ? null : SiteInput.pct(fraction);
     }
 
     /**

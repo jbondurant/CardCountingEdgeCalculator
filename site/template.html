@@ -150,15 +150,33 @@ row full.80.s8.perfect | ref bound
 </figure>
 
 <h3 id="every">Every count</h3>
+<p>The chart below shows every count at one setting; the controls above it, once the page's script has run, switch it to another cut-card place, another spread, or wonging. Every setting's chart was drawn when the page was built, from the same data file, and the script only puts the one asked for in place.</p>
+{{#view every}}
+pens 70 75 80
+spreads s1 s2 s3 s4 s5 s6 s7 s8 s12 s16 s20 s16_steep
+default 80 s8 off
+need {fd}.{pen}.{spread}.hi_lo {full}.{pen}.{spread}.hi_lo
+need on wide.share.{pen}.b0_{n} wide.bet.{pen}.b0_{n}
+legend pen Cut card at
+legend spread Bets
+legend wong Wonging
+label pen {{game.pen.{pen}|n}}%
+label spread {{name:{spread}}}
+label off off
+label on on, where back-counting is allowed
+fail That setting's chart could not be loaded here; the chart shown is still the one its caption names.
+{{#body}}
 <figure class="wide">
-{{dots:every-80
+{{dots:every-{pen}
 head Count | First decisions | Full play | Full-play interval
 cols 1:s3 | 2:s3 | 2:ci3
 project this project
-each fd.80.s8.@every + full.80.s8.@every
+each {fd}.{pen}.{spread}.@every + {full}.{pen}.{spread}.@every
 }}
-<figcaption>Every count at {{game.pen.80|n}}% and one to {{game.spread_max|n}} units: hollow dots for first decisions, filled for full play. {{name:full.80.s8.@best}} is highest at {{full.80.s8.@best|s3}}; {{name:hi_lo}} scores {{full.80.s8.hi_lo|s3}}.</figcaption>
+<figcaption>Every count with the cut card at {{game.pen.{pen}|n}}% and bets {{name:{spread}}}{{#on}}, wonging: sitting out every round whose fitted advantage is under zero, where back-counting is allowed (it may be refused at the Casino de Montréal), so each count plays {{wide.share.{pen}.b0_{n}|pct1}}% of the rounds dealt, at an average bet of {{wide.bet.{pen}.b0_{n}|d2}} units, and the values are per round dealt{{/on}}: hollow dots for first decisions, filled for full play. {{name:{full}.{pen}.{spread}.@best}} is highest at {{{full}.{pen}.{spread}.@best|s3}}; {{name:hi_lo}} scores {{{full}.{pen}.{spread}.hi_lo|s3}}.</figcaption>
 </figure>
+{{/view}}
+<p>The table keeps the cut card at {{game.pen.80|n}}% and bets {{name:s8}}, whatever the chart above shows.</p>
 {{rows:counts
 head Count | Level | Balanced | Side count | First decisions | Full play | Full-play interval | Gain from full play
 kinds published searched reference
@@ -210,7 +228,7 @@ series full.70.{x}.perfect
 <figcaption>At {{game.pen.70|n}}%: {{name:hi_lo}} reaches {{full.70.s8.hi_lo|s2}} at one to {{game.spread_max|n}} units.</figcaption>
 </figure>
 </div>
-{{#if has:wide.}}<p>Wonging means sitting out rounds when the count is low; its rows say how many rounds are skipped.</p>{{else}}<p><span class="pending">Not yet computed: spreads past one to {{game.spread_max|n}} units, and wonging (sitting out rounds when the count is low), from the wide-plan scoring.</span></p>{{/if}}
+{{#if has:wide.}}<p>Spreads past one to {{game.spread_max|n}} units, and wonging (sitting out rounds when the count is low), are among the settings of the chart of <a href="#every">every count</a> above; with wonging on, its caption gives the share of rounds played and the average bet.</p>{{else}}<p><span class="pending">Not yet computed: spreads past one to {{game.spread_max|n}} units, and wonging (sitting out rounds when the count is low), from the wide-plan scoring.</span></p>{{/if}}
 </section>
 
 <section id="better">
@@ -276,7 +294,7 @@ col z_max|d1
 col caught|yes|no
 col caught_by_z|yes|no
 }}{{/if}}
-{{#if has:sim.variants}}<p>Two conventions the programs share by choice, measured: each instance's own play taking the cards (mode B) and the count moving through split hands, each less the shared convention on the same shoes.</p>
+{{#if has:sim.variants}}<p>Two conventions the programs share by choice, measured: each instance's own play taking the cards (mode B) and the count moving through split hands, each less the shared convention on the same shoes, in percentage points of a unit a round.</p>
 {{table:sim_variants
 head Figure|What|Difference|SE
 col fig
@@ -284,6 +302,31 @@ col what
 col difference|s4
 col se|d4
 }}{{/if}}
+{{#if has:sim_depth}}<h3 id="sim-depth">The house edge by depth</h3>
+<p>Reported beside the tests, not tested: the chart played with flat bets, in bands of cards dealt from the shoe, as the second program dealt it and as the exact values of the exported states give it, in % of a unit a round.</p>
+{{table:sim_depth
+head From card|To card|Rounds simulated|Simulated|SE|Exact
+col from
+col to
+col rounds
+col simulated|s3
+col se|d3
+col exact|s3
+}}{{/if}}
+{{#if has:sim_ev_by_key}}<h3 id="sim-keys">The edge at each count</h3>
+<p>Reported beside the tests, not tested: {{name:hi_lo}}'s mean result a round at each bet key (its true count over the cards left, rounded to the nearest whole number, ties toward zero), with flat bets, in % of a unit a round. Each fold's fitted strategy is played on fresh shoes and given apart; the exact side is the exported states' value at the same key. A dash is a key that side never met.</p>
+<details><summary>The table, one line a strategy, cut card and key</summary>
+{{table:sim_ev_by_key
+head Strategy|Cut card, %|Key|First fold|SE|Second fold|SE|Exact
+col row
+col pen
+col key
+col sim0|s3
+col se0|d3
+col sim1|s3
+col se1|d3
+col exact|s3
+}}</details>{{/if}}
 <p>What this check cannot catch: a rule both programs misread; an export bug both share; conventions both follow by choice (cards taken by the chart's play, the count frozen in split hands); the chart itself; whether each fitted play is the best one; the fitting and the bootstrap intervals; the catalog's tags; and differences smaller than its limits.</p>
 </section>
 
@@ -310,13 +353,102 @@ col ours
 col verdict
 col why
 }}{{else}}<p><span class="pending">Not yet computed: the comparison with published figures, from the literature check.</span> The closest published study of an eight-deck game, Schlesinger's eight-deck simulations, was not read.</p>{{/if}}
+{{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}}<h3 id="correlations">Betting and insurance correlations</h3>
+<p class="headline">QFIT gives the insurance correlation of {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}} of the counts scored here, and this study's measured insurance correlation agrees with QFIT's for {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict=agrees}} of them.</p>{{/if}}
+{{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<p class="headline">Once this study's betting correlation is divided by R, the highest betting correlation any linear count reaches on the same states, it is within the check's tolerance of QFIT's for {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict^=agrees}} of the {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}} counts QFIT gives one for. The table under its chart gives each verdict, which says "agrees in direction" where QFIT's figure is for another game than this one.</p>{{/if}}
+{{#if any:literature_claims|id^=bc.;source=qfit-table and none:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<p>The betting correlations are not compared yet. This study's must first be divided by R, the highest betting correlation any linear count reaches on the same states, and R waits for {{cell:literature_claims|id^=bc.;source=qfit-table|ours_waits_for}}. Until then the page shows this study's betting correlation as it is, beside QFIT's, and judges neither.</p>{{/if}}
+{{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}}<p>The insurance correlations that do not agree, {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict!=agrees}} of them, are in the table under the chart; the table of claims above gives the reason the check gives for each.</p>{{/if}}
+{{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}}<p>The betting correlations that do not agree once divided by R, {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict!^=agrees}} of them, are in the table under their chart; the table of claims above gives the reason the check gives for each.</p>{{/if}}
+{{#if any:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}}<p>The two betting correlations measure different things. QFIT's correlates a count's tags with the effects of removal, how much taking one card of a rank out of the shoe moves the player's expected value. This study's correlates the count's true count with each sampled state's actual advantage under the chart, on eight-deck states. No count of one number per card follows that advantage exactly, so this study's correlation is not on QFIT's scale until it is divided by R. The insurance correlation needs no such step: both measure how well the count tracks the share of ten-valued cards left.</p>
+<figure class="scatter">
+{{scatter:corr-ic
+table literature_claims
+where id^=ic.;source=qfit-table;ours_value!=null
+x theirs
+y ours_value
+label what
+title Insurance correlations, QFIT's against this study's
+desc One point a count, QFIT's published insurance correlation across and this study's measured one up; a point on the dashed line agrees. The values are in the table under the chart.
+xname Published (QFIT)
+yname This study
+}}
+<figcaption>Insurance correlations: this study's agrees with QFIT's for {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null;verdict=agrees}} of {{count:literature_claims|id^=ic.;source=qfit-table;ours_value!=null}} counts.</figcaption>
+</figure>
+{{table:literature_claims
+id corr-ic-table
+where id^=ic.;source=qfit-table
+head Claim|QFIT|This study|Verdict
+col what
+col theirs
+col ours
+col verdict
+}}{{/if}}
+{{#if any:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<figure class="scatter">
+{{scatter:corr-bc
+table literature_claims
+where id^=bc.;source=qfit-table;ours_value!=null
+x theirs
+y ours_value
+label what
+title Betting correlations, QFIT's against this study's divided by R
+desc One point a count, QFIT's published betting correlation across and this study's measured one, divided by R, up; a point on the dashed line agrees. The values are in the table under the chart.
+xname Published (QFIT)
+yname This study, divided by R
+}}
+<figcaption>Betting correlations, this study's divided by R: within the check's tolerance of QFIT's for {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null;verdict^=agrees}} of {{count:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}} counts.</figcaption>
+</figure>
+{{table:literature_claims
+id corr-bc-table
+where id^=bc.;source=qfit-table
+head Claim|QFIT|This study, divided by R|Verdict
+col what
+col theirs
+col ours
+col verdict
+}}{{/if}}
+{{#if any:literature_qfit and none:literature_claims|id^=bc.;source=qfit-table;ours_value!=null}}<figure class="scatter">
+{{scatter:corr-bc
+table literature_qfit
+x bc_theirs
+y bc_ours
+label qfit
+title Betting correlations, QFIT's against this study's, not divided by R
+desc One point a count, QFIT's published betting correlation across and this study's measured one up, not yet divided by R, so not comparable to the dashed line. The values are in the table under the chart.
+xname Published (QFIT)
+yname This study, not divided by R
+}}
+<figcaption>Betting correlations, shown and not judged: this study's is not yet divided by R, so the dashed line is not where agreement would put its points.</figcaption>
+</figure>
+{{table:literature_qfit
+id corr-qfit-table
+head QFIT's row|QFIT's betting correlation|This study's|QFIT's insurance correlation|This study's
+col qfit
+col bc_theirs
+col bc_ours|d3
+col ic_theirs
+col ic_ours|d3
+}}{{/if}}
 <p>Published "player advantage" figures are per amount bet, so they are set beside this page's per-amount-bet figures, not its per-round ones. Six-deck simulation figures from other games are shown only marked as a different game.</p>
 </section>
 
 <section id="checks">
 <h2>How it was checked</h2>
 <p>AI agents wrote the code, the tests and the reviews this section reports (see <a href="#ai">How AI was used</a>).</p>
-{{#if has:evidence.}}<div id="evidence"></div>{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
+{{#if has:evidence.}}<h3 id="evidence">The evidence that the code is right</h3>
+<p>Each row says what was checked, its result as the commit beside it records it, and whether it was re-run for this page. Every figure in the column "As recorded" was found word for word in that commit's message, or in a file committed at it, by the build's evidence check; that shows only that the record says so, since AI agents wrote the commit messages. A row re-run for this page gives its tests' result at the commit they ran at.</p>
+{{table:evidence
+id evidence-table
+head Check|As recorded|Commit|Date|Where it is recorded|Re-run for this page|What it would catch|What it cannot catch
+col check
+col recorded
+col commit
+col date
+col where
+col rerun
+col catches
+col misses
+}}{{else}}<p><span class="pending">Not yet computed: the evidence table, regenerated from the test suite at the site's tag and the commits it cites.</span></p>{{/if}}
+{{#if has:evidence.suite_tests}}<p>The whole test suite, re-run at {{cell:evidence_suite|at!=null|at}}: {{evidence.suite_tests|n}} tests, {{evidence.suite_failed|n}} of them failed and {{evidence.suite_skipped|n}} skipped.</p>{{/if}}
 <div class="box" id="hash">
 <h3>What a hash proves, and what it doesn't</h3>
 <p>A SHA-256 hash proves that the file you downloaded is, byte for byte, the file listed here. That these commits produced it is my statement. You can test it by reproducing the file (see <a href="#downloads">Downloads</a>): the states file byte for byte, the saved results only to within {{repro.ser_tolerance|e}}. For the first segment of the states file and for the search file, the build that made them is inferred, not recorded. A hash says nothing about whether the code is right; a bug is hashed just as faithfully. The checks above are the evidence that the code is right, and they are evidence, not proof.</p>

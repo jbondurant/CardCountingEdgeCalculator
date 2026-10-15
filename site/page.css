@@ -47,10 +47,12 @@ dl dd { margin: 0; }
   dl dd { margin-bottom: .5rem; }
 }
 
-/* Contents: in the text column, and in the left margin on wide screens. */
+/* Contents: in the text column, and in the left margin on screens wide enough that it clears the
+   wide figures, which reach 28rem left of the centre (figure.wide): 13rem of list and 2rem of gap
+   beside them need 2 x (28 + 15) = 86rem. */
 .toc ol { padding-left: 1.4rem; font-size: .92rem; }
-@media (min-width: 75rem) {
-  .toc { position: fixed; top: 2rem; left: calc(50% - 20rem - 15rem); width: 13rem; }
+@media (min-width: 88rem) {
+  .toc { position: fixed; top: 2rem; left: calc(50% - 28rem - 15rem); width: 13rem; }
   .toc h2 { margin-top: 0; }
 }
 
@@ -110,6 +112,11 @@ svg.panel .ln.bd { stroke-dasharray: 5 4; }
 .sw.bd { border-top-style: dashed; }
 table.vals { font-size: 12px; }
 
+/* Scatter panels: published against this study's, square, the dashed diagonal where they agree. */
+figure.scatter { max-width: 400px; }
+svg.panel .pt { fill: var(--c1); stroke: var(--bg); stroke-width: 1; }
+svg.panel .diag { stroke: var(--mute); stroke-width: 1.5; stroke-dasharray: 5 4; }
+
 /* The shoe: one thin tick per card, drawn from --cards, with the cut-card places marked. */
 .shoe { position: relative; height: 2.6rem; margin: 2rem 0 .5rem;
   background: repeating-linear-gradient(90deg, var(--mute) 0 1px, transparent 1px calc(100% / var(--cards))); opacity: .9; }
@@ -122,12 +129,28 @@ table.tags td.tp::before, table.tags td.tn::before { content: ""; position: abso
 table.tags td.tp::before { background: var(--c1); }
 table.tags td.tn::before { background: var(--c2); }
 
+/* A view box's controls: shown only once the script has run, so the page without it is complete. */
+.views .controls { display: none; }
+html.js .views .controls { display: block; margin: 1rem 0 .5rem; }
+.controls fieldset { display: inline-block; border: 1px solid var(--rule); margin: 0 .5rem .5rem 0; padding: .2rem .6rem .4rem;
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.controls legend { color: var(--mute); padding: 0 .25rem; }
+.controls label { display: inline-block; margin-right: .8rem; white-space: nowrap; cursor: pointer; }
+.controls label.na { color: var(--mute); cursor: default; }
+.controls input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.vstatus { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: var(--mute); }
+.vstatus:empty { display: none; }
+.view[aria-busy=true] { opacity: .55; }
+
 /* Sortable tables: buttons only once the script has run. */
 table.sortable th button { all: unset; cursor: default; }
 html.js table.sortable th button { cursor: pointer; text-decoration: underline dotted; }
 html.js table.sortable th[aria-sort=ascending] button::after { content: " ↑"; }
 html.js table.sortable th[aria-sort=descending] button::after { content: " ↓"; }
 table.files code.hash { font-size: 11px; }
+/* The evidence table's words: wide enough to read, the table scrolling in its box on a phone. */
+#evidence-table td { min-width: 8rem; }
+#evidence-table td:nth-child(2) { min-width: 15rem; }
 
 footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .85rem; color: var(--mute); }
-@media print { .toc, button, nav.crumbs { display: none; } body { max-width: none; } }
+@media print { .toc, button, nav.crumbs, .controls { display: none !important; } body { max-width: none; } }
