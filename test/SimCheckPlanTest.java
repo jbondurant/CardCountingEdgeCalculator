@@ -35,11 +35,11 @@ public class SimCheckPlanTest {
                     "SIM_CHECK.md's block " + name + " must be SimCheckPlan's output; paste `java SimCheckPlan` again");
         }
         for (int part = 1; part <= 2; part++) {
-            Path pilot = ROOT.resolve("sim-pilot-part" + part + ".tsv");
+            List<Path> pilots = SimCheckPlan.pilotFiles(ROOT, part);
             String held = SimCheckPlan.docBlock(doc, "fill-" + part);
-            if (Files.exists(pilot)) {
-                assertEquals(SimCheckPlan.fill(SimCheckPlan.Pilot.read(pilot)), held,
-                        "part " + part + "'s filled block must be printed from its committed pilot file");
+            if (!pilots.isEmpty()) {
+                assertEquals(SimCheckPlan.fill(SimCheckPlan.Pilots.read(pilots)), held,
+                        "part " + part + "'s filled block must be printed from its committed pilot files " + pilots);
             } else {
                 assertEquals(SimCheckPlan.unfilled(part), held, "part " + part + " has no pilot file, so nothing is filled");
             }
@@ -244,7 +244,110 @@ public class SimCheckPlanTest {
                 b.toString().replace("time\tP2\t25\n", ""), b.toString().replace("v\tF15", "v\tF05")}) {
             Files.write(file, broken.getBytes(StandardCharsets.UTF_8));
             assertThrows(IllegalArgumentException.class, () -> SimCheckPlan.Pilot.read(file),
-                    "a pilot file missing a figure, naming another part's or 70%'s, or repeating one is refused");
+                    "a pilot file with an sd line and no exact line, naming another part's figure or a V at 70%, "
+                            + "repeating a line or lacking a time is refused");
+        }
+        // A file that leaves out every line of a figure is one bundle's pilot, which the reader takes;
+        // the part's files together must still hold it.
+        Files.write(file, b.toString().replaceAll("(sd|v|exact)\tF04\t[^\n]*\n", "").getBytes(StandardCharsets.UTF_8));
+        assertFalse(SimCheckPlan.Pilot.read(file).sd.containsKey("F04"));
+        IllegalArgumentException none = assertThrows(IllegalArgumentException.class,
+                () -> SimCheckPlan.Pilots.read(List.of(file)));
+        assertTrue(none.getMessage().startsWith("no pilot file of part 1 holds F04 "), none.getMessage());
+    }
+
+    /** A pilot file of the part with the figures held, at the times given, every SD the assumed one. */
+    static Path pilotFile(Path dir, String name, int part, java.util.function.Predicate<SimCheckPlan.Figure> holds,
+                          double setup, double p3, double p2, double extra) throws Exception {
+        StringBuilder b = new StringBuilder(String.format(Locale.ROOT, "part\t%d\nsetup\t%s\ntime\tP3\t%s\ntime\tP2\t%s\n"
+                + "time\textra\t%s\n", part, setup, p3, p2, extra));
+        List<SimCheckPlan.Figure> held = new ArrayList<>();
+        for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+            if (f.part == part && holds.test(f)) {
+                held.add(f);
+            }
+        }
+        for (SimCheckPlan.Figure f : held) {
+            b.append("sd\t").append(f.id).append('\t').append(f.bets.equals("flat") ? 1.16 : 2.4).append('\n');
+        }
+        for (SimCheckPlan.Figure f : held) {
+            if (f.p2()) {
+                b.append("v\t").append(f.id).append('\t').append(SimCheckPlan.vEqual(2.4)).append('\n');
+            }
+        }
+        for (SimCheckPlan.Figure f : held) {
+            b.append("exact\t").append(f.id).append('\t').append(1.8e-4).append('\n');
+        }
+        return Files.write(dir.resolve(name), b.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Part 2's pilot as row 8 runs it (INTEGRATION.md open item 17): one file a bundle, the
+     * replay's (F26 to F48), the page look's two (F49 and F51; F50 and F52), and the pilot on part
+     * 1's bundle, which holds no figure of part 2 and times the planted runs' halves there (SIM_CHECK.md
+     * section 10). One block: the bundles' setups, P3s and P2s added; the extras of the replay's
+     * bundle and of part 1's, where the main run plays them, and not the page look's; the same block
+     * whatever the order the files are given in; the sizes the block gives read back by SiteSim's
+     * plan reader. Refused: a figure in two files, a figure in none, two files with no figure, a
+     * part 1 file with none, and files of two parts.
+     */
+    @Test
+    public void severalFilesOneABundleFillOnePartsBlock(@TempDir Path dir) throws Exception {
+        java.util.function.Predicate<SimCheckPlan.Figure> look = f -> f.count.equals("F1") || f.count.equals("F2");
+        Path replay = pilotFile(dir, "sim-pilot-part2-replay.tsv", 2, look.negate(), 40, 50, 40, 40);
+        Path first = pilotFile(dir, "sim-pilot-part2-look-first.tsv", 2,
+                f -> look.test(f) && f.play == SimCheckPlan.Play.FIRST, 10, 10, 10, 9);
+        Path full = pilotFile(dir, "sim-pilot-part2-look-full.tsv", 2,
+                f -> look.test(f) && f.play == SimCheckPlan.Play.FULL, 11, 10, 10, 8);
+        Path onPart1 = pilotFile(dir, "sim-pilot-part2-part1-bundle.tsv", 2, f -> false, 12, 20, 20, 30);
+        pilotFile(dir, "sim-pilot-part1.tsv", 1, f -> true, 30, 20, 25, 0);
+        SimCheckPlan.Pilots p = SimCheckPlan.Pilots.read(List.of(replay, onPart1, full, first));
+        assertEquals(61, p.setup, 0, "the three bundles' setups, not part 1's bundle's");
+        assertEquals(70, p.p3, 0);
+        assertEquals(60, p.p2, 0);
+        assertEquals(70, p.extra, 0, "the replay bundle's extras and part 1's, not the page look's");
+        String block = SimCheckPlan.fill(p);
+        assertTrue(block.contains("- Part 2. Setup 61 s; at full size P3 7000 s, P2 6000 s, fixed extras 7000 s; budget "
+                + "16200 s."), block);
+        // 16,200 - 61 - 7,000 = 9,139 s for 13,000 s at full size: f = 0.703, 26 chunks, K = 84,000.
+        assertTrue(block.contains("- f = 0.703: P3 26 chunks (26,000,000 shoes), P2 K = 84,000 "), block);
+        assertTrue(block.contains("sim-pilot-part2-replay.tsv: F26 to F48 (23 figures); setup 40 s, at 1% P3 50 s, P2 "
+                + "40 s, extras 40 s; all counted."), block);
+        assertTrue(block.contains("sim-pilot-part2-look-first.tsv: F49, F51 (2 figures)"), block);
+        assertTrue(block.contains("its extras not counted"), block);
+        assertTrue(block.contains("sim-pilot-part2-part1-bundle.tsv: no figure of part 2"), block);
+        for (int k = 0; k < 2; k++) {
+            assertTrue(block.contains("| F49.P" + (3 - k) + " |") && block.contains("| F26.P" + (3 - k) + " |"), block);
+        }
+        assertEquals(block, SimCheckPlan.fill(SimCheckPlan.Pilots.read(List.of(first, full, onPart1, replay))),
+                "the same block whatever the order of the files");
+        List<Path> found = SimCheckPlan.pilotFiles(dir, 2);
+        assertEquals(4, found.size(), found.toString());
+        assertEquals(block, SimCheckPlan.fill(SimCheckPlan.Pilots.read(found)));
+        assertEquals(1, SimCheckPlan.pilotFiles(dir, 1).size());
+        String doc = new String(Files.readAllBytes(ROOT.resolve("SIM_CHECK.md")), StandardCharsets.UTF_8)
+                .replace(SimCheckPlan.unfilled(2), block);
+        SiteSim.Plan plan = SiteSim.Plan.read(Files.write(dir.resolve("SIM_CHECK.md"), doc.getBytes(StandardCharsets.UTF_8)));
+        assertArrayEquals(new long[]{26, 84_000}, plan.sizes.get(2), "SiteSim holds part 2's runs to the block's sizes");
+
+        Path twice = pilotFile(dir, "twice.tsv", 2, f -> look.test(f) && f.play == SimCheckPlan.Play.FIRST
+                || f.id.equals("F50"), 10, 10, 10, 9);
+        String[][] refused = {
+                {"F50 is in both", twice.toString(), full.toString(), replay.toString(), onPart1.toString()},
+                {"no pilot file of part 2 holds F50, F52", replay.toString(), first.toString(), onPart1.toString()},
+                {"pilot files with no figure of part 2", replay.toString(), first.toString(), full.toString(),
+                        onPart1.toString(), pilotFile(dir, "empty.tsv", 2, f -> false, 1, 1, 1, 1).toString()},
+                {"pilot files with no figure of part 1", dir.resolve("sim-pilot-part1.tsv").toString(),
+                        pilotFile(dir, "empty1.tsv", 1, f -> false, 1, 1, 1, 0).toString()},
+                {"one block is one part's", replay.toString(), first.toString(), full.toString(),
+                        dir.resolve("sim-pilot-part1.tsv").toString()}};
+        for (String[] r : refused) {
+            List<Path> files = new ArrayList<>();
+            for (int k = 1; k < r.length; k++) {
+                files.add(Paths.get(r[k]));
+            }
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> SimCheckPlan.Pilots.read(files));
+            assertTrue(e.getMessage().contains(r[0]), r[0] + ": " + e.getMessage());
         }
     }
 }

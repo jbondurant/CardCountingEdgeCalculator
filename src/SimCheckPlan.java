@@ -591,8 +591,16 @@ final class SimCheckPlan {
         }
     }
 
-    /** A pilot's measurements, read from its TSV (SIM_CHECK.md section 8 gives the format). */
+    /**
+     * One pilot file's measurements, read from its TSV (SIM_CHECK.md section 8 gives the format):
+     * the pilot of one bundle. A part whose figures are in several bundles has one file a bundle,
+     * each holding the figures its bundle has, and {@link Pilots} puts them together. A file of part
+     * 2 that holds no figure of it is the pilot run on part 1's bundle, which times the planted
+     * runs' halves played there (section 10).
+     */
     static final class Pilot {
+        /** The file's name, which the filled block gives. */
+        String name = "";
         int part;
         double setup = Double.NaN;
         double p3 = Double.NaN;
@@ -604,6 +612,7 @@ final class SimCheckPlan {
 
         static Pilot read(Path file) throws IOException {
             Pilot p = new Pilot();
+            p.name = file.getFileName().toString();
             List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             for (String line : lines) {
                 if (line.isEmpty() || line.startsWith("#")) {
@@ -626,45 +635,58 @@ final class SimCheckPlan {
                         } else if (t[1].equals("extra")) {
                             p.extra = s;
                         } else {
-                            throw new IllegalArgumentException("unknown time: " + line);
+                            throw new IllegalArgumentException(p.name + ": unknown time: " + line);
                         }
                         break;
                     case "sd":
-                        put(p.sd, t, line);
+                        put(p, p.sd, t, line);
                         break;
                     case "v":
-                        put(p.v, t, line);
+                        put(p, p.v, t, line);
                         break;
                     case "exact":
-                        put(p.exact, t, line);
+                        put(p, p.exact, t, line);
                         break;
                     default:
-                        throw new IllegalArgumentException("unknown line: " + line);
+                        throw new IllegalArgumentException(p.name + ": unknown line: " + line);
                 }
             }
             p.check();
             return p;
         }
 
-        private static void put(Map<String, Double> m, String[] t, String line) {
+        private static void put(Pilot p, Map<String, Double> m, String[] t, String line) {
             if (t.length != 3 || m.put(t[1], Double.parseDouble(t[2])) != null) {
-                throw new IllegalArgumentException("malformed or repeated: " + line);
+                throw new IllegalArgumentException(p.name + ": malformed or repeated: " + line);
             }
         }
 
-        /** Every figure of the part has its SD and exact SE, every 80% one its V, and nothing else is there. */
+        /**
+         * The file agrees with itself: part 1 or 2, every time and the setup there, every sd line a
+         * figure of its part in the registry's order, an exact line for each and for nothing else, a
+         * v line for each at 80% and for nothing else. Which figures the file holds is its bundle's
+         * business; that the part's files hold every figure once is Pilots'.
+         */
         void check() {
+            if (part != 1 && part != 2) {
+                throw new IllegalArgumentException(name + ": a pilot file names part 1 or 2, not " + part);
+            }
             if (Double.isNaN(setup) || Double.isNaN(p3) || Double.isNaN(p2) || Double.isNaN(extra)) {
-                throw new IllegalArgumentException("the pilot file lacks a time or the setup");
+                throw new IllegalArgumentException(name + ": the pilot file lacks a time or the setup");
             }
             List<String> want = new ArrayList<>();
             List<String> want80 = new ArrayList<>();
             for (Figure f : figures()) {
-                if (f.part == part) {
+                if (f.part == part && sd.containsKey(f.id)) {
                     want.add(f.id);
                     if (f.p2()) {
                         want80.add(f.id);
                     }
+                }
+            }
+            for (String id : sd.keySet()) {
+                if (!want.contains(id)) {
+                    throw new IllegalArgumentException(name + ": its sd line " + id + " is no figure of part " + part);
                 }
             }
             same("sd", sd, want);
@@ -672,17 +694,197 @@ final class SimCheckPlan {
             same("v", v, want80);
         }
 
-        private static void same(String what, Map<String, Double> m, List<String> want) {
+        private void same(String what, Map<String, Double> m, List<String> want) {
             if (!new ArrayList<>(m.keySet()).equals(want)) {
-                throw new IllegalArgumentException("the pilot's " + what + " lines must be, in order, " + want
+                throw new IllegalArgumentException(name + ": the pilot's " + what + " lines must be, in order, " + want
                         + "; they are " + m.keySet());
             }
             for (Map.Entry<String, Double> e : m.entrySet()) {
                 if (!(e.getValue() > 0) || Double.isInfinite(e.getValue())) {
-                    throw new IllegalArgumentException(what + " of " + e.getKey() + " must be positive and finite");
+                    throw new IllegalArgumentException(name + ": " + what + " of " + e.getKey() + " must be positive and finite");
                 }
             }
         }
+    }
+
+    /** A registered figure by its id. */
+    static Figure figure(String id) {
+        for (Figure f : figures()) {
+            if (f.id.equals(id)) {
+                return f;
+            }
+        }
+        throw new IllegalArgumentException("SIM_CHECK.md registers no figure " + id);
+    }
+
+    /**
+     * Whether part 2's main run plays its fixed extras on a figure's bundle: mode B and the moving
+     * count play F26 to F29's instances, the planted runs the planted figures (section 10).
+     */
+    static boolean extrasPlay(Figure f) {
+        if (plantedFigure(f)) {
+            return true;
+        }
+        for (Strategy s : strategies()) {
+            if (s.same(f) && s.modeB()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A part's pilot files together, one a bundle (INTEGRATION.md open item 17): part 1 is one
+     * bundle, part 2 three (the replay's and the page look's two) and, for the timing of the
+     * planted runs' halves on part 1's bundle, a pilot run there (section 10). Refused: files of
+     * two parts, a figure in two files, a figure of the part in none, a part 1 file with no figure,
+     * and two part 2 files with none.
+     *
+     * <p>What is counted. Each bundle with figures is a main run of its own, so its setup, P3 and
+     * P2 are added. A pilot of part 2 times the fixed extras on every bundle it is given, but the
+     * main run plays them only where their figures are: mode B, the moving count and the planted
+     * runs' second halves on the bundle holding F26 to F29, the planted runs' first halves on part
+     * 1's bundle. So a file's extras are added when it holds a figure the extras play
+     * ({@link #extrasPlay}), and the part 1 bundle's file adds its extras alone (its P3 and P2 are
+     * part 1's main run). Its extras also hold mode B's walk over shoes with no instance to play, a
+     * cost the main run does not have, which errs toward a smaller run.
+     */
+    static final class Pilots {
+        final int part;
+        final List<Pilot> files = new ArrayList<>();
+        double setup;
+        double p3;
+        double p2;
+        double extra;
+        final Map<String, Double> sd = new LinkedHashMap<>();
+        final Map<String, Double> v = new LinkedHashMap<>();
+        final Map<String, Double> exact = new LinkedHashMap<>();
+        /** What the block says each file gave, in the files' order. */
+        final List<String> said = new ArrayList<>();
+
+        static Pilots read(List<Path> files) throws IOException {
+            List<Pilot> read = new ArrayList<>();
+            for (Path f : files) {
+                read.add(Pilot.read(f));
+            }
+            return new Pilots(read);
+        }
+
+        Pilots(List<Pilot> given) {
+            if (given.isEmpty()) {
+                throw new IllegalArgumentException("fill takes at least one pilot file");
+            }
+            files.addAll(given);
+            files.sort((a, b) -> a.name.compareTo(b.name));
+            part = files.get(0).part;
+            Map<String, String> where = new LinkedHashMap<>();
+            List<String> empty = new ArrayList<>();
+            for (Pilot p : files) {
+                if (p.part != part) {
+                    throw new IllegalArgumentException(p.name + " is part " + p.part + "'s pilot and " + files.get(0).name
+                            + " part " + part + "'s; one block is one part's");
+                }
+                for (String id : p.sd.keySet()) {
+                    String was = where.put(id, p.name);
+                    if (was != null) {
+                        throw new IllegalArgumentException(id + " is in both " + was + " and " + p.name
+                                + "; each figure is measured on the one bundle that holds it");
+                    }
+                }
+                if (p.sd.isEmpty()) {
+                    empty.add(p.name);
+                }
+            }
+            if (part == 1 && !empty.isEmpty() || empty.size() > 1) {
+                throw new IllegalArgumentException("pilot files with no figure of part " + part + ": " + empty + "; only part "
+                        + "2 takes one, the pilot on part 1's bundle that times the planted runs there (section 10)");
+            }
+            List<String> none = new ArrayList<>();
+            for (Figure f : figures()) {
+                if (f.part != part) {
+                    continue;
+                }
+                if (!where.containsKey(f.id)) {
+                    none.add(f.id);
+                    continue;
+                }
+                for (Pilot p : files) {
+                    if (p.sd.containsKey(f.id)) {
+                        sd.put(f.id, p.sd.get(f.id));
+                        exact.put(f.id, p.exact.get(f.id));
+                        if (f.p2()) {
+                            v.put(f.id, p.v.get(f.id));
+                        }
+                    }
+                }
+            }
+            if (!none.isEmpty()) {
+                throw new IllegalArgumentException("no pilot file of part " + part + " holds " + ranges(none) + " (the files: "
+                        + names() + "); fill takes every bundle's pilot of the part at once");
+            }
+            for (Pilot p : files) {
+                String at = String.format(Locale.ROOT, "setup %.0f s, at 1%% P3 %.0f s, P2 %.0f s, extras %.0f s", p.setup,
+                        p.p3, p.p2, p.extra);
+                if (p.sd.isEmpty()) {
+                    extra += p.extra;
+                    said.add(p.name + ": no figure of part 2, so part 1's bundle, where the planted runs' first halves are "
+                            + "played (section 10); " + at + "; its extras alone counted");
+                    continue;
+                }
+                setup += p.setup;
+                p3 += p.p3;
+                p2 += p.p2;
+                boolean extras = part == 1 || p.sd.keySet().stream().anyMatch(id -> extrasPlay(figure(id)));
+                extra += extras ? p.extra : 0;
+                said.add(p.name + ": " + ranges(new ArrayList<>(p.sd.keySet())) + " (" + p.sd.size() + " figure"
+                        + (p.sd.size() == 1 ? "" : "s") + "); " + at + (extras ? "; all counted"
+                        : "; its extras not counted, since the main run plays no extra on its bundle"));
+            }
+        }
+
+        String names() {
+            List<String> n = new ArrayList<>();
+            for (Pilot p : files) {
+                n.add(p.name);
+            }
+            return String.join(", ", n);
+        }
+    }
+
+    /** Figure ids in the registry's order, a run of three or more consecutive ones as "F26 to F48". */
+    static String ranges(List<String> ids) {
+        List<String> out = new ArrayList<>();
+        int i = 0;
+        while (i < ids.size()) {
+            int j = i;
+            while (j + 1 < ids.size() && number(ids.get(j + 1)) == number(ids.get(j)) + 1) {
+                j++;
+            }
+            if (j - i >= 2) {
+                out.add(ids.get(i) + " to " + ids.get(j));
+            } else {
+                for (int k = i; k <= j; k++) {
+                    out.add(ids.get(k));
+                }
+            }
+            i = j + 1;
+        }
+        return String.join(", ", out);
+    }
+
+    private static int number(String id) {
+        return Integer.parseInt(id.substring(1));
+    }
+
+    /** A part's pilot files committed in a directory: sim-pilot-partN.tsv and sim-pilot-partN-NAME.tsv, by name. */
+    static List<Path> pilotFiles(Path dir, int part) throws IOException {
+        List<Path> out = new ArrayList<>();
+        java.util.regex.Pattern name = java.util.regex.Pattern.compile("sim-pilot-part" + part + "(-[A-Za-z0-9._-]+)?\\.tsv");
+        try (java.util.stream.Stream<Path> s = Files.list(dir.toAbsolutePath())) {
+            s.filter(p -> name.matcher(p.getFileName().toString()).matches() && Files.isRegularFile(p)).forEach(out::add);
+        }
+        out.sort((a, b) -> a.getFileName().toString().compareTo(b.getFileName().toString()));
+        return out;
     }
 
     // ---- The blocks SIM_CHECK.md holds between markers, printed here.
@@ -923,12 +1125,22 @@ final class SimCheckPlan {
     /**
      * The block a pilot fills in: the factor, the sizes, any stop, and for every test of the part
      * the SE the sizes give, the exact side's, the combined SE and the bias caught 90% and 95% of
-     * the time. Pasted into SIM_CHECK.md section 8 under the pilot file's name, which is
+     * the time. Pasted into SIM_CHECK.md section 8 under the pilot files' names, which are
      * committed beside it, so SimCheckPlanTest can print it again.
      */
     static String fill(Pilot p) {
+        return fill(new Pilots(List.of(p)));
+    }
+
+    /** The block of a part's pilot files together: what each gave, then the sizes the sums give. */
+    static String fill(Pilots p) {
         Sizes s = new Sizes(p.part, p.setup, p.p3, p.p2, p.extra);
         StringBuilder b = new StringBuilder();
+        b.append(String.format(Locale.ROOT, "- Part %d's pilot, %d file%s, one a bundle:%n", p.part, p.files.size(),
+                p.files.size() == 1 ? "" : "s"));
+        for (String said : p.said) {
+            b.append("  - ").append(said).append(".\n");
+        }
         b.append(String.format(Locale.ROOT, "- Part %d. Setup %.0f s; at full size P3 %.0f s, P2 %.0f s, fixed "
                 + "extras %.0f s; budget %.0f s.%n", s.part, s.setup, s.p3Full, s.p2Full, s.extraFull, s.budget()));
         b.append(String.format(Locale.ROOT, "- f = %.3f: P3 %d chunks (%s shoes), P2 K = %s (%s re-deals); "
@@ -983,10 +1195,10 @@ final class SimCheckPlan {
         return "Not filled: part " + part + "'s pilot has not run.\n";
     }
 
-    /** A part's fill block: printed from its committed pilot file if there is one, else unfilled. */
+    /** A part's fill block: printed from its committed pilot files if there are any (pilotFiles), else unfilled. */
     static String fillBlock(int part) throws IOException {
-        Path pilot = Paths.get("sim-pilot-part" + part + ".tsv");
-        return Files.exists(pilot) ? fill(Pilot.read(pilot)) : unfilled(part);
+        List<Path> files = pilotFiles(Paths.get(""), part);
+        return files.isEmpty() ? unfilled(part) : fill(Pilots.read(files));
     }
 
     static String open(String name) {
@@ -1010,7 +1222,8 @@ final class SimCheckPlan {
 
     /**
      * No argument: every block, between its markers, to paste into SIM_CHECK.md. "block NAME": one.
-     * "fill PILOT.tsv": the block a pilot fills in.
+     * "fill PILOT.tsv ...": the block a part's pilot files fill in, one file a bundle, taken in the
+     * order of their names whatever the order given.
      */
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
@@ -1023,10 +1236,14 @@ final class SimCheckPlan {
             }
         } else if (args.length == 2 && args[0].equals("block")) {
             System.out.print(block(args[1]));
-        } else if (args.length == 2 && args[0].equals("fill")) {
-            System.out.print(fill(Pilot.read(Paths.get(args[1]))));
+        } else if (args.length >= 2 && args[0].equals("fill")) {
+            List<Path> files = new ArrayList<>();
+            for (int k = 1; k < args.length; k++) {
+                files.add(Paths.get(args[k]));
+            }
+            System.out.print(fill(Pilots.read(files)));
         } else {
-            System.err.println("usage: SimCheckPlan [block NAME | fill PILOT.tsv]");
+            System.err.println("usage: SimCheckPlan [block NAME | fill PILOT.tsv [PILOT.tsv ...]]");
             System.exit(2);
         }
     }
