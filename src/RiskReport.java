@@ -72,11 +72,14 @@ import java.util.TreeMap;
  *   {@code z FIG CHECK Z} for each of the figure's tests (P3, and P2 at 80%).
  * - records-FIG.tsv, one shoe a line in shoe order: {@code Y N M}, M the shoe's lowest running total.
  * - fan-FIG.tsv, one path a line: {@code J W100 W200 ... W100000}, the cumulative win every 100 rounds.
+ * - trip-FIG.tsv and ruin-FIG.tsv are the simulator's own (sim/QUESTIONS.md item 27); with --trip
+ *   and --ruin each is set beside this report's own from the same records, in the report only.
  *
  * java -Xmx3g -cp build/classes:lib/mongo-java-driver-3.12.14.jar RiskReport --commit SHA
  *      --source c06c061=runs/full-index/full-c06c061/results.ser --source step7=runs/report-ceiling-97bf834.ser
  *      [--source step8=PATH] [--source replay=PATH] --widening runs/full-index/pilot-1417-100.txt
- *      --swings DIR/swings.tsv [--records FIG=PATH ...] [--fan FIG=PATH] --md OUT.md --json OUT.json
+ *      --swings DIR/swings.tsv [--swings ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--trip FIG=PATH ...]
+ *      [--fan FIG=PATH] --md OUT.md --json OUT.json
  */
 final class RiskReport {
 
@@ -639,6 +642,168 @@ final class RiskReport {
         return new Object[]{new double[]{mu, sigma}, rows};
     }
 
+    /** trip-FIG.tsv's header, as the simulator writes it (sim/QUESTIONS.md items 24 and 27). */
+    static final String TRIP_HEADER = "kind\thours\tpace\trounds\tblocks\tmeanRounds\trisk\tbankroll\tsimulated\tse\tformula";
+
+    /**
+     * One line of the simulator's trip-FIG.tsv beside this report's own from the same records: the
+     * simulator's block count, mean rounds, simulated share, its SE and its formula; this report's
+     * blocks of the same T rounds at the simulator's bankroll (RiskMath.blocks) and its formula at
+     * the records' mu and sigma_eff over T itself, as the simulator takes it (RiskMath.tripRuin and
+     * RiskMath.behind).
+     */
+    static final class TripLine {
+        /** "behind" or "trip". */
+        String kind;
+        int hours;
+        int pace;
+        long rounds;
+        int blocks;
+        double meanRounds;
+        /** For a trip line: the risk p whose B_p it plays, and B_p; NaN for a behind line. */
+        double risk = Double.NaN;
+        double bankroll = Double.NaN;
+        double simulated;
+        double se;
+        double simFormula;
+        /** This report's own, from the same records. */
+        RiskMath.Blocks own;
+        double formula;
+
+        boolean trip() {
+            return kind.equals("trip");
+        }
+
+        /** This report's count of lost trips or of blocks behind, over its own blocks. */
+        double ownShare() {
+            return (double) (trip() ? own.ruined[0] : own.behind) / own.blocks;
+        }
+
+        /** The simulator's simulated share less this report's formula, in binomial SEs at the formula. */
+        double gap() {
+            double s = RiskMath.binomialSe(formula, blocks);
+            return s == 0 ? (simulated == formula ? 0 : Double.POSITIVE_INFINITY) : (simulated - formula) / s;
+        }
+    }
+
+    /** trip-FIG.tsv: {mu, sigma_eff} from its comment lines, then its lines, header held to TRIP_HEADER. */
+    static Object[] readTrip(Path file) throws IOException {
+        double mu = Double.NaN;
+        double sigma = Double.NaN;
+        List<TripLine> rows = new ArrayList<>();
+        boolean header = false;
+        for (String l : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (l.startsWith("# mu\t")) {
+                mu = Double.parseDouble(l.substring(5));
+            } else if (l.startsWith("# sigmaEff\t")) {
+                sigma = Double.parseDouble(l.substring(11));
+            } else if (l.startsWith("#") || l.isEmpty()) {
+                continue;
+            } else if (!header) {
+                if (!l.equals(TRIP_HEADER)) {
+                    throw new IllegalArgumentException(file + "'s header is not the simulator's trip header: " + l);
+                }
+                header = true;
+            } else {
+                String[] f = l.split("\t", -1);
+                if (f.length != 11 || !(f[0].equals("trip") || f[0].equals("behind"))) {
+                    throw new IllegalArgumentException(file + ": " + l);
+                }
+                TripLine t = new TripLine();
+                t.kind = f[0];
+                t.hours = Integer.parseInt(f[1]);
+                t.pace = Integer.parseInt(f[2]);
+                t.rounds = Long.parseLong(f[3]);
+                t.blocks = Integer.parseInt(f[4]);
+                t.meanRounds = Double.parseDouble(f[5]);
+                if (t.trip()) {
+                    t.risk = Double.parseDouble(f[6]);
+                    t.bankroll = Double.parseDouble(f[7]);
+                } else if (!f[6].equals("-") || !f[7].equals("-")) {
+                    throw new IllegalArgumentException(file + ": a behind line names a risk or a bankroll: " + l);
+                }
+                t.simulated = Double.parseDouble(f[8]);
+                t.se = Double.parseDouble(f[9]);
+                t.simFormula = Double.parseDouble(f[10]);
+                rows.add(t);
+            }
+        }
+        if (Double.isNaN(mu) || Double.isNaN(sigma) || rows.isEmpty()) {
+            throw new IllegalArgumentException(file + " gives no mu, sigma_eff or trip line");
+        }
+        return new Object[]{new double[]{mu, sigma}, rows};
+    }
+
+    /** Within 1e-9 of b, relative. */
+    private static boolean near(double a, double b) {
+        return Math.abs(a - b) <= 1e-9 * Math.abs(b);
+    }
+
+    /**
+     * The simulator's trip file set beside this report's own from the same records (check 4, "the
+     * same for trip risk and P(behind)"). Failures, each added to the outcome's: moments that are
+     * not the records' (within 1e-9 relative), a T other than hours x pace, a bankroll other than
+     * the records' B_p, blocks, mean rounds or a simulated share other than this report's own count
+     * on the same records (the two cut the records by one rule, so only a bug parts them), and a
+     * formula more than 1e-9 from this report's. The gap of each simulated share from this report's
+     * formula is reported, as check 4's other gaps are, never a gate.
+     */
+    static void trip(Outcome o, RuinCheck c, RiskMath.Records rec, Path file) throws IOException {
+        Object[] read = readTrip(file);
+        double[] m = (double[]) read[0];
+        if (!near(m[0], c.mu) || !near(m[1], c.sigma)) {
+            o.failures.add(file + " gives mu " + m[0] + " and sigma_eff " + m[1] + "; records-" + c.figure + ".tsv gives "
+                    + c.mu + " and " + c.sigma + ": the two were not made from the same records");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        List<TripLine> lines = (List<TripLine>) read[1];
+        int before = o.failures.size();
+        double formulaGap = 0;
+        double gapMax = 0;
+        int beyond2 = 0;
+        for (TripLine t : lines) {
+            String at = file.getFileName() + ", " + t.kind + " at " + t.hours + " h of " + t.pace + " rounds"
+                    + (t.trip() ? " from B_" + pct(t.risk) : "");
+            if (t.rounds != (long) t.hours * t.pace || t.blocks < 1) {
+                o.failures.add(at + ": " + t.rounds + " rounds in " + t.blocks + " blocks, not hours x pace in at least one");
+                continue;
+            }
+            if (t.trip() && !near(t.bankroll, RiskMath.bankrollFor(t.risk, c.mu, c.sigma))) {
+                o.failures.add(at + ": a bankroll of " + t.bankroll + ", and the records' B_" + pct(t.risk) + " is "
+                        + RiskMath.bankrollFor(t.risk, c.mu, c.sigma));
+                continue;
+            }
+            t.own = RiskMath.blocks(rec, t.rounds, t.trip() ? new double[]{t.bankroll} : new double[0], c.mu, c.sigma);
+            t.formula = t.trip() ? RiskMath.tripRuin(c.mu, c.sigma, t.bankroll, t.rounds) : RiskMath.behind(c.mu, c.sigma,
+                    t.rounds);
+            if (t.own.blocks != t.blocks || !near(t.meanRounds, t.own.meanRounds) || t.ownShare() != t.simulated) {
+                o.failures.add(at + ": the simulator's " + t.blocks + " blocks of mean " + t.meanRounds + " rounds and share "
+                        + t.simulated + "; this report cuts the same records into " + t.own.blocks + " of mean "
+                        + t.own.meanRounds + " with share " + t.ownShare());
+            }
+            if (!(Math.abs(t.simFormula - t.formula) <= 1e-9)) {
+                o.failures.add(at + ": the simulator's formula gives " + t.simFormula + ", this report's " + t.formula);
+            }
+            formulaGap = Math.max(formulaGap, Math.abs(t.simFormula - t.formula));
+            gapMax = Math.max(gapMax, Math.abs(t.gap()));
+            beyond2 += Math.abs(t.gap()) > 2 ? 1 : 0;
+        }
+        c.trip = lines;
+        c.tripFile = file.getFileName().toString();
+        if (o.failures.size() == before) {
+            c.tripAgreement = String.format(Locale.ROOT, "The simulator's trip risk and chance of being behind (%s), %d lines, "
+                    + "beside this report's formula at the simulator's bankrolls (B_25%%, B_5%%, B_1%%) and its hours and paces: "
+                    + "its blocks and the trips lost and behind in them are this report's own count from the same records, "
+                    + "line for line; its formula column is this report's within %.1e; its simulated shares lie within %.2f "
+                    + "binomial SEs of this report's formula, %d of %d lines beyond 2.", c.tripFile, lines.size(), formulaGap,
+                    gapMax, beyond2, lines.size());
+            o.passed.add(c.figure + ": " + c.tripFile + "'s " + lines.size() + " lines are this report's own blocks and counts "
+                    + "from the same records, and its formula is this report's within " + String.format(Locale.ROOT, "%.1e",
+                    formulaGap));
+        }
+    }
+
     /** Reads swings.tsv in the format the class comment fixes; refuses anything else in it. */
     static Map<String, Swing> readSwings(List<String> lines) {
         Map<String, Swing> out = new TreeMap<>();
@@ -900,6 +1065,10 @@ final class RiskReport {
          */
         double[] simMoments;
         List<double[]> sim;
+        /** The simulator's trip-FIG.tsv beside this report's own (trip), its file's name, and the agreement stated; null when not given. */
+        List<TripLine> trip;
+        String tripFile;
+        String tripAgreement;
         /** Blocks of H r rounds, by HOURS then RATES. */
         final List<RiskMath.Blocks> blocks = new ArrayList<>();
         double seconds;
@@ -1335,6 +1504,19 @@ final class RiskReport {
                             r[6], r[7]);
                 }
             }
+            if (c.trip != null) {
+                out.println();
+                out.println(c.tripAgreement);
+                out.println();
+                out.println("| Kind | Hours | Rounds an hour | T | Blocks | Risk | Bankroll | Simulated | SE | This report's formula "
+                        + "| The simulator's formula | Gap / SE |");
+                out.println("|---|---|---|---|---|---|---|---|---|---|---|---|");
+                for (TripLine t : c.trip) {
+                    out.printf("| %s | %d | %d | %d | %d | %s | %s | %.4f | %.4f | %.6f | %.6f | %+.2f |%n", t.kind, t.hours, t.pace,
+                            t.rounds, t.blocks, t.trip() ? pct(t.risk) : "-", t.trip() ? String.format("%.0f", t.bankroll) : "-",
+                            t.simulated, t.se, t.formula, t.simFormula, t.gap());
+                }
+            }
             out.println();
             out.println("| Block | Blocks | Behind: formula, simulated, gap / SE | " + tripHeads() + " |");
             out.println("|---|---|---|" + "---|".repeat(TRIP_BANKROLLS.length));
@@ -1643,6 +1825,19 @@ final class RiskReport {
     static Outcome run(Map<String, Path> sources, Path pilot, List<Path> swingsFiles, Map<String, Path> recordFiles,
                        Map<String, Path> ruinFiles, String fanFigure, Path fanFile, String commit, Path md, Path json)
             throws Exception {
+        return run(sources, pilot, swingsFiles, recordFiles, ruinFiles, new LinkedHashMap<>(), fanFigure, fanFile, commit, md,
+                json);
+    }
+
+    /**
+     * The same, with the simulator's trip risk and chance of being behind (trip-FIG.tsv, INTEGRATION.md
+     * open item 19) set beside this report's formula at the simulator's bankrolls and hours (trip). The
+     * page shows this report's own trip risk, at TRIP_BANKROLLS, as before; the simulator's goes into
+     * the report beside it, with the agreement stated.
+     */
+    static Outcome run(Map<String, Path> sources, Path pilot, List<Path> swingsFiles, Map<String, Path> recordFiles,
+                       Map<String, Path> ruinFiles, Map<String, Path> tripFiles, String fanFigure, Path fanFile, String commit,
+                       Path md, Path json) throws Exception {
         for (Path out : new Path[]{md, json}) {
             if (Files.exists(out)) {
                 throw new IllegalStateException(out + " is already there; a report is never written over");
@@ -1677,6 +1872,18 @@ final class RiskReport {
             List<double[]> rows = (List<double[]>) read[1];
             c.sim = rows;
         }
+        for (Map.Entry<String, Path> t : tripFiles.entrySet()) {
+            RuinCheck c = null;
+            for (RuinCheck x : o.ruin) {
+                c = x.figure.equals(t.getKey()) ? x : c;
+            }
+            if (c == null) {
+                o.failures.add("trip-" + t.getKey() + ".tsv was given, and no ruin check of " + t.getKey() + " was made (its "
+                        + "records were not given, or its row was not computed)");
+                continue;
+            }
+            trip(o, c, records.get(t.getKey()), t.getValue());
+        }
         if (!o.failures.isEmpty()) {
             throw new IllegalStateException("the risk figures fail their checks, so nothing is written:\n"
                     + String.join("\n", o.failures));
@@ -1692,6 +1899,9 @@ final class RiskReport {
             inputs.put(f.toString(), sha256(f));
         }
         for (Path f : ruinFiles.values()) {
+            inputs.put(f.toString(), sha256(f));
+        }
+        for (Path f : tripFiles.values()) {
             inputs.put(f.toString(), sha256(f));
         }
         for (Path p : recordFiles.values()) {
@@ -1739,6 +1949,7 @@ final class RiskReport {
         Path pilot = null;
         List<Path> swings = new ArrayList<>();
         Map<String, Path> ruin = new LinkedHashMap<>();
+        Map<String, Path> trip = new LinkedHashMap<>();
         Path md = null;
         Path json = null;
         String commit = null;
@@ -1750,6 +1961,7 @@ final class RiskReport {
                 case "--widening": pilot = Paths.get(args[++k]); break;
                 case "--swings": swings.add(Paths.get(args[++k])); break;
                 case "--ruin": put(ruin, args[++k]); break;
+                case "--trip": put(trip, args[++k]); break;
                 case "--md": md = Paths.get(args[++k]); break;
                 case "--json": json = Paths.get(args[++k]); break;
                 case "--commit": commit = args[++k]; break;
@@ -1758,13 +1970,13 @@ final class RiskReport {
         }
         if (sources.isEmpty() || swings.isEmpty() || md == null || json == null || commit == null || fan.size() > 1) {
             System.err.println("usage: RiskReport --commit SHA --source NAME=PATH ... [--widening PILOT] --swings FILE "
-                    + "[--swings FILE ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--fan FIG=PATH] --md OUT.md "
-                    + "--json OUT.json");
+                    + "[--swings FILE ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--trip FIG=PATH ...] [--fan FIG=PATH] "
+                    + "--md OUT.md --json OUT.json");
             System.exit(2);
         }
         String fanFigure = fan.isEmpty() ? null : fan.keySet().iterator().next();
-        Outcome o = run(sources, pilot, swings, records, ruin, fanFigure, fan.isEmpty() ? null : fan.get(fanFigure), commit,
-                md, json);
+        Outcome o = run(sources, pilot, swings, records, ruin, trip, fanFigure, fan.isEmpty() ? null : fan.get(fanFigure),
+                commit, md, json);
         int computed = 0;
         for (Row r : o.rows) {
             computed += r.computed() ? 1 : 0;
