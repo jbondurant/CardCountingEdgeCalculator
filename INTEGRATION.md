@@ -177,6 +177,28 @@ the two lanes' commits:
   failed its test: the reader's depth.tsv header one name off, and the pilot writing its SDs in
   percent.
 
+**On site-last-a** (14 October, late: open items 17 to 20), each class alone in the same way,
+compiled from the worktree at 67c655d with nothing uncommitted, beside the real 7.2 run and
+another lane's tests. src/ changed only in SimCheckPlan, SiteSim, SiteSimReported and RiskReport;
+sim/ not at all.
+
+| Class | Passed | Skipped | Failed | Seconds |
+|---|---|---|---|---|
+| SimCheckPlanTest | 10 of 10 | 0 | 0 | 4 |
+| SiteSimTest | 7 of 7 | 0 | 0 | 5 |
+| SimReadsExportTest | 3 of 3 | 0 | 0 | 18 |
+| SimReadsWidePlansTest (new) | 3 of 3 | 0 | 0 | 77 |
+| RiskSwingsAndRuinTest | 2 of 2 | 0 | 0 | 8 |
+| RiskReportTest | 16 of 16 | 0 | 0 | 21 |
+| SiteRiskTest | 2 of 2 | 0 | 0 | 4 |
+| WidePlansExportTest | 8 of 8 | 0 | 0 | 70 |
+| SitePageTest | 5 of 5 | 0 | 0 | 68 |
+| CeilingScoringTest | 9 of 9 | 0 | 0 | 29 |
+
+Not run there: StoredResultsTest, which reads c06c061's results.ser in place (that lane did not
+touch runs/full-index/full-c06c061/); no scoring class changed, and CeilingScoringTest holds the
+published counts' scores to the bit.
+
 ## 3. What is wired end to end
 
 "Wired" means each stage writes a file the next stage's code reads, with the formats held by a
