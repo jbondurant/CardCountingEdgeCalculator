@@ -35,11 +35,22 @@ import java.util.regex.Pattern;
  *   registered test met twice, or a registered test of a part the runs cover not met at all.
  * A comparison the registry does not name is reported in the table and is not a test.
  *
- * Planted runs (--planted NAME=DIR, NAME a switch of SIM_CHECK.md section 10 or none for the clean
- * control): each must have its switch on and every other off, the sizes of SHOE_SPEC.md answer 12
- * (P3 on one chunk, P2 at K = 6,000), and the part 2 bundle and commit; the page block gives which
- * D checks failed, every test's z on the planted figures, the largest, whether the run was caught
- * and whether by the z tests alone, and the bias each test catches 90% and 95% of the time.
+ * Part 2's runs across its bundles (INTEGRATION.md open item 17). Part 2's figures are in three
+ * bundles, each run on its own and held to the one section 8 block its pilot files fill
+ * (SimCheckPlan.Pilots), every bundle one the identity table names for part 2, and the union of
+ * the runs making each registered test once. P3 and P2 play the chart's walk on every bundle, so
+ * a part 2 summary also compares F01 to F03 (F03 alone in P2), with no exact side, since only part
+ * 1's bundle exports the chart's row. Those comparisons are the chart's walk and not tests of the
+ * run; they are left out (chartWalk). A comparison of a part 1 figure with an exact side in a part
+ * 2 summary, or the chart's without one in a part 1 summary, is still refused or failed.
+ *
+ * Planted runs (--planted NAME=DIR, given twice for each NAME, NAME a switch of SIM_CHECK.md
+ * section 10 or none for the clean control): each half must have its switch on and every other
+ * off and the sizes of SHOE_SPEC.md answer 12 (P3 on one chunk, P2 at K = 6,000), one half on the
+ * bundle the identity table names for part 1 and one on part 2's (section 10, open item 18), and
+ * the two must make the run's 14 tests once; the page block gives which D checks failed in either
+ * half, every test's z on the planted figures, the largest, whether the run was caught and
+ * whether by the z tests alone, and the bias each test catches 90% and 95% of the time.
  *
  * Reported beside the tests (section 9): mode B and the moving count (summary-variants.json), the
  * rounds a simulation would need to tell Victor APC + ace from Hi-Lo ({N} of PLAN_PAGE.md 3: σ_eff of
@@ -66,7 +77,8 @@ final class SiteSim {
         Path published;
         final List<Path> runs = new ArrayList<>();
         final List<Path> variants = new ArrayList<>();
-        final Map<String, Path> planted = new LinkedHashMap<>();
+        /** Each planted run's halves, one a bundle (SIM_CHECK.md section 10). */
+        final Map<String, List<Path>> planted = new LinkedHashMap<>();
     }
 
     /** SiteAdapt sim's arguments, --out left to SiteAdapt. */
@@ -85,7 +97,7 @@ final class SiteSim {
                     if (eq < 0) {
                         throw new IllegalArgumentException("--planted takes NAME=DIR, not " + v);
                     }
-                    o.planted.put(v.substring(0, eq), Paths.get(v.substring(eq + 1)));
+                    o.planted.computeIfAbsent(v.substring(0, eq), x -> new ArrayList<>()).add(Paths.get(v.substring(eq + 1)));
                     break;
                 }
                 default:
@@ -361,13 +373,14 @@ final class SiteSim {
         final double se;
         final SimCheckPlan.Figure fig;
         final double rounds;
+        final double exact;
 
         Test(Summary s, Map<String, Object> c) {
             check = s.check;
             name = SiteAdapt.str(c.get("row"), "row");
             figure = SiteAdapt.str(c.get("figure"), "figure");
             pen = Integer.parseInt(SiteAdapt.pen(c.get("pen")));
-            double exact = SiteAdapt.num(c.get("exact"), "exact");
+            exact = SiteAdapt.num(c.get("exact"), "exact");
             rounds = c.get("rounds") == null ? Double.NaN : SiteAdapt.num(c.get("rounds"), "rounds");
             double sd = Math.sqrt(sq(SiteAdapt.num(c.get("simulatedSe"), "simulatedSe"))
                     + sq(SiteAdapt.num(c.get("exactSe"), "exactSe")));
@@ -408,6 +421,11 @@ final class SiteSim {
             return fig.id + "." + check;
         }
 
+        /** The chart's walk with no exact side: what P3 and P2 compare on a bundle without the chart's row. */
+        boolean chartWalk() {
+            return fig != null && fig.play == SimCheckPlan.Play.CHART && Double.isNaN(exact);
+        }
+
         String verdict() {
             return Double.isNaN(z) ? "no exact side" : Math.abs(z) >= SimCheckPlan.Z_FAIL ? "fails"
                     : Math.abs(z) >= SimCheckPlan.Z_FLAG ? "flagged" : "passes";
@@ -442,11 +460,14 @@ final class SiteSim {
         return out;
     }
 
-    /** The part a summary's registered comparisons are of; refused when they are of both, or of none. */
+    /**
+     * The part a summary's registered comparisons are of, the chart's walk without an exact side
+     * aside (it is compared on every bundle); refused when they are of both parts, or of none.
+     */
     static int part(Summary s, List<Test> tests) {
         Set<Integer> parts = new LinkedHashSet<>();
         for (Test t : tests) {
-            if (t.fig != null) {
+            if (t.fig != null && !t.chartWalk()) {
                 parts.add(t.fig.part);
             }
         }
@@ -455,6 +476,17 @@ final class SiteSim {
                     : "figures of both parts") + "; a run is of one part's bundle (SIM_CHECK.md section 3)");
         }
         return parts.iterator().next();
+    }
+
+    /** A summary's comparisons of its part: the chart's walk on another part's bundle, with no exact side, left out. */
+    static List<Test> ofPart(List<Test> tests, int part) {
+        List<Test> out = new ArrayList<>();
+        for (Test t : tests) {
+            if (!(t.chartWalk() && t.fig.part != part)) {
+                out.add(t);
+            }
+        }
+        return out;
     }
 
     static List<Test> tests(Summary s) {
@@ -485,6 +517,7 @@ final class SiteSim {
                 }
                 List<Test> t = tests(s);
                 int part = part(s, t);
+                t = ofPart(t, part);
                 holdFacts(s, plan, part, false);
                 covered.add(part);
                 all.add(s);
