@@ -5,9 +5,10 @@ lanes that finished PLAN_COMPUTE.md 7.1 were merged. It says what is wired end t
 still open and where, and the order of the 7.2 runs with each command as the code now takes it.
 Updated 14 October 2026 after the two lanes that worked through section 4's items were merged
 (site-fix-sim as d27b5f8, site-fix-engine as 32422c1): sections 1 and 2 add the merges and their
-test run, and sections 4 and 5 say how things stand now. On 15 October branch site-last-b closed
-item 12 (section 4's table) and added item 21, what it left; section 5's row 10 gains the evidence
-table's command.
+test run, and sections 4 and 5 say how things stand now. Updated again 15 October 2026 after the
+last two lanes were merged (site-last-a as 5cb48a4: items 17 to 20; site-last-b as 62ae14b: the
+rest of item 12, and item 21 for what it left): sections 1 and 2 add the merges and their test
+run, section 3 the readers they added, and sections 4 and 5 say how things stand now.
 Nothing here wrote under runs/ or read a state file there. Every test below is a fixture test,
 run one class at a time at `nice -n 15` with `-Xmx1g`, one processor and the serial collector,
 apart from two reproduction tests that read c06c061's files in place: StoredResultsTest reads its
@@ -23,6 +24,8 @@ results.ser, and FitCheckpointClassesTest its kept classes.
 | fc408e2 | site-int-page: SiteExport, the adapters (risk, spreads, key edges, ceiling, simulator, literature), the page built end to end from one fixture world | none textual; one compile fix, below |
 | d27b5f8 | site-fix-sim (14 October): p3 finishes on a bundle with no paths figure, the blind pilot, trip risk and being behind, figure ids on the paired differences, the simulator's formats held by FormatsTest | none (sim/ only) |
 | 32422c1 | site-fix-engine (14 October): the wide plans exported, D3, PageLook, SiteSim held to section 12 over several runs, RiskReport's several swings files and ruin paths, the page's tables, fan and registration box, one widening rule, the money sentence | none; two test fixes after it, in section 2 |
+| 5cb48a4 | site-last-a (15 October): `SimCheckPlan fill` takes a part's pilot files together, the planted runs in two halves on both bundles (SIM_CHECK.md section 10), `RiskReport --trip`, SimReadsWidePlansTest | none |
+| 62ae14b | site-last-b (15 October): the BC/IC scatter and its verdict sentence, the every-count chart's views (cut card, spread, wonging), the evidence table (`SiteAdapt evidence`), the simulator's depth and edge-by-key tables in percent | INTEGRATION.md only (section 4's two lists and row 10 of section 5), both sides kept; src/SiteSimReported.java and test/SiteSimTest.java merged without conflict; no code fix needed |
 
 Three things the merges needed that no lane had:
 
@@ -201,6 +204,45 @@ Not run there: StoredResultsTest, which reads c06c061's results.ser in place (th
 touch runs/full-index/full-c06c061/); no scoring class changed, and CeilingScoringTest holds the
 published counts' scores to the bit.
 
+site-last-b's own run (each class alone on a snapshot of its tree, SiteBuildTest, SiteEvidenceTest,
+SiteSimTest, SitePageTest and SiteWideTest) is in that lane's report; it ran no CeilingScoringTest.
+
+**After the merges of 15 October** (5cb48a4, then 62ae14b), each class alone in the same way,
+compiled from a clean archive of 62ae14b (src, sim, test and sim/test) and run from the worktree's
+root, at 18:32 to 18:35; no other Java process was running. Every test class either lane added or
+changed is in it (SiteFixture, which site-last-b changed, is SiteBuildTest's), with the classes
+the task named and the other adapter and template tests, since site-last-b changed SiteAdapt and
+SiteBuild. Nothing failed, so the merges needed no code fix.
+
+| Class | Passed | Skipped | Failed | Seconds |
+|---|---|---|---|---|
+| SimCheckPlanTest | 10 of 10 | 0 | 0 | 1 |
+| SiteSimTest | 7 of 7 | 0 | 0 | 2 |
+| SimReadsExportTest | 3 of 3 | 0 | 0 | 8 |
+| SimReadsWidePlansTest | 3 of 3 | 0 | 0 | 27 |
+| RiskSwingsAndRuinTest | 2 of 2 | 0 | 0 | 4 |
+| RiskReportTest | 16 of 16 | 0 | 0 | 7 |
+| SiteRiskTest | 2 of 2 | 0 | 0 | 2 |
+| SiteEvidenceTest | 4 of 4 | 0 | 0 | 1 |
+| SiteWideTest | 2 of 2 | 0 | 0 | 20 |
+| SiteBuildTest | 36 of 36 | 0 | 0 | 8 |
+| SitePageTest | 5 of 5 | 0 | 0 | 25 |
+| CeilingScoringTest | 9 of 9 | 0 | 0 | 12 |
+| SiteExportCeilingTest | 3 of 3 | 0 | 0 | 1 |
+| SiteLedgerTest | 1 of 1 | 0 | 0 | 2 |
+| SiteCeilingTest | 4 of 4 | 0 | 0 | 1 |
+| SiteLiteratureTest | 2 of 2 | 0 | 0 | 0 |
+| SiteEdgesTest | 2 of 2 | 0 | 0 | 4 |
+| SiteExportTest | 9 of 9 | 0 | 0 | 21 |
+
+SiteSimTest's seven hold both lanes' changes to it at once: site-last-a's planted halves and part
+2 runs, and site-last-b's percent units and unmet keys. SiteBuildTest's
+everyColourPairReadsInBothModes, which needs the website's index.html beside the repository and
+was aborted on site-last-b's snapshot, ran and passed here.
+Not run: StoredResultsTest (it reads runs/full-index/full-c06c061/results.ser, which this pass did
+not touch), sim/test (sim/ is unchanged since fe9a91e), and the whole suite. No scoring class
+changed in either merge, and CeilingScoringTest holds report-final's and c06c061's scores to the bit.
+
 ## 3. What is wired end to end
 
 "Wired" means each stage writes a file the next stage's code reads, with the formats held by a
@@ -221,13 +263,16 @@ Nothing has met a real file.
   its figure id.
 - The simulator writes summary-p3.json and summary-p2.json, checks.txt, depth.tsv,
   ev-by-key.tsv, swings.tsv, records-FIG.tsv, fan-FIG.tsv, ruin-FIG.tsv and trip-FIG.tsv (Part C
-  and sim/QUESTIONS.md item 27). `sim.Sim pilot` writes sim-pilot-partN.tsv, which `SimCheckPlan
-  fill` turns into section 8's block.
+  and sim/QUESTIONS.md item 27). `sim.Sim pilot` writes sim-pilot-partN.tsv on one bundle;
+  `SimCheckPlan fill` takes a part's files together, one a bundle, and prints section 8's block
+  (15 October: open item 17).
 - `SiteAdapt sim` (SiteSim) reads each run directory given (`--run DIR`, several): it works every
   z out again and holds the runs to all of SIM_CHECK.md section 12 (14 October: open items 6, 7
-  and 10), with the reported figures beside them (SiteSimReported). `RiskReport` reads every
-  run's swings.tsv, records-FIG.tsv, fan-FIG.tsv and ruin-FIG.tsv; `SiteAdapt risk` carries its
-  JSON to the page.
+  and 10), with the reported figures beside them (SiteSimReported, its tables in percent of a
+  unit since 15 October) and each planted run in its two halves (open item 18). `RiskReport` reads
+  every run's swings.tsv, records-FIG.tsv, fan-FIG.tsv, ruin-FIG.tsv and, since 15 October,
+  trip-FIG.tsv beside its own formula (open item 19); `SiteAdapt risk` carries its JSON to the
+  page.
 - Tests: StrategyExportTest (round trip, planted edits, the chart's row, lookups.tsv),
   ShoeSpecTest (B9 against CountKeys; Part C's examples read by RiskReport's own readers),
   SimCheckPlanTest (the registry block), the simulator's 20 classes (its own fixtures, expected
@@ -274,7 +319,10 @@ Nothing has met a real file.
   committed paragraphs and the registration.
 - `SiteExport` writes runs/site/results-SHA.json from the same files and the pilot.
 - `LiteratureCheck` writes its JSON, which goes to `SiteAdapt literature`.
-- `SiteBuild` (site/build-site.sh) renders runs/site/*.json into the page.
+- `SiteAdapt evidence` (SiteEvidence, 15 October) checks each row of verification/evidence.tsv
+  against the commit it cites and writes the evidence table's input.
+- `SiteBuild` (site/build-site.sh) renders runs/site/*.json into the page, and the every-count
+  chart's other views into assets/views/.
 - Tests: SitePageTest builds the real template end to end from one fixture world through each of
   these command lines and traces every number to an input; SiteBuildTest, the adapters' tests,
   SiteExportTest, SiteExportCeilingTest, CeilingResultsTest, CeilingParagraphsTest.
@@ -285,10 +333,11 @@ Nothing has met a real file.
 ## 4. Still open
 
 Rewritten 14 October 2026, after site-fix-sim (merged as d27b5f8) and site-fix-engine (merged as
-32422c1). The numbers are the ones of 13 October, so earlier references still find their item;
-items 17 to 20 are new, and were closed the same night on branch site-last-a. Closed items are in the first table, with the commit on its lane's
-branch and the test that fails without it. The open ones follow, in the order they block the
-7.2 runs.
+32422c1), and again 15 October after site-last-a (merged as 5cb48a4: items 17 to 20) and
+site-last-b (merged as 62ae14b: the rest of item 12). The numbers are the ones of 13 October, so
+earlier references still find their item; 21 and 22 are new. Closed items are in the first table,
+with the commit on its lane's branch, the merge that brought it here, and the test that fails
+without it. The open ones follow, in the order they block the 7.2 runs.
 
 | Item | Closed by | Test |
 |---|---|---|
@@ -304,12 +353,12 @@ branch and the test that fails without it. The open ones follow, in the order th
 | 11. no trip risk on the simulator side | 2bf5aa2: sim/Trip.java, trip-FIG.tsv beside ruin-FIG.tsv; RiskReport reads it since item 19 | TripTest |
 | 13. two widening rules | 2e4c97d: CeilingResults takes `--widening` and uses SiteExport's rule | CeilingResultsTest, SiteCeilingTest, SiteExportCeilingTest |
 | 14. the money sentence stopped the build | 2e4c97d: it names the highest-ranked row with swings and says the others were not simulated | SiteBuildTest |
-| 17. part 2's pilot could not write a whole file | f9c3b90: `SimCheckPlan fill` takes a part's pilot files together, one a bundle, and prints one block; a figure in two files or in none is refused; the bundles' setups, P3s and P2s are added, the extras only where the main run plays them (the bundle holding F26 to F29, and part 1's, whose part 2 pilot holds no figure). 1fe01cf: SiteSim holds part 2's runs to that block and leaves out the chart's walk, which P3 and P2 compare on every bundle with no exact side where the chart's row is not exported (part 2's) | SimCheckPlanTest.severalFilesOneABundleFillOnePartsBlock (the page look's extras counted, the two-files check dropped, or part 1's P3 and P2 counted each fail it); SiteSimTest.partTwosRunsAcrossItsBundlesAreHeldToTheBlockItsPilotFilesFill and thePartsAndBundlesAreTakenTogether (with the chart walk counted, they fail as "figures of both parts"); SimReadsWidePlansTest shows the simulator writing that chart walk |
-| 18. planted runs scored only their own bundle's part | decided 14 October, before any pilot, and recorded in SIM_CHECK.md section 10 (5e8bece): every planted run and its control on both bundles. 1fe01cf: `SiteAdapt sim --planted NAME=DIR` twice a run, one half on each part's bundle as the identity table names them, the 14 tests made once | SiteSimTest.thePlantedRunsAreReadInTwoHalvesBesideTheirControl (without the both-halves check it fails) |
-| 19. trip-FIG.tsv had no engine reader | 4084ae9: `RiskReport --trip FIG=PATH`, each line beside the report's own blocks and formula at the simulator's bankrolls and T = hours x pace, the agreement stated in the report; refused when the moments, bankrolls, blocks, counts or formula part; the page's figures unchanged | RiskSwingsAndRuinTest.theSimulatorsTripRiskSitsBesideThisReportsFormula, on a trip file sim.Trip writes (the formula at the blocks' mean rounds, or the blocks check dropped, each fail it) |
-| 20. no test played the simulator on the wide plans | 4fe443d: test/SimReadsWidePlansTest.java, the compiled simulator's p2 on WidePlansExportTest's bundle: D4 671 of 671, the five wide plans among them | SimReadsWidePlansTest (with the exit ignored in a scratch copy of the simulator's D4, 32 mismatches and two of its three tests fail) |
+| 17. part 2's pilot could not write a whole file | site-last-a, merged in 5cb48a4. f9c3b90: `SimCheckPlan fill` takes a part's pilot files together, one a bundle, and prints one block; a figure in two files or in none is refused; the bundles' setups, P3s and P2s are added, the extras only where the main run plays them (the bundle holding F26 to F29, and part 1's, whose part 2 pilot holds no figure). 1fe01cf: SiteSim holds part 2's runs to that block and leaves out the chart's walk, which P3 and P2 compare on every bundle with no exact side where the chart's row is not exported (part 2's) | SimCheckPlanTest.severalFilesOneABundleFillOnePartsBlock (the page look's extras counted, the two-files check dropped, or part 1's P3 and P2 counted each fail it); SiteSimTest.partTwosRunsAcrossItsBundlesAreHeldToTheBlockItsPilotFilesFill and thePartsAndBundlesAreTakenTogether (with the chart walk counted, they fail as "figures of both parts"); SimReadsWidePlansTest shows the simulator writing that chart walk |
+| 18. planted runs scored only their own bundle's part | site-last-a, merged in 5cb48a4. Decided 14 October, before any pilot, and recorded in SIM_CHECK.md section 10 (5e8bece): every planted run and its control on both bundles. 1fe01cf: `SiteAdapt sim --planted NAME=DIR` twice a run, one half on each part's bundle as the identity table names them, the 14 tests made once | SiteSimTest.thePlantedRunsAreReadInTwoHalvesBesideTheirControl (without the both-halves check it fails) |
+| 19. trip-FIG.tsv had no engine reader | site-last-a, merged in 5cb48a4. 4084ae9: `RiskReport --trip FIG=PATH`, each line beside the report's own blocks and formula at the simulator's bankrolls and T = hours x pace, the agreement stated in the report; refused when the moments, bankrolls, blocks, counts or formula part; the page's figures unchanged | RiskSwingsAndRuinTest.theSimulatorsTripRiskSitsBesideThisReportsFormula, on a trip file sim.Trip writes (the formula at the blocks' mean rounds, or the blocks check dropped, each fail it) |
+| 20. no test played the simulator on the wide plans | site-last-a, merged in 5cb48a4. 4fe443d: test/SimReadsWidePlansTest.java, the compiled simulator's p2 on WidePlansExportTest's bundle: D4 671 of 671, the five wide plans among them | SimReadsWidePlansTest (with the exit ignored in a scratch copy of the simulator's D4, 32 mismatches and two of its three tests fail) |
 | 12, in part | 743e3a5: `{{table:NAME}}` and `{{fan:TABLE}}`, each cell held to its input; the risk fan and ruin table, the simulator's sentence, z table, planted runs and mode B, the literature claims, the registration box (`SiteAdapt ledger`); SiteExport takes `--report-final` and holds the stored rows to it at its printed precision (PLAN_PAGE.md 2.4) | SiteBuildTest, SiteLedgerTest, SiteExportCeilingTest |
-| 12, the rest | site-last-b (15 October): fd97b8a, 34d2959 and the commit that adds this row. The BC/IC scatter (`{{scatter:ID}}`, SiteSvg.scatter) from the literature check's own claims and verdicts, with a verdict sentence of count figures SiteBuild works out on the inputs (`{{count:TABLE\|FILTER}}`, like a range); the 5c toggles (`{{#view}}`: every setting the data has rendered into assets/views/, the default static in the page, page.js swapping whole fragments); the evidence table (`SiteAdapt evidence`, SiteEvidence, verification/evidence.tsv); the simulator's depth and edge-by-key tables. Section 4's item 21 says what is left | SiteBuildTest (correlations, views, a fragment checked as the page, evidence, depth and edge by key), SiteEvidenceTest, SiteSimTest, SiteWideTest |
+| 12, the rest | site-last-b, merged in 62ae14b: fd97b8a, 34d2959 and 61504be. The BC/IC scatter (`{{scatter:ID}}`, SiteSvg.scatter) from the literature check's own claims and verdicts, with a verdict sentence of count figures SiteBuild works out on the inputs (`{{count:TABLE\|FILTER}}`, like a range); the 5c toggles (`{{#view}}`: every setting the data has rendered into assets/views/, the default static in the page, page.js swapping whole fragments); the evidence table (`SiteAdapt evidence`, SiteEvidence, verification/evidence.tsv); the simulator's depth and edge-by-key tables. Item 21 says what is left, item 22 what the planted runs' block still lacks | SiteBuildTest (correlations, views, a fragment checked as the page, evidence, depth and edge by key), SiteEvidenceTest, SiteSimTest, SiteWideTest |
 
 Open:
 
@@ -353,10 +402,26 @@ Open:
       times 100), and mode B's differences print in percentage points; they had printed fractions
       beside percent figures. A key one fold never met had made a NaN that Json.write refuses, so
       `SiteAdapt sim` would have stopped on a real ev-by-key.tsv; it is null and prints a dash.
+    - **Not built** (site-last-b's report; recorded here at the merge): PLAN_COMPUTE.md 3.6's
+      spread figures W1 to W5 and the +0.8% box. The template has neither (its spread chart stops
+      at 1-8; W1 runs 1-8 to 1-20). Whether the +0.8% question is on the page at all is Justin's
+      decision 11 in PLAN_COMPUTE.md section 8.
+22. **The page prints the planted runs a line a run, not a line a test.** (site/template.html,
+    src/SiteSimReported.java; found at the merge of 15 October.) SIM_CHECK.md section 10 says
+    that for each planted bug the page prints which D checks failed, every test's z, the largest
+    |z|, and the bias each test would catch 90% and 95% of the time. The `sim_planted` block
+    prints the run, its failed D checks, its largest |z| and whether it was caught. SiteAdapt sim
+    writes every test's z and those biases into `sim_planted_tests` (14 tests a run, with the
+    part of each since site-last-a's two halves), but no block prints that table. Its `caught90`
+    and `caught95` are still fractions of a unit, the test's SE times a multiple. Every other
+    table SiteSimReported writes has been in percent since site-last-b, and its class comment
+    says all of them are. So the block that prints them must convert them the same way, with
+    a test, the way site-last-b's units fix was made. Before row 10's page.
 15. **Not yet run here:** the simulator's D6 determinism on six threads (sim/test ran with
     `-Dsim.test.threads=1`; once without it when the machine is free); RealCountTest and
-    FullIndexFitTest (no scoring class changed in either merge: SystemScorer, FullIndexFit,
-    CountKeys and ScoringStates are as site-integration had them); and no independent tree walk
+    FullIndexFitTest (no scoring class changed in any merge since: SystemScorer, FullIndexFit,
+    CountKeys and ScoringStates are as site-integration had them, and 5cb48a4 and 62ae14b touch
+    none of them, nor sim/); and no independent tree walk
     values the export's later lines (the round trip holds them to the play the strategy walked).
 16. **Sizes unmeasured on the main file:** a states.bin section is 216 bytes a state with all 24
     plans (about 13 MB a row at 80%), so part 1 exports with `--plans`; lookups.tsv's size is
@@ -382,7 +447,7 @@ and run A are short single-threaded reads that can sit beside nothing heavier th
 | 7 | Page look | yes, after row 6 and custom-count-design's merge; its full-play export depends on open item 1 |
 | 8 | Simulator part 2 | yes: a pilot a bundle, then one fill (open item 17, closed); the planted runs on both bundles (item 18, closed) |
 | 9 | SplitMargin on the twin | yes |
-| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; the page may pass its 200 KB budget (open item 21) |
+| 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; the page may pass its 200 KB budget (open item 21), and it prints the planted runs a line a run, without each test's z or the bias it would catch (open item 22) |
 
 **Setup, once: freeze the classes at the commit that runs them**, as FULL_INDEX_PLAYS.md does,
 so every output names its commit (commit.txt) and the replay's classes stay fixed:
@@ -628,6 +693,10 @@ swings file, each figure from one, and the simulator's ruin paths beside its own
 and 10, closed), and the simulator's trip files beside its own trip risk (open item 19, closed).
 `SiteAdapt sim` refuses every run until both parts' section 8 blocks are filled and every bundle is
 in the identity table, naming what is missing; it takes each planted run's two halves (item 18).
+`SiteAdapt evidence` holds verification/evidence.tsv, as committed, to the commits its rows cite in
+$W's history; until it is given the whole suite's JUnit report at the site's tag, each row says it
+was not re-run for this page (open item 21). SiteBuild writes the every-count chart's views beside
+the page, in assets/views/.
 
 ```sh
 cd $C && mkdir -p $R/runs/site $R/runs/risk $R/runs/wide
