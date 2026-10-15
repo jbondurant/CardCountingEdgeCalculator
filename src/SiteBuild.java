@@ -419,6 +419,30 @@ final class SiteBuild {
         return SiteSvg.lines(id, title, desc, xs, series, fmt, project, d);
     }
 
+    /**
+     * {{scatter:ID …}}: an input table's entries as points, one field against another on one shared
+     * scale with the line y = x (SiteSvg.scatter), for the published figures set beside this study's
+     * (PLAN_PAGE.md section 9). Lines: table, where (a filter, as meets reads it), x and y (the
+     * fields, each a number or a number as a source printed it, such as ".76"), label (the field that
+     * names a point), title, desc, xname and yname. An entry without a number in both is not drawn.
+     */
+    static String scatter(String id, String body, SiteData d) {
+        Map<String, String> a = new LinkedHashMap<>();
+        for (String[] l : lines(body)) {
+            if (!List.of("table", "where", "x", "y", "label", "title", "desc", "xname", "yname").contains(l[0])) {
+                throw new IllegalArgumentException("scatter:" + id + ": unknown line \"" + l[0] + "\"");
+            }
+            a.put(l[0], l[1]);
+        }
+        for (String k : List.of("table", "x", "y", "label", "title", "desc", "xname", "yname")) {
+            if (!a.containsKey(k)) {
+                throw new IllegalArgumentException("scatter:" + id + " has no " + k + " line");
+            }
+        }
+        List<Integer> at = matching(d, a.get("table"), a.get("where"));
+        return SiteSvg.scatter(id, a, at, d);
+    }
+
     /** A rows-table field as page text, held by the check to the rows table (data-t). */
     static String field(SiteData d, String id, String field, String words) {
         Object v = row(d, id).get(field);
@@ -503,18 +527,14 @@ final class SiteBuild {
     static String tableBlock(String name, String body, SiteData d) {
         List<String> head = null;
         List<List<String>> cols = new ArrayList<>();
-        String whereField = null;
-        String whereValue = null;
+        String where = null;
+        String id = name;
         for (String[] l : lines(body)) {
             switch (l[0]) {
                 case "head": head = bars(l[1]); break;
                 case "col": cols.add(bars(l[1])); break;
-                case "where": {
-                    int eq = l[1].indexOf('=');
-                    whereField = l[1].substring(0, eq).trim();
-                    whereValue = l[1].substring(eq + 1).trim();
-                    break;
-                }
+                case "where": where = l[1]; break;
+                case "id": id = l[1]; break;
                 default: throw new IllegalArgumentException("table:" + name + ": unknown line \"" + l[0] + "\"");
             }
         }
@@ -526,7 +546,7 @@ final class SiteBuild {
             throw new IllegalArgumentException("table:" + name + " needs a head with one heading per col");
         }
         List<?> entries = (List<?>) t;
-        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"data\" id=\"").append(SiteSvg.esc(name))
+        StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"data\" id=\"").append(SiteSvg.esc(id))
                 .append("\">\n<thead><tr>");
         for (String h : head) {
             b.append("<th scope=\"col\">").append(h).append("</th>");
@@ -535,7 +555,7 @@ final class SiteBuild {
         for (int i = 0; i < entries.size(); i++) {
             @SuppressWarnings("unchecked")
             Map<String, Object> e = (Map<String, Object>) entries.get(i);
-            if (whereField != null && !whereValue.equals(String.valueOf(e.get(whereField)))) {
+            if (!meets(e, where)) {
                 continue;
             }
             b.append("<tr>");
@@ -562,6 +582,75 @@ final class SiteBuild {
             b.append("</tr>\n");
         }
         return b.append("</tbody></table></div>").toString();
+    }
+
+    /**
+     * Whether a table entry meets a filter: conditions joined by ";", each FIELD=VALUE (the field
+     * prints as VALUE), FIELD!=VALUE, FIELD^=PREFIX (it starts so) or FIELD!^=PREFIX; VALUE null
+     * stands for a field that is null or absent. A filter left out is met by every entry.
+     */
+    static boolean meets(Map<String, Object> e, String filter) {
+        if (filter == null) {
+            return true;
+        }
+        for (String c : filter.split(";")) {
+            String t = c.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            String op = t.contains("!^=") ? "!^=" : t.contains("^=") ? "^=" : t.contains("!=") ? "!=" : "=";
+            int at = t.indexOf(op);
+            if (at <= 0) {
+                throw new IllegalArgumentException("\"" + t + "\" is not a condition FIELD=VALUE, FIELD!=VALUE, FIELD^=PREFIX "
+                        + "or FIELD!^=PREFIX");
+            }
+            Object v = e.get(t.substring(0, at).trim());
+            String want = t.substring(at + op.length()).trim();
+            String got = v == null ? "null" : String.valueOf(v);
+            boolean ok = op.endsWith("^=") ? (v != null && got.startsWith(want)) == op.equals("^=")
+                    : op.equals("=") == got.equals(want);
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The entries of an input's table that meet a filter, by index; a table the inputs lack has none. */
+    @SuppressWarnings("unchecked")
+    static List<Integer> matching(SiteData d, String table, String filter) {
+        List<Integer> out = new ArrayList<>();
+        Object t = d.tables.get(table);
+        if (t instanceof List) {
+            List<?> l = (List<?>) t;
+            for (int i = 0; i < l.size(); i++) {
+                if (meets((Map<String, Object>) l.get(i), filter)) {
+                    out.add(i);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The key of a count figure: how many entries of a table meet a filter (count:TABLE|FILTER), a
+     * figure no run prints, computed here on the inputs and written to results.json like a range, so
+     * the page prints it from there. Its "at" names the table and the filter.
+     */
+    static String countKey(String spec) {
+        String s = spec.replace("!^=", " not starts ").replace("^=", " starts ").replace("!=", " not ").replace("=", " is ").replace("|", " where ")
+                .toLowerCase(java.util.Locale.ROOT);
+        return "count." + s.replaceAll("[^a-z0-9]+", "_").replaceAll("^_|_$", "");
+    }
+
+    static String countAt(String spec) {
+        int bar = spec.indexOf('|');
+        return "the entries of " + (bar < 0 ? spec : spec.substring(0, bar) + " where " + spec.substring(bar + 1));
+    }
+
+    static String[] countSpec(String spec) {
+        int bar = spec.indexOf('|');
+        return new String[]{(bar < 0 ? spec : spec.substring(0, bar)).trim(), bar < 0 ? null : spec.substring(bar + 1).trim()};
     }
 
     // ---- the template ----
@@ -595,12 +684,18 @@ final class SiteBuild {
                 Map<String, Object> rec = SiteGuards.evaluate(text, d);
                 d.guards.add(rec);
                 holds = Boolean.TRUE.equals(rec.get("holds"));
-            } else if (c.startsWith("has:") || c.startsWith("lacks:")) {
+            } else if (c.startsWith("has:") || c.startsWith("lacks:") || c.startsWith("any:") || c.startsWith("none:")) {
                 // Clauses joined by " and ", each has:P1,P2 or lacks:P1,P2; a prefix may name a row by
                 // rank or by another key's row (expand), and one that names no row is not had.
                 holds = true;
                 for (String clause : c.split(" and ")) {
                     String t = clause.trim();
+                    if (t.startsWith("any:") || t.startsWith("none:")) {
+                        // any:TABLE|FILTER holds when some entry of the table meets the filter; none: when none does.
+                        String[] spec = countSpec(t.substring(t.indexOf(':') + 1));
+                        holds &= matching(d, spec[0], spec[1]).isEmpty() == t.startsWith("none:");
+                        continue;
+                    }
                     boolean has = t.startsWith("has:");
                     if (!has && !t.startsWith("lacks:")) {
                         throw new IllegalArgumentException("unknown condition {{#if " + c + "}}");
@@ -621,6 +716,158 @@ final class SiteBuild {
             throw new IllegalArgumentException("an {{#if}} block is not closed");
         }
         return out;
+    }
+
+    // ---- views: one figure the reader switches among settings (PLAN_PAGE.md 5c) ----
+
+    static final Pattern VIEW = Pattern.compile("\\{\\{#view ([a-z0-9]+)\\}\\}(.*?)\\{\\{#body\\}\\}(.*?)\\{\\{/view\\}\\}",
+            Pattern.DOTALL);
+    static final String VIEW_DIR = "assets/views/";
+    static final String VIEW_MARK = "\u0000views:";
+    static final List<String> AXES = List.of("pen", "spread", "wong");
+
+    /** The page's template with its view blocks resolved, and the body each other view is rendered from. */
+    static final class Views {
+        String page;
+        /** File (assets/views/NAME-VIEW.html) to the body it is rendered from, variables filled in. */
+        final Map<String, String> bodies = new TreeMap<>();
+        /** Block name to the file of its default view, which the page also holds. */
+        final Map<String, String> defaults = new TreeMap<>();
+    }
+
+    /**
+     * {{#view NAME}} HEADER {{#body}} BODY {{/view}}: one figure the reader can switch among the
+     * cut card's places, the spreads and wonging off or on (PLAN_PAGE.md 5c). The page holds the
+     * default view as static HTML, complete without JavaScript, under radio controls that only the
+     * script shows; every other view the data has is rendered from the same body into
+     * assets/views/NAME-PEN-SPREAD-WONG.html, a fragment page.js fetches when a control asks for it
+     * and puts in place of the view shown. The script never computes or formats a figure: each
+     * fragment is rendered here from results.json and passes the page's own checks (checkView).
+     *
+     * Header lines: pens and spreads (the choices offered, in order); default PEN SPREAD WONG; need
+     * KEY… (the keys a view must have to be made) and need on KEY… (those a view with wonging on
+     * must have besides); legend pen|spread|wong TEXT; label pen|spread|off|on TEXT, each option's
+     * label (placeholders allowed); fail TEXT, what the script says if a view cannot be fetched.
+     * In the body and the labels: {pen}, {spread}, {n} (s8's 8), {fd} and {full} (fdw and fullw
+     * with wonging on), {wong} (off or on); {{#on}}…{{/on}} and {{#off}}…{{/off}} keep their words
+     * only with wonging on or off. A body holds no guard, pair list, range, count or {{#if}}: those
+     * are evaluated once on the inputs, for the page alone.
+     */
+    static Views views(String template, SiteData in) {
+        Views v = new Views();
+        Matcher m = VIEW.matcher(template);
+        StringBuffer b = new StringBuffer();
+        while (m.find()) {
+            String name = m.group(1);
+            String body = m.group(3);
+            for (String no : new String[]{"{{guard:", "{{pairs:", "{{range:", "{{count:", "{{#if", "{{#view"}) {
+                if (body.contains(no)) {
+                    throw new IllegalArgumentException("view " + name + ": its body holds " + no + "…}}, which a view cannot");
+                }
+            }
+            Map<String, List<String>> h = new LinkedHashMap<>();
+            for (String l : m.group(2).split("\n")) {
+                String t = l.trim();
+                if (t.isEmpty()) {
+                    continue;
+                }
+                String[] w = t.split("\\s+", 3);
+                String key = w[0].equals("legend") || w[0].equals("label") || (w[0].equals("need") && w.length > 1
+                        && w[1].equals("on")) ? w[0] + " " + w[1] : w[0];
+                String rest = key.contains(" ") ? (w.length > 2 ? w[2] : "") : t.substring(w[0].length()).trim();
+                if (h.put(key, List.of(rest.split(key.startsWith("label") || key.startsWith("legend") || key.equals("fail")
+                        ? "\n" : "\\s+"))) != null) {
+                    throw new IllegalArgumentException("view " + name + ": two " + key + " lines");
+                }
+            }
+            for (String k : List.of("pens", "spreads", "default", "need", "legend pen", "legend spread", "legend wong",
+                    "label pen", "label spread", "label off", "label on", "fail")) {
+                if (!h.containsKey(k)) {
+                    throw new IllegalArgumentException("view " + name + " has no " + k + " line");
+                }
+            }
+            List<String> made = new ArrayList<>();
+            for (String pen : h.get("pens")) {
+                for (String spread : h.get("spreads")) {
+                    for (String wong : List.of("off", "on")) {
+                        boolean ok = true;
+                        List<String> need = new ArrayList<>(h.get("need"));
+                        if (wong.equals("on")) {
+                            need.addAll(h.getOrDefault("need on", List.of()));
+                        }
+                        for (String k : need) {
+                            // A key itself, not a prefix (hasPrefix takes fd.80.s20.x as had once any fd cell is).
+                            String key = fill(k, pen, spread, wong);
+                            ok &= key.contains("@") || key.contains(".=") ? hasPattern(in, key) : in.has(key);
+                        }
+                        if (ok) {
+                            String id = pen + "-" + spread + "-" + wong;
+                            made.add(id);
+                            v.bodies.put(VIEW_DIR + name + "-" + id + ".html", fill(body, pen, spread, wong));
+                        }
+                    }
+                }
+            }
+            List<String> def = h.get("default");
+            String defId = String.join("-", def);
+            if (!made.contains(defId)) {
+                throw new IllegalArgumentException("view " + name + ": the data has no default view " + defId);
+            }
+            v.defaults.put(name, VIEW_DIR + name + "-" + defId + ".html");
+            m.appendReplacement(b, Matcher.quoteReplacement(viewBox(name, h, made, def)
+                    + fill(body, def.get(0), def.get(1), def.get(2)) + "</div></div>"));
+        }
+        m.appendTail(b);
+        v.page = b.toString();
+        if (v.page.contains("{{#view") || v.page.contains("{{#body}}") || v.page.contains("{{/view}}")) {
+            throw new IllegalArgumentException("a {{#view}} block is not closed");
+        }
+        return v;
+    }
+
+    /** A view's variables filled in, and its {{#on}} or {{#off}} words kept or dropped. */
+    static String fill(String s, String pen, String spread, String wong) {
+        boolean on = wong.equals("on");
+        String t = s.replaceAll("(?s)\\{\\{#" + (on ? "off" : "on") + "\\}\\}.*?\\{\\{/" + (on ? "off" : "on") + "\\}\\}", "")
+                .replace("{{#" + wong + "}}", "").replace("{{/" + wong + "}}", "");
+        return t.replace("{pen}", pen).replace("{spread}", spread).replace("{n}", spread.substring(1))
+                .replace("{fd}", on ? "fdw" : "fd").replace("{full}", on ? "fullw" : "full").replace("{wong}", wong);
+    }
+
+    /**
+     * The opening of a view's box: the list of views made, where their fragments are, and the
+     * controls, one radio group in a fieldset with its legend per axis, each option one the views
+     * made use, the default's checked. The view shown follows in a div the script replaces.
+     */
+    static String viewBox(String name, Map<String, List<String>> h, List<String> made, List<String> def) {
+        StringBuilder b = new StringBuilder("<div class=\"views\" id=\"views-").append(name).append("\" data-src=\"")
+                .append(VIEW_DIR).append(name).append("-\" data-views=\"").append(String.join(" ", made)).append("\" data-v=\"")
+                .append(VIEW_MARK).append(name).append("\u0000\" data-fail=\"").append(SiteSvg.esc(h.get("fail").get(0)))
+                .append("\">\n<div class=\"controls\">");
+        for (int a = 0; a < AXES.size(); a++) {
+            String axis = AXES.get(a);
+            List<String> options = axis.equals("pen") ? h.get("pens") : axis.equals("spread") ? h.get("spreads")
+                    : List.of("off", "on");
+            b.append("<fieldset><legend>").append(h.get("legend " + axis).get(0)).append("</legend>");
+            for (String o : options) {
+                boolean used = false;
+                for (String id : made) {
+                    used |= id.split("-")[a].equals(o);
+                }
+                if (!used) {
+                    continue;
+                }
+                String label = axis.equals("wong") ? h.get("label " + o).get(0)
+                        : fill(h.get("label " + axis).get(0), axis.equals("pen") ? o : def.get(0),
+                        axis.equals("spread") ? o : def.get(1), def.get(2));
+                b.append("<label><input type=\"radio\" name=\"").append(name).append('-').append(axis).append("\" data-axis=\"")
+                        .append(axis).append("\" value=\"").append(o).append('"').append(o.equals(def.get(a)) ? " checked" : "")
+                        .append("> ").append(label).append("</label>");
+            }
+            b.append("</fieldset>");
+        }
+        return b.append("<p class=\"vstatus\" role=\"status\"></p></div>\n<div class=\"view\" id=\"view-").append(name)
+                .append("\" data-view=\"").append(String.join("-", def)).append("\">\n").toString();
     }
 
     /**
@@ -677,6 +924,19 @@ final class SiteBuild {
                     in.figures.put(key, new SiteData.Figure(key, hi - lo, Double.NaN, Double.NaN, Double.NaN, "s4",
                             "computed by SiteBuild", "the highest less the lowest of " + String.join(", ", keys), generator, "main",
                             1, false, null));
+                }
+            } else if (p.startsWith("count:")) {
+                String spec = p.substring(6).trim();
+                String key = countKey(spec);
+                String[] s = countSpec(spec);
+                if (!(in.tables.get(s[0]) instanceof List)) {
+                    throw new IllegalArgumentException("{{count:" + spec + "}}: the inputs hold no table " + s[0]);
+                }
+                SiteData.Figure f = new SiteData.Figure(key, matching(in, s[0], s[1]).size(), Double.NaN, Double.NaN,
+                        Double.NaN, "n", "computed by SiteBuild", countAt(spec), generator, "main", 1, false, null);
+                SiteData.Figure was = in.figures.putIfAbsent(key, f);
+                if (was != null && (!was.at.equals(f.at) || was.value != f.value)) {
+                    throw new IllegalArgumentException("{{count:" + spec + "}} and another count share the key " + key);
                 }
             } else if (p.startsWith("pairs:")) {
                 List<String> keys = expandList(p.substring(p.indexOf('|') + 1), in);
@@ -784,6 +1044,31 @@ final class SiteBuild {
         }
         if (head.startsWith("fan:")) {
             return SiteSvg.fan(head.substring(4).trim(), body, d);
+        }
+        if (head.startsWith("scatter:")) {
+            return scatter(head.substring(8).trim(), body, d);
+        }
+        if (p.startsWith("count:")) {
+            String spec = p.substring(6).trim();
+            SiteData.Figure f = d.resolve(countKey(spec));
+            if (!f.at.equals(countAt(spec))) {
+                throw new IllegalArgumentException("the count " + spec + " in results.json is " + f.at);
+            }
+            return SiteSvg.fig(d, countKey(spec), "n");
+        }
+        if (p.startsWith("cell:")) {
+            // cell:TABLE|FILTER|FIELD: that field of the first entry meeting the filter, as a data-t span.
+            String[] q = p.substring(5).split("\\|");
+            if (q.length != 3) {
+                throw new IllegalArgumentException("cell: needs TABLE|FILTER|FIELD");
+            }
+            List<Integer> at = matching(d, q[0].trim(), q[1].trim());
+            if (at.isEmpty()) {
+                throw new IllegalArgumentException("no entry of " + q[0] + " meets " + q[1]);
+            }
+            String ref = q[0].trim() + "/" + at.get(0) + "/" + q[2].trim();
+            Object v = SiteText.entry(d, q[0].trim(), at.get(0)).get(q[2].trim());
+            return "<span data-t=\"" + SiteSvg.esc(ref) + "\">" + SiteSvg.esc(SiteText.cell(v, null, null)) + "</span>";
         }
         if (p.startsWith("guard:")) {
             Map<String, Object> rec = guardRecord(d, expandGuard(p.substring(6), d));
@@ -1049,6 +1334,7 @@ final class SiteBuild {
         final List<String> problems = new ArrayList<>();
         SiteData data;
         Map<String, String> strings;
+        Views views = new Views();
 
         String text(String path) {
             return new String(files.get(path), StandardCharsets.UTF_8);
@@ -1070,7 +1356,8 @@ final class SiteBuild {
         if (!typed.isEmpty()) {
             throw new IllegalArgumentException("the template has typed figures:\n  " + String.join("\n  ", typed));
         }
-        String t = conditionals(template, in);
+        Views views = views(conditionals(template, in), in);
+        String t = views.page;
         List<String> failed = guards(t, in, generator);
         if (!failed.isEmpty()) {
             throw new IllegalArgumentException("claim guards that fail; rewrite these sentences by hand:\n  "
@@ -1080,6 +1367,7 @@ final class SiteBuild {
         SiteData d = SiteData.fromJson(results);
         Output o = new Output();
         o.data = d;
+        o.views = views;
         // The CSV holds the figures the page prints, so the page is rendered once to learn which
         // they are; the manifest's hash, which the page shows, does not change which they are.
         Map<String, String> draft = new TreeMap<>();
@@ -1122,6 +1410,21 @@ final class SiteBuild {
         }
         o.strings = strings;
         String page = render(t, d, strings, tokens, css);
+        Map<String, String> fragments = new TreeMap<>();
+        for (Map.Entry<String, String> e : views.bodies.entrySet()) {
+            fragments.put(e.getKey(), render(e.getValue(), d, strings, tokens, css));
+        }
+        for (String name : views.defaults.keySet()) {
+            // The box's data-v, which the script puts on every fetch (?v=): the SHA-256 of its
+            // fragments, so a fragment cached from another build is never shown beside this page.
+            StringBuilder all = new StringBuilder();
+            for (Map.Entry<String, String> f : fragments.entrySet()) {
+                if (f.getKey().startsWith(VIEW_DIR + name + "-")) {
+                    all.append(f.getKey()).append('\n').append(f.getValue());
+                }
+            }
+            page = page.replace(VIEW_MARK + name + "\u0000", SiteData.sha256(utf8(all.toString())).substring(0, 16));
+        }
         if (d.fixture()) {
             page = page.replaceFirst("<title>", "<title>" + FIXTURE_TITLE).replaceFirst("<body>", "<body>\n" + FIXTURE_BANNER);
         }
@@ -1132,6 +1435,9 @@ final class SiteBuild {
         o.files.put("data/SHA256SUMS", utf8(man.sums));
         o.files.put("data/MANIFEST.md", utf8(man.md));
         o.files.put("assets/page.js", utf8(js));
+        for (Map.Entry<String, String> f : fragments.entrySet()) {
+            o.files.put(f.getKey(), utf8(f.getValue()));
+        }
         o.problems.addAll(check(o, css));
         return o;
     }
@@ -1150,70 +1456,25 @@ final class SiteBuild {
 
     private static final Pattern COLOUR = Pattern.compile("#[0-9a-fA-F]{3,8}\\b|\\brgba?\\(|\\bhsla?\\(|\\bcolor-mix\\(");
 
-    /** The finished page's checks, each a rule of PLAN_PAGE.md 2.4 to 2.6. */
+    /** A view fragment's budget: one figure, fetched when a control asks for it. */
+    static final int VIEW_BUDGET = 120 * 1024;
+
+    /** The finished page's checks, each a rule of PLAN_PAGE.md 2.4 to 2.6, and the same on every view fragment. */
     static List<String> check(Output o, String css) {
         List<String> p = new ArrayList<>();
         String page = o.text("index.html");
-        p.addAll(SiteText.checkPage(page, o.data, o.strings));
         if (o.data.fixture() && (!page.contains(FIXTURE_BANNER) || !page.contains("<title>" + FIXTURE_TITLE))) {
             p.add("a fixture build without its banner and title mark");
         }
-        if (page.contains("{{")) {
-            p.add("a placeholder is left unresolved");
-        }
-        Matcher svg = Pattern.compile("<svg\\b.*?</svg>", Pattern.DOTALL).matcher(page);
-        while (svg.find()) {
-            String s = svg.group();
-            try {
-                javax.xml.parsers.DocumentBuilderFactory f = javax.xml.parsers.DocumentBuilderFactory.newInstance();
-                f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-                f.setNamespaceAware(true);
-                f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(utf8(s)));
-            } catch (Exception x) {
-                p.add("an SVG that does not parse as XML: " + x.getMessage());
-            }
-            if (COLOUR.matcher(s).find()) {
-                p.add("an SVG with a colour written into it rather than taken from the page's tokens");
-            }
-        }
+        java.util.Set<String> pageIds = new java.util.HashSet<>();
+        p.addAll(checkHtml(o, "", page, pageIds, java.util.Set.of()));
         if (COLOUR.matcher(css).find()) {
             p.add("page.css writes a colour; colours come only from the tokens, so dark mode switches them");
         }
         if (Pattern.compile("(^|[;{\\s])color\\s*:\\s*var\\(--c2\\)").matcher(css).find()) {
             p.add("page.css sets text in orange (--c2), under 4.5:1 on the light background");
         }
-        Matcher fig = Pattern.compile("<figure\\b(.*?)</figure>", Pattern.DOTALL).matcher(page);
-        while (fig.find()) {
-            if (!fig.group(1).contains("<figcaption")) {
-                p.add("a figure with no caption");
-            }
-        }
-        java.util.Set<String> ids = new java.util.HashSet<>();
-        Matcher id = Pattern.compile("\\sid=\"([^\"]+)\"").matcher(page);
-        while (id.find()) {
-            if (!ids.add(id.group(1))) {
-                p.add("the id " + id.group(1) + " is used twice");
-            }
-        }
-        Matcher href = Pattern.compile("\\s(?:href|src)=\"([^\"]+)\"").matcher(page);
-        while (href.find()) {
-            String h = href.group(1);
-            if (h.startsWith("#")) {
-                if (!ids.contains(h.substring(1))) {
-                    p.add("a link to #" + h.substring(1) + ", which is not on the page");
-                }
-            } else if (h.startsWith("http")) {
-                boolean ok = false;
-                for (String host : LINK_HOSTS) {
-                    ok |= h.startsWith(host);
-                }
-                if (!ok) {
-                    p.add("an external link not on the allowlist: " + h);
-                }
-            } else if (!o.files.containsKey(h.replaceAll("[?#].*", ""))) {
-                p.add("a link to " + h + ", which the build does not make");
-            }
-        }
+        p.addAll(checkViews(o, page, pageIds));
         budget(p, o, "index.html", PAGE_BUDGET);
         budget(p, o, "assets/page.js", JS_BUDGET);
         budget(p, o, "data/results.json", RESULTS_BUDGET);
@@ -1222,6 +1483,120 @@ final class SiteBuild {
                 + o.files.get("data/MANIFEST.md").length;
         if (man > MANIFEST_BUDGET) {
             p.add("the manifest files are " + man + " bytes, over their budget of " + MANIFEST_BUDGET);
+        }
+        return p;
+    }
+
+    /**
+     * The checks a page or a view fragment must pass, each problem prefixed with where: every number
+     * sourced (SiteText), no placeholder left, every SVG well-formed and coloured only by tokens,
+     * every figure captioned, no id twice, every link going somewhere. ids receives the html's ids;
+     * a fragment's ids must not be any of outside's (the page's own, outside the view it replaces),
+     * and its links may go to those.
+     */
+    static List<String> checkHtml(Output o, String where, String html, java.util.Set<String> ids, java.util.Set<String> outside) {
+        List<String> p = new ArrayList<>();
+        for (String x : SiteText.checkPage(html, o.data, o.strings)) {
+            p.add(where + x);
+        }
+        if (html.contains("{{")) {
+            p.add(where + "a placeholder is left unresolved");
+        }
+        Matcher svg = Pattern.compile("<svg\\b.*?</svg>", Pattern.DOTALL).matcher(html);
+        while (svg.find()) {
+            String s = svg.group();
+            try {
+                javax.xml.parsers.DocumentBuilderFactory f = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+                f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                f.setNamespaceAware(true);
+                f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(utf8(s)));
+            } catch (Exception x) {
+                p.add(where + "an SVG that does not parse as XML: " + x.getMessage());
+            }
+            if (COLOUR.matcher(s).find()) {
+                p.add(where + "an SVG with a colour written into it rather than taken from the page's tokens");
+            }
+        }
+        Matcher fig = Pattern.compile("<figure\\b(.*?)</figure>", Pattern.DOTALL).matcher(html);
+        while (fig.find()) {
+            if (!fig.group(1).contains("<figcaption")) {
+                p.add(where + "a figure with no caption");
+            }
+        }
+        Matcher id = Pattern.compile("\\sid=\"([^\"]+)\"").matcher(html);
+        while (id.find()) {
+            if (!ids.add(id.group(1))) {
+                p.add(where + "the id " + id.group(1) + " is used twice");
+            }
+            if (outside.contains(id.group(1))) {
+                p.add(where + "the id " + id.group(1) + " is also the page's, outside the view this fragment replaces");
+            }
+        }
+        Matcher href = Pattern.compile("\\s(?:href|src)=\"([^\"]+)\"").matcher(html);
+        while (href.find()) {
+            String h = href.group(1);
+            if (h.startsWith("#")) {
+                if (!ids.contains(h.substring(1)) && !outside.contains(h.substring(1))) {
+                    p.add(where + "a link to #" + h.substring(1) + ", which is not on the page");
+                }
+            } else if (h.startsWith("http")) {
+                boolean ok = false;
+                for (String host : LINK_HOSTS) {
+                    ok |= h.startsWith(host);
+                }
+                if (!ok) {
+                    p.add(where + "an external link not on the allowlist: " + h);
+                }
+            } else if (!o.files.containsKey(h.replaceAll("[?#].*", ""))) {
+                p.add(where + "a link to " + h + ", which the build does not make");
+            }
+        }
+        return p;
+    }
+
+    /**
+     * Each view box (views): its list of views is its fragments, every one of which is built; the
+     * view the page holds is its default fragment byte for byte, so the script can put it back; and
+     * every fragment passes checkHtml with the page's ids outside the view as outside, and its budget.
+     */
+    static List<String> checkViews(Output o, String page, java.util.Set<String> pageIds) {
+        List<String> p = new ArrayList<>();
+        java.util.Set<String> listed = new java.util.TreeSet<>();
+        for (String name : o.views.defaults.keySet()) {
+            Matcher box = Pattern.compile("<div class=\"views\" id=\"views-" + name + "\" data-src=\"([^\"]*)\" data-views=\"([^\"]*)\"")
+                    .matcher(page);
+            if (!box.find()) {
+                p.add("view " + name + ": the page has no box for it");
+                continue;
+            }
+            for (String v : box.group(2).split(" ")) {
+                listed.add(box.group(1) + v + ".html");
+            }
+            String def = o.text(o.views.defaults.get(name));
+            Matcher shown = Pattern.compile("<div class=\"view\" id=\"view-" + name + "\" data-view=\"[^\"]*\">\n").matcher(page);
+            if (!shown.find() || !page.startsWith(def + "</div></div>", shown.end())) {
+                p.add("view " + name + ": the page does not hold its default view as " + o.views.defaults.get(name) + " has it");
+                continue;
+            }
+            java.util.Set<String> inside = new java.util.HashSet<>();
+            checkHtml(o, "", def, inside, java.util.Set.of());
+            java.util.Set<String> outside = new java.util.HashSet<>(pageIds);
+            outside.removeAll(inside);
+            for (String f : o.files.keySet()) {
+                if (f.startsWith(VIEW_DIR + name + "-")) {
+                    p.addAll(checkHtml(o, f + ": ", o.text(f), new java.util.HashSet<>(), outside));
+                    budget(p, o, f, VIEW_BUDGET);
+                }
+            }
+        }
+        java.util.Set<String> built = new java.util.TreeSet<>();
+        for (String f : o.files.keySet()) {
+            if (f.startsWith(VIEW_DIR)) {
+                built.add(f);
+            }
+        }
+        if (!built.equals(listed)) {
+            p.add("the views the page lists are not the fragments built: listed " + listed.size() + ", built " + built.size());
         }
         return p;
     }

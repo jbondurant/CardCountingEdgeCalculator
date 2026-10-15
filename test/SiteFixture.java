@@ -330,6 +330,14 @@ final class SiteFixture {
         figs.put("data.shoes", fig(61000, "n"));
         figs.put("data.states", fig(61234, "n"));
         figs.put("data.rounds.80", fig(3512345, "n"));
+        // The wonging plans' share of rounds played and average bet (SiteWide's wide.share and wide.bet
+        // keys, the same for every row): B0,1, B0,8 and B0,16, the plans the wonging grid is read from.
+        for (String pen : PENS) {
+            for (int n : new int[]{1, 8, 16}) {
+                figs.put("wide.share." + pen + ".b0_" + n, fig(six(0.30 + 0.1 * P.get(pen)), "pct1"));
+                figs.put("wide.bet." + pen + ".b0_" + n, fig(six(n == 1 ? 1 : 1.9 + 0.07 * n * P.get(pen)), "d2"));
+            }
+        }
         figs.put("method.resamples", fig(1000, "n"));
         figs.put("method.ci", fig(95, "n"));
         game(figs);
