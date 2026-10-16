@@ -23,7 +23,7 @@ were recorded on 14 October 2026, before any pilot).
 | SHOE_SPEC.md's commit (branch site-shoe-spec) | before the first pilot | c8d9b5a (c8d9b5ab990a3d2278c109ead692b175b170b4bc), its last commit, made on site-int-spec, which continued site-shoe-spec; merged into site-integration as 2c99a56 |
 | The simulator's commit (`sim/`) | before each part's pilot | fe9a91e (fe9a91ea88f49b73c86278eec075d2b17e4bd4bd), the last commit touching sim/, made on site-fix-sim; merged into site-integration with sim/ unchanged on 14 October 2026; for part 1, and for part 2 unless sim/ changes |
 | `test/SimVsExactSmallShoeTest.java`'s commit (D3) | before the first pilot | 283c62c (283c62c5a133f518608f27d10249230bd0735126), made on site-fix-engine; merged into site-integration as 32422c1 |
-| Part 1's bundle, `runs/sim/export-<sha>/manifest.sha256`, its SHA-256 | before part 1's pilot | not yet exported |
+| Part 1's bundle, `runs/sim/export-<sha>/manifest.sha256`, its SHA-256 | before part 1's pilot | 4a424be6640fe3ce3d380eb232fe7659a378c4beb57538597e71d0e5d4826b3a, of runs/sim/export-part1-0e0920d/manifest.sha256, exported on 16 October 2026 by StrategyExport at 0e0920d (round trip passed: 270,026,867 values, largest relative difference 1.1e-14) |
 | Part 2's bundle(s), the same | before part 2's pilot | not yet exported |
 
 **How the file is kept true to its code.** Every table and list between `<!-- SimCheckPlan … -->`
