@@ -604,10 +604,12 @@ output into the website's working tree. It does not commit or push (section 5).
   5.95:1.
 - Without JavaScript the page is complete: the default views are static HTML, and controls
   appear only when the script has set `html.js`. A print stylesheet hides the controls.
-- Budget, enforced by the build test: page HTML at most 200 KB (about 50 KB compressed),
-  `page.js` at most 12 KB, no web fonts, no CDN, no images other than inline SVG.
-  `results.json` (about 80 rows × 3 penetrations × up to 10 spreads × 2 play scopes, wonging
-  on and off) is expected under 500 KB and loads only on the first toggle. Data URLs carry
+- Budget, enforced by the build: page HTML at most 256 KB, `page.js` at most 12 KB, no web
+  fonts, no CDN, no images other than inline SVG; `results.json` at most 2,560 KB, loaded only on
+  the first toggle. The first build on the real inputs (17 October, 7c1d40e) measured the page at
+  213,078 bytes (35,753 gzipped) and results.json at 1,581,573 (225,242 gzipped), over this
+  plan's first estimates of 200 KB and 500 KB, which were made before any real input existed;
+  the data file carries every figure the page or a reader can ask for. Data URLs carry
   `?v=` and the manifest's hash, so a cached file from an older version is never mixed in.
 
 ### 2.6 How the page itself is checked

@@ -1093,10 +1093,10 @@ public class SiteBuildTest {
             }
         }
         assertTrue(cells >= 76 * 3 * 10 * 4, "grid cells: " + cells);
-        assertTrue(o.files.get("index.html").length <= 200 * 1024, "page " + o.files.get("index.html").length);
-        assertTrue(o.files.get("assets/page.js").length <= 12 * 1024);
-        assertTrue(o.files.get("data/results.json").length <= 500 * 1024, "results.json " + o.files.get("data/results.json").length);
-        assertTrue(o.files.get("data/results.csv").length <= 300 * 1024);
+        assertTrue(o.files.get("index.html").length <= SiteBuild.PAGE_BUDGET, "page " + o.files.get("index.html").length);
+        assertTrue(o.files.get("assets/page.js").length <= SiteBuild.JS_BUDGET);
+        assertTrue(o.files.get("data/results.json").length <= SiteBuild.RESULTS_BUDGET, "results.json " + o.files.get("data/results.json").length);
+        assertTrue(o.files.get("data/results.csv").length <= SiteBuild.CSV_BUDGET);
         int views = 0;
         for (Map.Entry<String, byte[]> f : o.files.entrySet()) {
             if (f.getKey().startsWith("assets/views/")) {
@@ -1107,7 +1107,7 @@ public class SiteBuildTest {
         assertEquals(39, views, "every view of the every-count chart, each within its budget");
         String filler = "<p>" + "padding words ".repeat(16 * 1024) + "</p>";
         List<String> over = build(small, template.replace("<main>", "<main>" + filler)).problems;
-        assertTrue(over.stream().anyMatch(x -> x.startsWith("index.html is ") && x.endsWith("over its budget of 204800")), over.toString());
+        assertTrue(over.stream().anyMatch(x -> x.startsWith("index.html is ") && x.endsWith("over its budget of " + SiteBuild.PAGE_BUDGET)), over.toString());
     }
 
     @Test
