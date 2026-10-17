@@ -187,4 +187,30 @@ public class PageLookTest {
         assertTrue(m.contains("holds the page look already"), m);
         assertFalse(Files.exists(again));
     }
+
+    /**
+     * The rows the page look exports by default are the registered counts' (SIM_CHECK.md's part 2
+     * figures from step 7 and step 8), never the chart's: its figures name step 7 too, but they are
+     * part 1's, and step 7's Results hold no chart row, so asking for it stops the look after its
+     * ledger line (the look of 17 October did). The other test names its rows itself, so it never
+     * met the default.
+     */
+    @Test
+    public void theDefaultRowsAreTheRegisteredCountsAloneNeverTheChart() {
+        for (String source : new String[]{"step 7", "step 8"}) {
+            List<String> rows = PageLook.registeredRows(source);
+            assertFalse(rows.isEmpty(), source);
+            for (String row : rows) {
+                assertFalse(row.startsWith(StrategyExport.CHART_ROW), source + ": " + row);
+            }
+            List<String> part2 = new ArrayList<>();
+            for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
+                String row = f.entry() + "@" + f.pen;
+                if (f.part == 2 && f.source.equals(source) && !part2.contains(row)) {
+                    part2.add(row);
+                }
+            }
+            assertEquals(part2, rows, source);
+        }
+    }
 }

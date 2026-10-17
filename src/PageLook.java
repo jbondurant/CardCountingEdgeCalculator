@@ -77,12 +77,18 @@ final class PageLook {
         double batchBytes;
     }
 
-    /** SIM_CHECK.md's figures from step 7 (first decisions) or step 8 (full play), as NAME@P. */
+    /**
+     * SIM_CHECK.md's part 2 figures from step 7 (first decisions) or step 8 (full play), as
+     * NAME@P: the registered counts' rows the page look exports. The chart's figures also name
+     * step 7, whose save holds the chart's reference row, but they are part 1's and part 1's
+     * bundle exports them; asked for here they are refused, since step 7's Results hold no chart
+     * row (the page look of 17 October stopped on it).
+     */
     static List<String> registeredRows(String source) {
         List<String> out = new ArrayList<>();
         for (SimCheckPlan.Figure f : SimCheckPlan.figures()) {
             String row = f.entry() + "@" + f.pen;
-            if (f.source.equals(source) && !out.contains(row)) {
+            if (f.part == 2 && f.source.equals(source) && !out.contains(row)) {
                 out.add(row);
             }
         }
