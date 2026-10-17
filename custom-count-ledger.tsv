@@ -1,3 +1,4 @@
 commit	blob	time	what ran
 97bf834c66747935fc4c9fbc77fe2c6ca13be969	39bd6d4a17f168c8906bce219db2eb95de67d856	2026-10-09T19:36:49-04:00	ComparisonReport --published /Users/justinbondurant/Documents/CardCountingEdgeCalculator/runs/full-index/full-c06c061/results.ser, 1000 resamples, saved to /Users/justinbondurant/Documents/CardCountingEdgeCalculator/runs/report-ceiling-97bf834.ser
 97bf834c66747935fc4c9fbc77fe2c6ca13be969	250e64a7ebb99f642c5f464c920e13e63e6fc0c5	2026-10-12T12:15:02-04:00	FullIndexRun started into /Users/justinbondurant/Documents/CardCountingEdgeCalculator/runs/custom-count/fullplay-main-97bf834, 1000 resamples, penetrations [0, 1, 2]
+0e0920d0af3b2b8f7ea9073bd38e7434d20c6541	39bd6d4a17f168c8906bce219db2eb95de67d856	2026-10-17T00:07:06-04:00	page figures: wide plans, per-key tables, simulator export (PageLook into /Users/justinbondurant/Documents/CardCountingEdgeCalculator/runs/page-look-0e0920d)
