@@ -56,11 +56,17 @@ public class SiteSimTest {
         SiteSim.Plan read = SiteSim.Plan.read(Files.write(dir.resolve("SIM_CHECK-cells.md"), doc.getBytes(StandardCharsets.UTF_8)));
         assertEquals(List.of(COMMIT), read.commits);
         assertEquals(Map.of(1, List.of(BUNDLE1), 2, List.of(BUNDLE2)), read.bundles);
-        if (filled) {
-            for (int part = 1; part <= 2; part++) {
-                doc = doc.replace("Not filled: part " + part + "'s pilot has not run.", "- f = 0.053: P3 " + CHUNKS
-                        + " chunks (2,000,000 shoes), P2 K = 1,200 (72,891,600 re-deals); predicted wall time 100 s, 0.03 h.");
-            }
+        // Section 8's blocks likewise: the fixture's own sizes, or none, whatever the real blocks hold
+        // (part 1's has been filled from its pilot since 16 October, eaa02fb).
+        for (int part = 1; part <= 2; part++) {
+            String open = "<!-- SimCheckPlan fill-" + part + " -->";
+            String close = "<!-- /SimCheckPlan fill-" + part + " -->";
+            int a = doc.indexOf(open);
+            int b = doc.indexOf(close);
+            assertTrue(a >= 0 && b > a, "SIM_CHECK.md's fill-" + part + " markers");
+            String block = filled ? "- f = 0.053: P3 " + CHUNKS + " chunks (2,000,000 shoes), P2 K = 1,200 (72,891,600 "
+                    + "re-deals); predicted wall time 100 s, 0.03 h." : "Not filled: part " + part + "'s pilot has not run.";
+            doc = doc.substring(0, a + open.length()) + "\n" + block + "\n" + doc.substring(b);
         }
         return Files.write(dir.resolve("SIM_CHECK-fixture.md"), doc.getBytes(StandardCharsets.UTF_8));
     }
