@@ -33,14 +33,33 @@ final class SiteEdges {
     static final double[] TOP = {0.01, 0.05, 0.25};
     static final String[] TOP_KEYS = {"top1", "top5", "top25"};
 
-    /** A row's page id: a catalog row as SiteExport names it, a registered count by its family; null for none. */
+    /**
+     * A row's page id: a catalog row as SiteExport names it; the two headline counts by their
+     * family, as SiteCeiling names them (f1, F1 at 1-8; f2, F2 with its betting vector); every
+     * other registered row (F1 flat, F2's play vector alone, F1r, the half-twin counts, the controls
+     * at the search's grain) by its whole name, since its family is shared and the first such run's
+     * report had six rows named f1 or f2 (17 October); null for none.
+     */
     static String id(String entry) {
+        // A control at the grain first: a name like "Hi-Lo = Hi-Lo Lite at grain 500/10000" would
+        // otherwise be read as its catalog count, whose first system it starts with.
+        if (entry.contains(" at grain ")) {
+            return "reg_" + SiteInput.slug(entry);
+        }
         String[] c = SiteInput.catalogRow(entry);
         if (c != null) {
             return c[0];
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(F[0-9]+) ").matcher(entry);
-        return m.find() ? m.group(1).toLowerCase(java.util.Locale.ROOT) : null;
+        if (entry.startsWith("F1 at 1-8 (")) {
+            return "f1";
+        }
+        if (entry.startsWith("F2 at 1-8, play vector (") && entry.endsWith(") + betting vector")) {
+            return "f2";
+        }
+        if (entry.matches("^F[0-9]+.*") || entry.contains(" at grain ")) {
+            return "reg_" + SiteInput.slug(entry);
+        }
+        return null;
     }
 
     static String layer(String label) {

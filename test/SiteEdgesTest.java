@@ -111,4 +111,32 @@ public class SiteEdgesTest {
         assertEquals(1.07, ((Map<?, ?>) in.figures.get("edge.top1.fd.80.hi_lo")).get("widen"));
         new SiteData().add("x.json", in.text("x.json").getBytes(StandardCharsets.UTF_8));
     }
+
+    /**
+     * Every row of the page look's report keeps a page id of its own. The report of 17 October held
+     * the registration's eight searched or check rows and eleven controls at the search's grain;
+     * naming each by the family its name starts with gave six of them f1 or f2, and the adapter
+     * stopped on "edge.top1.fd.80.f1 is written twice". The headline counts keep f1 and f2, as the
+     * ceiling's rows are named; the rest are named in full.
+     */
+    @Test
+    public void everyRegisteredRowHasAnIdOfItsOwn() {
+        String[] names = {"F1 at 1-8 (f1-8-vidami-ar)", "F1 flat (f1-flat-pub-uston-apc)",
+                "F2 at 1-8, play vector (f2-pub-victor-apc)", "F2 at 1-8, play vector (f2-pub-victor-apc) + betting vector",
+                "F1r at 1-8 (f1r-double-shift-half)", "F1r's tags as a true count (f1r-double-shift-half)",
+                "F1 at 1-8 on the twin's half 0 (f1-8-half0-pub-ubz2)", "F1 at 1-8 on the twin's half 1 (f1-8-half1-pub-brh1)",
+                "Hi-Opt II at grain 500/10000", "Hi-Opt II at grain 500/10000 + ace side count",
+                "Hi-Lo = Hi-Lo Lite at grain 500/10000", "Zen Count at grain 500/10000",
+                "Hi-Lo = Hi-Lo Lite", "Hi-Opt II + ace side count", "Null count (no count)"};
+        List<String> ids = new ArrayList<>();
+        for (String n : names) {
+            String id = SiteEdges.id(n);
+            assertNotNull(id, n);
+            assertFalse(ids.contains(id), n + " has the id " + id + " of another row");
+            ids.add(id);
+        }
+        assertEquals("f1", SiteEdges.id("F1 at 1-8 (f1-8-vidami-ar)"));
+        assertEquals("f2", SiteEdges.id("F2 at 1-8, play vector (f2-pub-victor-apc) + betting vector"));
+        assertEquals("hi_lo", SiteEdges.id("Hi-Lo = Hi-Lo Lite"));
+    }
 }
