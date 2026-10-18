@@ -1,0 +1,50 @@
+counts: 31; hands per up-card 3061, cells a tree 30610
+fit.ckpt: 372 strategies read in 0.2 s; 0 play the chart after the first move
+first 50 records: shoes 0..44, 30 shoes hold them; 11 shoes hold 2+ states (31 states); depth gaps between same-shoe states: 94 34 99 58 95 92 52 107 272 187 92 35 108 36 55 30 164 11 90 152; depths 0..331
+dealer hands by up-card (entries, rank factors): 1:1968,7068 2:2112,7346 3:1636,5521 4:1225,4015 5:938,2979 6:679,2090 7:514,1519 8:375,1057 9:277,754 10:183,470; mostCardsToRunOutOf(up 2) 10
+  10 states done
+  20 states done
+
+28 states sampled (offsets 5,10005,20005,30005,40005,50005,60005, 4 each); depths: 79 178 236 331 227 286 11 227 260 95 210 301 331 133 31 321 69 298 125 327 310 254 42 51 319 323 136 94
+tree build, as PlayerTree does it: 0.0871 s CPU a state (one thread, nice 15, machine shared)
+  replicated: 0.0864 s; of it dealerOutcomes setup 0.0001, gathering the shoes 0.0004, the batched distributions 0.0857, stood 0.0002; shoes valued one at a time 0 in all
+cells a state: feasible 29770.3 of 30610; R (the contested walk as written, every count, any play) 26566.1 (89.2% of feasible); E (the perfect walk) 29230.3
+  N (a top-down walk: departing parts + reached decisions, every start hitting): one strategy 19476.9 (65.4%), one count's 12 strategies + the chart 19715.1 (66.2%, most 23172), all 372 strategies + chart 20805.5 (69.9%)
+  N with the chart's first moves only: every strategy 18308.9 (61.5%); the chart alone (pass 0's later play) 15766.8 (53.0%)
+    Null count (no count)                                        N 19180.0 (64.4%)
+    Hi-Lo = Hi-Lo Lite                                           N 19734.8 (66.3%)
+    KO (Knock-Out) = REKO (Ridiculously Easy Knock-Out)          N 19462.4 (65.4%)
+    Red Seven (Red 7)                                            N 19533.4 (65.6%)
+    Hi-Opt I                                                     N 19733.4 (66.3%)
+    Hi-Opt II                                                    N 20026.4 (67.3%)
+    Omega II = Canfield Master                                   N 19951.6 (67.0%)
+    Canfield Expert                                              N 19886.4 (66.8%)
+    Zen Count                                                    N 19922.0 (66.9%)
+    Unbalanced Zen 2 (UBZ2)                                      N 19548.4 (65.7%)
+    Wong Halves                                                  N 19899.2 (66.8%)
+    Mentor                                                       N 19874.6 (66.8%)
+    KISS I                                                       N 19508.0 (65.5%)
+    KISS II                                                      N 19562.8 (65.7%)
+    KISS III                                                     N 19620.7 (65.9%)
+    Silver Fox                                                   N 19871.3 (66.7%)
+    Revere Advanced Plus-Minus                                   N 19735.1 (66.3%)
+    Revere Point Count (RPC) = FELT (Fairly Easy Level Two) = C- N 19845.4 (66.7%)
+    Revere Advanced Point Count 1971 (RAPC)                      N 19868.7 (66.7%)
+    Revere 14 Count (1973 Advanced Point Count)                  N 19920.8 (66.9%)
+    Uston Advanced Plus-Minus                                    N 19875.9 (66.8%)
+    Uston Advanced Point Count (Uston APC)                       N 20102.4 (67.5%)
+    Uston SS                                                     N 19550.9 (65.7%)
+    Victor Advanced Point Count (Victor APC)                     N 20072.3 (67.4%)
+    BRH-0                                                        N 19537.9 (65.6%)
+    BRH-I                                                        N 19880.1 (66.8%)
+    BRH-II                                                       N 19593.2 (65.8%)
+    Thorp Ultimate                                               N 19908.8 (66.9%)
+    Ten Count (unbalanced; insurance-oriented)                   N 19560.7 (65.7%)
+    Ace-Five Count                                               N 19186.8 (64.4%)
+    Revere Five-Count                                            N 19212.4 (64.5%)
+build on R only 0.0766 s CPU a state (88.7% of the replicated full build); on N (all strategies) 0.0587 s (67.9%); on Hi-Lo's N 0.0547 s (63.3%)
+regrouped build (FastProbe.fast2): every cell 0.0493 s (56.6% of PlayerTree), N in all 0.0425 s (48.8%), Hi-Lo's N 0.0390 s (44.7%)
+bits: 4152178 cells compared (full replica, R-only, N-only against PlayerTree), 0 differ
+poison checks: eager walks on an R-only tree 0 of 0 differ in any output; top-down N per play 0 of 0 differ in a used output
+R's cells as doubles: 212529 B a state raw, deflate 197331 B (1.08x), xor-previous + deflate 199687 B (1.06x)
+dealer shoes (up-card, S - H - u) over the sample: 833568 asked, 833568 distinct

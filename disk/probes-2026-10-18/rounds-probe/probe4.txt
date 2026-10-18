@@ -1,0 +1,3 @@
+Hi-Lo = Hi-Lo Lite: contested nodes a state 6679; distinct (spot, key) decisions a state 473 (min 272, max 893)
+Omega II = Canfield Master: contested nodes a state 6679; distinct (spot, key) decisions a state 290 (min 164, max 522)
+KISS I: contested nodes a state 17827; distinct (spot, key) decisions a state 595 (min 426, max 632)

@@ -1,0 +1,1 @@
+states 149: feasible stand values 233789 B a state; deflate-9 92.7%; byte-shuffled deflate-9 80.2%

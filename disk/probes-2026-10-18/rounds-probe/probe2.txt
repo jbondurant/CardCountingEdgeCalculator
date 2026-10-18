@@ -1,0 +1,2 @@
+rank-graph contested positions an up-card: 768 = 54 starts + 689 contested + 25 always-hit
+states 149: fixed sums a state 7465.3, contested stand values a state 6676.4; 113134 B a state; x 60,743 = 6.87 GB

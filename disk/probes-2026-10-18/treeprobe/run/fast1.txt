@@ -1,0 +1,14 @@
+up  1: 1968 entries, 385 rank sets, factors a shoe  7068, tuple factors  2246796 (317.9 shoes' worth)
+up  2: 2112 entries, 354 rank sets, factors a shoe  7346, tuple factors  2431348 (331.0 shoes' worth)
+up  3: 1636 entries, 314 rank sets, factors a shoe  5521, tuple factors  1700780 (308.1 shoes' worth)
+up  4: 1225 entries, 277 rank sets, factors a shoe  4015, tuple factors  1163996 (289.9 shoes' worth)
+up  5:  938 entries, 240 rank sets, factors a shoe  2979, tuple factors   789507 (265.0 shoes' worth)
+up  6:  679 entries, 207 rank sets, factors a shoe  2090, tuple factors   535472 (256.2 shoes' worth)
+up  7:  514 entries, 173 rank sets, factors a shoe  1519, tuple factors   346216 (227.9 shoes' worth)
+up  8:  375 entries, 142 rank sets, factors a shoe  1057, tuple factors   213228 (201.7 shoes' worth)
+up  9:  277 entries, 116 rank sets, factors a shoe   754, tuple factors   138689 (183.9 shoes' worth)
+up 10:  183 entries,  90 rank sets, factors a shoe   470, tuple factors    76849 (163.5 shoes' worth)
+all: 9907 entries, 2298 rank sets, most tuples of a set 1837
+28 states: PlayerTree 0.0867 s CPU a state; regrouped 0.0733 s (1.18x faster): setup 0.0005, entries 0.0726, stood 0.0002
+cells compared 857080 (every cell, NaN included), 0 differ in any bit
+again, regrouped first: PlayerTree 0.0855 s, regrouped 0.0716 s (1.19x)
