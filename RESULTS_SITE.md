@@ -8,8 +8,9 @@ information on card counting, has reason to trust it. The tab is one static page
 existing style. Its charts and tables are written by code committed here, and every figure on it
 is filled in by that code, never typed. The page says what a hash proves (that a download is, byte
 for byte, the file the manifest lists) and what it does not: that the listed commits made the file
-(Justin's statement, which a reader tests by reproducing it; for the first segment of the states
-file and for the search file the build is inferred, not recorded), or that the code is right. Then
+(Justin's statement; for the first segment of the states file and for the search file the build
+is inferred, not recorded), or that the code is right. Only the files served with the page can be
+checked from it; the run files' hashes are recorded values (PLAN_PAGE.md 3.2, 18 October 2026). Then
 it gives the actual evidence for correctness. Nothing in these files is built or run yet. Nothing is pushed or
 published without Justin's yes on an exact list of files.
 

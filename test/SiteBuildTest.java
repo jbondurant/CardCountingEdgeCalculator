@@ -60,6 +60,23 @@ import static org.junit.jupiter.api.Assertions.*;
  *   theReportedFiguresAreReadBesideTheTests; a number found inside a longer one: SiteEvidenceTest's
  *   aRowIsPrintedOnlyWhenItsRecordBearsItOut).</li>
  * </ul>
+ *
+ * <p>Plants for SHA256SUMS listing only the files served with the page, each in a scratch copy of
+ * the working tree on 18 October 2026, run against this class; all were caught on their first run:
+ * <ul>
+ *   <li>the recorded run files listed in SHA256SUMS again by file name, the bug itself: 13 tests
+ *   failed, shasumReadsEveryLineOfSha256sumsInTheBuiltDataFolder among them ("results.fake: listed
+ *   twice", "FAILED open or read"), the rest through the build's own check;</li>
+ *   <li>the same with the build's check switched off: that test and
+ *   theManifestHashesWhatItListsAndThePageShowsTheManifestsHash;</li>
+ *   <li>that, with SiteManifest.check also passing unreadable files and names listed twice: the same
+ *   two, the first on its served-files-only assertion;</li>
+ *   <li>one wrong hash in SHA256SUMS with SiteManifest.check passing everything: the real shasum,
+ *   run in shasumReadsEveryLine..., exited 1; theManifestHashesWhatItLists... failed too, since it
+ *   tests the check itself;</li>
+ *   <li>SiteManifest.listed taking a served file outside data/ by its file name, and a name listed
+ *   twice allowed: theManifestHashesWhatItLists..., each time.</li>
+ * </ul>
  */
 public class SiteBuildTest {
 
@@ -1115,17 +1132,82 @@ public class SiteBuildTest {
         Map<String, byte[]> files = new HashMap<>();
         files.put("results.json", page.files.get("data/results.json"));
         files.put("results.csv", page.files.get("data/results.csv"));
-        files.put("results.fake", "fixture artifact results".getBytes(StandardCharsets.UTF_8));
-        files.put("ceiling.fake", "fixture artifact ceiling".getBytes(StandardCharsets.UTF_8));
-        files.put("search.fake", "fixture artifact search".getBytes(StandardCharsets.UTF_8));
         String sums = page.text("data/SHA256SUMS");
-        assertEquals(List.of(), SiteManifest.check(sums, files));
+        assertEquals(List.of(), SiteManifest.check(sums, files::get));
         files.put("results.csv", "changed".getBytes(StandardCharsets.UTF_8));
-        assertEquals(List.of("results.csv: FAILED"), SiteManifest.check(sums, files));
+        assertEquals(List.of("results.csv: FAILED"), SiteManifest.check(sums, files::get));
+        files.remove("results.csv");
+        assertEquals(List.of("results.csv: FAILED open or read"), SiteManifest.check(sums, files::get));
+        String twice = sums + sums.substring(0, sums.indexOf('\n') + 1);
+        assertEquals(List.of("results.json: listed twice"), SiteManifest.check(twice, x -> page.files.get(SiteManifest.DATA + x)));
+        assertThrows(IllegalArgumentException.class, () -> SiteManifest.listed("index.html"));
         String hash = SiteData.sha256(page.files.get("data/manifest.json"));
         assertTrue(html().contains("<code class=\"hash\"><span data-s=\"manifest\">" + hash + "</span></code>"));
         assertTrue(page.text("data/manifest.json").contains("\"sha256\":\"" + SiteData.sha256(page.files.get("data/results.json")) + "\""));
         assertTrue(page.text("data/MANIFEST.md").contains(SiteManifest.ABOUT));
+    }
+
+    /**
+     * The reader's check, run where the reader runs it: the page is written to disk by SiteBuild's
+     * own writer, and SHA256SUMS is checked in data/ against the files there. Every line must be
+     * read and must match, each name must be listed once, and the names are the files served,
+     * which the hash box names. The inputs are the fixture's with two recorded files of one name in
+     * two folders, as the real inputs have two results.ser (c06c061's and the ceiling run's); those
+     * stay in the recorded table and out of SHA256SUMS. On 18 October 2026 runs/page-613255a/data
+     * failed this on 14 of its 16 lines: SHA256SUMS also listed the run files, which never ship
+     * with the page. Where shasum or sha256sum is installed, the real command is run as well.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void shasumReadsEveryLineOfSha256sumsInTheBuiltDataFolder() throws Exception {
+        Path in = copy("same-name");
+        Path ceiling = in.resolve("ceiling-fixture.json");
+        String c = read(ceiling.toString());
+        assertTrue(c.contains("fixture/ceiling.fake"));
+        Files.write(ceiling, c.replace("fixture/ceiling.fake", "fixture/again/results.fake").getBytes(StandardCharsets.UTF_8));
+        SiteBuild.Output o = build(in, template);
+        Path out = dir.resolve("same-name-out");
+        SiteBuild.write(o, out);
+        Path data = out.resolve("data");
+        assertEquals(List.of(), SiteManifest.check(data));
+
+        List<String> names = new ArrayList<>();
+        for (String line : o.text("data/SHA256SUMS").split("\n")) {
+            names.add(line.substring(66));
+        }
+        List<String> served = new ArrayList<>();
+        Map<String, Object> man = (Map<String, Object>) Json.parse(o.text("data/manifest.json"));
+        for (Object f : (List<Object>) man.get("served")) {
+            String path = (String) ((Map<String, Object>) f).get("path");
+            assertTrue(path.startsWith("data/") && o.files.containsKey(path), path);
+            served.add(path.substring("data/".length()));
+        }
+        assertFalse(served.isEmpty());
+        assertEquals(served, names, "SHA256SUMS lists the served files and nothing else");
+        String box = SiteBuild.textOf(o.text("index.html"), "hash");
+        for (String n : names) {
+            assertTrue(box.contains(n), "the hash box names " + n);
+        }
+        for (String recorded : List.of("fixture/results.fake", "fixture/again/results.fake")) {
+            assertTrue(o.text("data/MANIFEST.md").contains("| " + recorded + " |"), recorded);
+            assertTrue(o.text("index.html").contains(">" + recorded + "</code>"), recorded);
+        }
+        assertFalse(o.text("data/SHA256SUMS").contains(".fake"));
+        assertEquals(List.of(), o.problems);
+
+        for (String[] cmd : new String[][]{{"shasum", "-a", "256", "-c", "SHA256SUMS"}, {"sha256sum", "-c", "SHA256SUMS"}}) {
+            Process run;
+            try {
+                run = new ProcessBuilder(cmd).directory(data.toFile()).redirectErrorStream(true).start();
+            } catch (IOException notInstalled) {
+                continue;
+            }
+            String said = new String(run.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, run.waitFor(), String.join(" ", cmd) + " said:\n" + said);
+            assertFalse(said.contains("FAILED") || said.contains("could not be read"), said);
+            assertEquals(names.size(), said.split("\n").length, said);
+            break;
+        }
     }
 
     @Test

@@ -413,6 +413,15 @@ section 3.5's evidence table, generated. Then the hash box:
 > right; a bug is hashed just as faithfully. The table above is the evidence that the code
 > is right, and it is evidence, not proof.
 
+**Corrected 18 October 2026.** That box was wrong both ways, and the page no longer says it.
+The figures come back to the bit, not only to within 1e-12: measured for one fit on the same
+number of threads, predicted for the rest. The `.ser` files never come back byte for byte,
+since each records its own run times (SystemScorer's `Result.seconds`, FullIndexFit's
+`PassRecord.wallSeconds`). The states file coming back byte for byte is a prediction, never
+tried. And "the file you downloaded" covered files the page never ships. The box in
+`site/template.html` now says which hashes a reader can check from the page (those of the
+files served with it) and that the rest are recorded values.
+
 **11. How AI was used.** Section 4 of this plan. It stays after the checks so that the
 page reads question, method, results, checks; but the status line under the answer says
 in one clause that AI agents wrote most of the code, and sections 8 and 10 each open with
@@ -652,7 +661,9 @@ reproduces it. Three things build on the hash:
   `results.json` from `results.ser`; it does not re-score full play, the other counts or
   any interval. Depth 2 re-scores chosen counts. Only depth 3 reproduces the states file
   byte for byte (if the spot check's prediction in 3.3 holds), and `results.ser` can be
-  reproduced only to within 1e-12, its run's own standard, not byte for byte.
+  reproduced only to within 1e-12, its run's own standard, not byte for byte. (Corrected 18
+  October 2026: its figures come back to the bit, measured for one fit; its bytes never do,
+  since it records its own run times. See the note under section 1, item 10.)
 
 None of these shows that the code is right: that it models Montreal's rules correctly,
 that it has no bug every test shares, or that its author did not try many variants and
@@ -665,6 +676,13 @@ hash box, in about the words above.
 `SiteManifest` writes three files: `manifest.json`; `MANIFEST.md`, the same as a table;
 and `SHA256SUMS` in the coreutils format, so `shasum -a 256 -c SHA256SUMS` checks every
 download in one line.
+
+Since 18 October 2026, `SHA256SUMS` lists only the files served with the page, by their paths
+under `data/`. In 17 October's build (`runs/page-613255a/data`), 14 of its 16 lines named run
+files the page did not have, two of them both `results.ser`. The run files' hashes are now in
+`manifest.json` under `recorded` and in `MANIFEST.md`'s second table, as recorded values a
+reader cannot check from the page alone. The build refuses a `SHA256SUMS` line it cannot back
+with a file it writes, and `SiteBuildTest` runs the reader's check on the written folder.
 
 Each artifact in `manifest.json` has: `id`, `path`, `bytes`, `sha256`; `produced_by`, a list
 of segments, each with the commit (40 hex digits), the class directory's tree hash, the

@@ -1136,7 +1136,10 @@ final class SiteBuild {
             return paragraph(p.substring(5).trim(), d);
         }
         if (p.startsWith("files:")) {
-            return files(bars(p.substring(6)), strings);
+            return files(bars(p.substring(6)), strings, "file");
+        }
+        if (p.startsWith("recorded:")) {
+            return files(bars(p.substring(9)), strings, "recorded");
         }
         switch (p) {
             case "shoe":
@@ -1257,20 +1260,22 @@ final class SiteBuild {
     }
 
     /**
-     * The files table of the downloads section, from the manifest the build just wrote: each file's
-     * name, size and SHA-256, all as data-s strings. head gives the four headings.
+     * A files table of the downloads section, from the manifest the build just wrote: each file's
+     * name, size and SHA-256, all as data-s strings. head gives the four headings; prefix picks the
+     * rows, "file" for the files served with the page (the ones SHA256SUMS lists) and "recorded"
+     * for the run files whose hashes are recorded only.
      */
-    static String files(List<String> head, Map<String, String> strings) {
+    static String files(List<String> head, Map<String, String> strings, String prefix) {
         if (head.size() != 4) {
-            throw new IllegalArgumentException("files: needs four headings");
+            throw new IllegalArgumentException(prefix + ": needs four headings");
         }
         StringBuilder b = new StringBuilder("<div class=\"tw\"><table class=\"files\"><thead><tr>");
         for (String h : head) {
             b.append("<th scope=\"col\">").append(h).append("</th>");
         }
         b.append("</tr></thead><tbody>");
-        for (int k = 0; strings.containsKey("file." + k + ".path"); k++) {
-            String f = "file." + k;
+        for (int k = 0; strings.containsKey(prefix + "." + k + ".path"); k++) {
+            String f = prefix + "." + k;
             b.append("<tr><td><code data-s=\"").append(f).append(".path\">").append(SiteSvg.esc(strings.get(f + ".path")))
                     .append("</code></td><td class=\"num\"><span data-s=\"").append(f).append(".bytes\">")
                     .append(strings.get(f + ".bytes")).append("</span></td><td><code class=\"hash\" data-s=\"").append(f)
@@ -1393,7 +1398,8 @@ final class SiteBuild {
             draft.put("short." + i.what(), i.commit());
         }
         for (int k = 0; k < 64; k++) {
-            fileStrings(draft, k, "", 0, "", "");
+            fileStrings(draft, "file", k, "", 0, "", "");
+            fileStrings(draft, "recorded", k, "", 0, "", "");
         }
         java.util.Set<String> cited = new java.util.TreeSet<>();
         Matcher dk = Pattern.compile("data-k=\"([^\"]+)\"").matcher(render(t, d, draft, tokens, css));
@@ -1415,10 +1421,12 @@ final class SiteBuild {
         }
         int fk = 0;
         for (Map.Entry<String, byte[]> e : served.entrySet()) {
-            fileStrings(strings, fk++, e.getKey(), e.getValue().length, SiteData.sha256(e.getValue()), "SiteBuild " + generator);
+            fileStrings(strings, "file", fk++, e.getKey(), e.getValue().length, SiteData.sha256(e.getValue()), "SiteBuild " + generator);
         }
-        for (Map<String, Object> art : man.artifacts) {
-            fileStrings(strings, fk++, (String) art.get("path"), art.get("bytes") == null ? -1 : ((Number) art.get("bytes")).longValue(),
+        int rk = 0;
+        for (Map<String, Object> art : man.recorded) {
+            fileStrings(strings, "recorded", rk++, (String) art.get("path"),
+                    art.get("bytes") == null ? -1 : ((Number) art.get("bytes")).longValue(),
                     String.valueOf(art.get("sha256")), String.valueOf(art.get("commit")));
         }
         o.strings = strings;
@@ -1455,11 +1463,12 @@ final class SiteBuild {
         return o;
     }
 
-    private static void fileStrings(Map<String, String> s, int k, String path, long bytes, String sha, String by) {
-        s.put("file." + k + ".path", path);
-        s.put("file." + k + ".bytes", bytes < 0 ? "not recorded" : SiteText.grouped(bytes));
-        s.put("file." + k + ".sha", sha);
-        s.put("file." + k + ".by", by);
+    private static void fileStrings(Map<String, String> s, String prefix, int k, String path, long bytes, String sha, String by) {
+        String f = prefix + "." + k;
+        s.put(f + ".path", path);
+        s.put(f + ".bytes", bytes < 0 ? "not recorded" : SiteText.grouped(bytes));
+        s.put(f + ".sha", sha);
+        s.put(f + ".by", by);
     }
 
     /** External links the page may carry (PLAN_PAGE.md 2.6): the site, its repos, and the cited sources. */
@@ -1492,6 +1501,10 @@ final class SiteBuild {
         budget(p, o, "assets/page.js", JS_BUDGET);
         budget(p, o, "data/results.json", RESULTS_BUDGET);
         budget(p, o, "data/results.csv", CSV_BUDGET);
+        // The reader's shasum -a 256 -c SHA256SUMS, run in data/ on the files this build writes there.
+        for (String x : SiteManifest.check(o.text("data/SHA256SUMS"), name -> o.files.get(SiteManifest.DATA + name))) {
+            p.add("SHA256SUMS: " + x);
+        }
         int man = o.files.get("data/manifest.json").length + o.files.get("data/SHA256SUMS").length
                 + o.files.get("data/MANIFEST.md").length;
         if (man > MANIFEST_BUDGET) {
@@ -1634,6 +1647,15 @@ final class SiteBuild {
         return new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
     }
 
+    /** Writes the build's files under out, each at its path under card-counting/. */
+    static void write(Output o, Path out) throws IOException {
+        for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
+            Path f = out.resolve(e.getKey());
+            Files.createDirectories(f.getParent());
+            Files.write(f, e.getValue());
+        }
+    }
+
     /**
      * java -cp build/classes SiteBuild --inputs runs/site --site site --index ../jbondurant.github.io/index.html
      *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--check] [--draft DIR]
@@ -1691,11 +1713,7 @@ final class SiteBuild {
             for (String p : o.problems) {
                 System.err.println("  " + p);
             }
-            for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
-                Path f = Paths.get(a.get("draft")).resolve(e.getKey());
-                Files.createDirectories(f.getParent());
-                Files.write(f, e.getValue());
-            }
+            write(o, Paths.get(a.get("draft")));
             System.exit(1);
         }
         if (!o.problems.isEmpty()) {
@@ -1705,11 +1723,7 @@ final class SiteBuild {
             }
             System.exit(1);
         }
-        for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
-            Path f = out.resolve(e.getKey());
-            Files.createDirectories(f.getParent());
-            Files.write(f, e.getValue());
-        }
+        write(o, out);
         System.out.printf("SiteBuild: wrote %d files to %s (page %,d bytes, results.json %,d)%s%n", o.files.size(), out,
                 o.files.get("index.html").length, o.files.get("data/results.json").length,
                 in.fixture() ? "; FIXTURE: every figure is made up" : "");
