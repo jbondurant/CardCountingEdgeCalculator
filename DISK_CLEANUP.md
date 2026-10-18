@@ -28,6 +28,7 @@ for 4 strategies with the trees built. The main replay took 2,082 s for 8 strate
 read. Part of that gap is load, since the test suite and other work shared the machine for most of
 the check. The item-1 re-export (15 rows, about 4 batches, as the main replay batched 4 items)
 pays it about 4 times.
+
 **Not yet, then.** Item 1 is still pending: the 15 full-play rows of the main run and the page
 look's F50/F52 export, both refused under open item 1 (INTEGRATION.md:377). Only PageLook makes
 the F50/F52 export, and PageLook reads trees only from a kept store (`--trees-read-only`,
