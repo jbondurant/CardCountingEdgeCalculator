@@ -23,13 +23,15 @@ import java.util.stream.Stream;
  * not counted: a test's temporary directory, or a path given on purpose.
  *
  * The budget is BUDGET_GB unless a run is given --disk-budget GB, or the environment variable
- * CCEC_DISK_BUDGET_GB is set. BUDGET_GB is 9, not the 5 asked for, because what the page is built
- * and reproduced from holds 6.38 GB on its own, the two state files 2.68 GB of it (main --without,
- * 18 October 2026, with the tree store, the replays' records and the superseded files left out),
- * and the largest run made, a replay of every item of the main run with its three hooks, writes
- * 1.88 GB while it runs (estimated 2.33 GB below). With the room 9 GB leaves, a rerun of the main
- * run keeps few trees, and builds the others in every round: about half an hour more a round on
- * six threads (TreeStore).
+ * CCEC_DISK_BUDGET_GB is set. BUDGET_GB is 9, not the 5 asked for. What the page's figures are
+ * reproduced from holds 6.38 GB on its own, the two state files 2.68 GB of it (main --without, 18
+ * October 2026, with the tree store, the replays' records and the superseded files left out); the
+ * page itself is built from runs/site's 0.003 GB. And the largest run made, a replay of every item
+ * of the main run with its three hooks, writes 1.88 GB while it runs (estimated 2.33 GB below).
+ * With the room 9 GB leaves, a rerun of the main run keeps few trees and builds the others in
+ * every round: about half an hour more a round on six threads (TreeStore), and 48 of a full run's
+ * 49 rounds read trees. Holding runs/ to 2 GB needs finished files kept on Drive and fetched when
+ * a run reads them (DISK_2GB.md).
  *
  * Planted on 18 October 2026 in a scratch copy, one at a time, each failed the test named, which
  * passes without it: the store writing every tree, and not cutting a store opened with a smaller

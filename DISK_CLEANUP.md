@@ -28,8 +28,13 @@ for 4 strategies with the trees built. The main replay took 2,082 s for 8 strate
 read. Part of that gap is load, since the test suite and other work shared the machine for most of
 the check. The item-1 re-export (15 rows, about 4 batches, as the main replay batched 4 items)
 pays it about 4 times.
-PageLook reads trees only with `--trees-read-only`, so running it again would first need a
-`--trees none` option.
+**Not yet, then.** Item 1 is still pending: the 15 full-play rows of the main run and the page
+look's F50/F52 export, both refused under open item 1 (INTEGRATION.md:377). Only PageLook makes
+the F50/F52 export, and PageLook reads trees only from a kept store (`--trees-read-only`,
+PageLook.java:179-181). So deleting A before item 1 is done would block that export until
+PageLook gets a `--trees none` option. Even then the export would be slow: a full run has 49
+rounds, and 48 of them read trees (full-c06c061.log). The recommendation, from the 2 GB review
+(DISK_2GB.md), is A after item 1. B and C can go now.
 
 **B, the replays' records.** Only a resume reads them. Both replays scored every item, and wrote
 `replay.txt`, `perfect.ser` and `wide.ser` from them. Those stay. A resume would be pointless
