@@ -1,5 +1,8 @@
 # Can the program run in 2 GB of disk? (18 October 2026)
 
+**Superseded the same day:** Justin does not want to rely on Drive ("I just want like results, and
+produce files that are required to create those results"). See DISK_RESULTS_ONLY.md.
+
 Justin asked: "Is there a way to make this program run with 2gb max of space". A workflow looked into
 it on 18 October: five read-only investigators, three designers and an adversarial judge. Their
 working papers are `disk/2026-10-18-2gb-working-papers.md`.
