@@ -21,9 +21,13 @@ measures it).
 
 **A, the tree store.** Every state's player tree, kept only so later rounds read it instead of
 building it again. No figure comes from it. A tree built again is the same tree, to the bit
-(TreeStoreTest). On the real files: _the check below_. What it costs to delete: a replay builds
-every tree again in each batch. How long that adds is measured by the check below. The item-1
-re-export (15 rows, about 4 batches, as the main replay batched 4 items) pays that 4 times.
+(TreeStoreTest). On the real files too: the check below gave back two published items and every
+state's perfect value to the bit with every tree built again. What it costs to delete: a replay
+builds every tree again in each batch. In the check, the batch's last round took 8,123 s (2.3 h)
+for 4 strategies with the trees built. The main replay took 2,082 s for 8 strategies with them
+read. Part of that gap is load, since the test suite and other work shared the machine for most of
+the check. The item-1 re-export (15 rows, about 4 batches, as the main replay batched 4 items)
+pays it about 4 times.
 PageLook reads trees only with `--trees-read-only`, so running it again would first need a
 `--trees none` option.
 
@@ -52,4 +56,12 @@ trees.bin. Each was set beside the part the run wrote, number by number
 (`runs/disk-cap-check/replay-trees-none-03b116f`, script
 `runs/site-runs/disk-cap-check-03b116f.sh`).
 
-_Result: pending._
+Result, 18 October 2026 (`replay.txt` there):
+
+- Hi-Lo at 80%: 416,114 numbers, all 416,114 the same to the bit.
+- Victor APC at 80%: 829,436 numbers, all 829,436 the same to the bit.
+- Perfect-play values: worked out again for 60,743 of 60,743 states, all the same to the bit.
+
+The replay then let its 2 records go (0.01 GB, `records-let-go.txt`), the new code's path, on the
+real files. So a tree built again gives the published figures to the bit, and deleting trees.bin
+costs time, not numbers.
