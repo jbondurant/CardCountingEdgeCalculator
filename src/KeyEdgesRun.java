@@ -49,6 +49,9 @@ final class KeyEdgesRun {
     /** The penetration run A' is made at: 80%. */
     static final int REFIT_PEN = 2;
 
+    /** What run A or A' writes, about: 304901c's wrote 0.21 and 0.07 GB (DiskBudget). */
+    static final long BYTES = 300_000_000L;
+
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.ROOT);
         if (args.length < 1) {
@@ -104,6 +107,9 @@ final class KeyEdgesRun {
         }
         if (published == null || out == null) {
             usage();
+        }
+        if (mode.equals("a") || mode.equals("a-prime")) {
+            DiskBudget.require(out, BYTES, DiskBudget.budget(null), "KeyEdgesRun " + mode);
         }
         Files.createDirectories(out);
         String commit = FullIndexRun.commit();

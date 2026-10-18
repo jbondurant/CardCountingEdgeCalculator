@@ -434,10 +434,14 @@ final class CeilingReport {
         return c;
     }
 
+    /** What a save writes, about: 97bf834's held 0.20 GB (DiskBudget). */
+    static final long SAVE_BYTES = 300_000_000L;
+
     /**
      * Refuses a save file the report could not write at its end: one that exists, or whose
      * FILE.tmp, which save writes first, exists; a directory that is missing or where a file cannot
-     * be made (FILE.tmp is made there and deleted); or less than margin bytes free there.
+     * be made (FILE.tmp is made there and deleted); less than margin bytes free there; or a runs
+     * folder whose budget has no room for SAVE_BYTES (DiskBudget).
      */
     static void requireSavable(Path save, long margin) throws IOException {
         if (Files.exists(save, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -461,6 +465,7 @@ final class CeilingReport {
             throw new IllegalStateException(String.format("%.1f GB is free where %s goes, less than the %.1f GB a look "
                     + "keeps free to save what it scores", free / 1e9, save, margin / 1e9));
         }
+        DiskBudget.require(save, SAVE_BYTES, DiskBudget.budget(null), "CeilingReport --save");
     }
 
     // ------------------------------------------------------------------ what is saved

@@ -201,6 +201,9 @@ public final class FullIndexDryRun {
         }
         m.counts = counts.size();
         m.statesHeld = FullIndexPilot.usedAfterGc();
+        // Every state's trees and the checkpoints, against the runs folder's budget, before anything is written.
+        DiskBudget.require(work, TreeStore.bytes(st.size) + DiskBudget.ITEM * counts.size() * pens.length * 2,
+                DiskBudget.budget(null), "FullIndexDryRun");
         Path dir = work.resolve("run-" + System.currentTimeMillis());
         java.nio.file.Files.createDirectories(dir);
         TreeStore store = new TreeStore(st, dir.resolve("trees.bin"), "dry run " + st.size, FullIndexRun.DISK_MARGIN);

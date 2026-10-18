@@ -36,7 +36,9 @@ import java.util.List;
  * (FullIndexReplay.differences on its identity); a tree store of other states; a state file that is
  * not the main file; an OUT that exists (unless --resume). After the line, before writing any
  * output: every point estimate and per-key table of run C must be step 7's to the bit, and every
- * item of run D step 8's results.ser's to the bit (Step8), else it stops naming the first.
+ * item of run D step 8's results.ser's to the bit (Step8), else it stops naming the first. The runs
+ * folder's budget (DiskBudget) is checked among the refusals before the line, for BYTES, what the
+ * whole look writes; the replay's records are let go once the look is done (FullIndexReplay.letGo).
  *
  * Usage (the machine to itself; about 1.5 to 2 h on the real files, PLAN_COMPUTE.md 6.3):
  *   java -Xmx12g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar PageLook --states runs/montreal-80.states
@@ -52,6 +54,8 @@ final class PageLook {
     /** Step 7's and step 8's ledger lines, by how they begin (CeilingReport.run, FullIndexRun.run). */
     static final String STEP7 = "ComparisonReport --published";
     static final String STEP8 = "FullIndexRun started";
+    /** What a look writes, its replay's records among them: 0e0920d's wrote 0.80 GB, its first attempt's aside. */
+    static final long BYTES = 1_000_000_000L;
 
     private PageLook() {
     }
@@ -239,6 +243,8 @@ final class PageLook {
         String stateLines = states + "\nstates " + c.size;
         refuse(!store.substring(store.indexOf('\n') + 1).equals(stateLines), "the tree store " + o.trees
                 + " holds the trees of other states:\n" + store);
+        // The whole look's files, its replay's among them, counted here, before the ledger line.
+        DiskBudget.require(o.out, Math.max(0, BYTES - DiskBudget.bytes(o.out)), DiskBudget.budget(null), "PageLook");
         return c;
     }
 
@@ -466,6 +472,8 @@ final class PageLook {
         r.exportPlans = o.plans.clone();
         r.look = c.fullBlob;
         r.batchBytes = o.batchBytes;
+        // Counted in the look's own check, before its ledger line, so never refused after it.
+        r.budget = Long.MAX_VALUE;
         r.hooks.add(new Step8(CeilingReport.read(r.fitFrom.resolve("results.ser"))));
         return FullIndexReplay.run(r, commit, log);
     }
@@ -524,5 +532,6 @@ final class PageLook {
         if (m.exportFullRefused != null) {
             System.exit(1);
         }
+        FullIndexReplay.letGo(m.full, System.out);
     }
 }

@@ -22,6 +22,8 @@ import java.util.concurrent.Future;
 public final class StateRun {
 
     static final int CUT_80 = 332;
+    /** What a shoe's states take in the file, with room: the main file's took 22.3 KB a shoe (DiskBudget). */
+    static final long SHOE_BYTES = 25_000L;
 
     static RoundRules montreal() {
         return RoundRules.from(HouseRules.getMtlCasino25MinBlackjackParams(80));
@@ -61,6 +63,10 @@ public final class StateRun {
         RoundRules rules = montreal();
         RoundPolicy basic = BasicStrategy.chart();
         StateStore.Header header = new StateStore.Header(seed, q0, u0, CUT_80, describe(rules, basic));
+        // Before the file is opened, which may write its header: the shoes to come, at what the main
+        // file's took (1.34 GB for 60,000 shoes), counted against the runs folder's budget.
+        int held = java.nio.file.Files.exists(StateStore.progressFile(file)) ? StateStore.shoesDone(file) : 0;
+        DiskBudget.require(file, SHOE_BYTES * Math.max(0, shoes - held), DiskBudget.budget(null), "StateRun");
         int first = StateStore.open(file, header);
         ShoeRun run = new ShoeRun(seed, q0, u0, CUT_80, rules, basic);
         System.out.printf("%s: shoes %d to %d, q0 %.4f, u0 %.3f, %d threads%n", file, first, shoes - 1, q0, u0, threads);
