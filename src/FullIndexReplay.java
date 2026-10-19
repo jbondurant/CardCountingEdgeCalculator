@@ -428,18 +428,23 @@ final class FullIndexReplay {
                     : StrategyExport.ReplayExport.named(o.exportRows, o.pens);
             StrategyExport.ReplayExport export = new StrategyExport.ReplayExport(o.export.toAbsolutePath().normalize(),
                     o.states, o.shoes, rows, o.exportPlans, StrategyExport.SAMPLE_SEED, log);
-            if (o.exportRows == null) {
-                // The registered rows carry the wide plans SIM_CHECK.md registers for them (F43 to F48),
-                // which the replay scores with --wide; without it they are left out, and the log says so.
-                java.util.Map<String, List<String>> wide = StrategyExport.ReplayExport.registeredPlans(o.pens);
-                if (o.wide) {
-                    for (java.util.Map.Entry<String, List<String>> e : wide.entrySet()) {
-                        export.plans(e.getKey(), e.getValue());
-                    }
-                } else if (!wide.isEmpty()) {
-                    log.println("export: the wide plans SIM_CHECK.md registers (" + wide + ") are not exported: the "
-                            + "replay scores them only with --wide");
+            // The registered rows carry the wide plans SIM_CHECK.md registers for them (F43 to F48), which
+            // the replay scores with --wide: each exported row, named or not, gets its own; without --wide
+            // they are left out, and the log says so. Until 19 October 2026 they were attached only when no
+            // row was named, so an export with --only and --export-row (row 6's export again) wrote none.
+            java.util.Map<String, List<String>> wide = new java.util.TreeMap<>();
+            for (java.util.Map.Entry<String, List<String>> e : StrategyExport.ReplayExport.registeredPlans(o.pens).entrySet()) {
+                if (rows.contains(e.getKey())) {
+                    wide.put(e.getKey(), e.getValue());
                 }
+            }
+            if (o.wide) {
+                for (java.util.Map.Entry<String, List<String>> e : wide.entrySet()) {
+                    export.plans(e.getKey(), e.getValue());
+                }
+            } else if (!wide.isEmpty()) {
+                log.println("export: the wide plans SIM_CHECK.md registers (" + wide + ") are not exported: the "
+                        + "replay scores them only with --wide");
             }
             out.add(export);
         } else if (o.exportRows != null) {
