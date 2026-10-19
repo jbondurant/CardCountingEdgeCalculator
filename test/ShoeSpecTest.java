@@ -1093,9 +1093,10 @@ public class ShoeSpecTest {
                 }
             }
         }
-        // The split lines are read, and where they are, reading the first line instead plays otherwise.
-        assertTrue(readSplit > 1000, readSplit + " first decisions read a split line");
-        assertTrue(differs > 100, differs + " first decisions a split line plays otherwise than its first line");
+        // The split lines are read, and where they are, reading the first line instead plays otherwise:
+        // the counts the class comment gives, from seed 29.
+        assertEquals(1407, readSplit, "first decisions that read a split line");
+        assertEquals(711, differs, "first decisions a split line plays otherwise than its first line");
     }
 
     // ------------------------------------------------------------------ B9: the catalog as the simulator reads it

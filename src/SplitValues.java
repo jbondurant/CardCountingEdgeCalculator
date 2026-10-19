@@ -304,6 +304,19 @@ final class SplitValues {
         return FIRST + (x - 1) * 2 + (offered ? 1 : 0);
     }
 
+    /** A fingerprint's slot in words, for a refusal: the decision whose answer it holds. */
+    static String slotWords(int slot) {
+        if (slot < FIRST || slot >= PRINT) {
+            throw new IllegalArgumentException("a fingerprint has no slot " + slot);
+        }
+        if (slot < LATER) {
+            return "the two-card decision on a second card " + ((slot - FIRST) / 2 + 1)
+                    + ((slot - FIRST) % 2 == 1 ? ", Split offered" : "");
+        }
+        int t = slot - LATER;
+        return "the later decision on " + (t >= 22 ? "soft " + (t - 22) : "hard " + t);
+    }
+
     /** Every later decision a hit on this hard total, with or without an ace, can lead to, and what the play answers. */
     private static void follow(RoundPolicy play, int up, int hard, boolean ace, byte[] print, boolean[] followed) {
         for (int y = 1; y <= 10; y++) {

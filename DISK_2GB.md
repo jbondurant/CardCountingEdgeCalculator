@@ -51,7 +51,7 @@ file. Or the file could be read as a stream from Drive.
 **Smaller code changes the judge recommends:**
 
 - Let a replay's records go even when its export is refused. That refusal is how 1.16 GB was left
-  behind (FullIndexRun.java:218-220, PageLook.java:532-535).
+  behind (FullIndexRun.java:218-220, PageLook.java:535-538).
 - SiteExport should take the state file's header and identity from the manifest. It reads nothing
   else of it, so the results re-export needs 0.77 GB instead of 2.11 GB.
 - Reuse the optimism output instead of rerunning it on each page build. Its three builds differ

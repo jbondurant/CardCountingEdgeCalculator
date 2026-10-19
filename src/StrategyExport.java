@@ -233,6 +233,12 @@ final class StrategyExport {
          */
         final PlayerMove[][][][] walked = new PlayerMove[2][][][];
         /**
+         * Full play only: per fold, every split the strategy's last round valued, with its
+         * fingerprint (FullIndexFit.valuedSplits), taken from the strategy as it is, not
+         * from walked: what the files' split hands must play, wherever a Split value was worked out.
+         */
+        final List<List<FullIndexFit.ValuedSplit>> valued = new ArrayList<>();
+        /**
          * Full play: per fold, the (group, deal) cells the refit ranks otherwise than the walked
          * play, each a split line of the file (B2.1), and the first of them in words.
          */
@@ -271,8 +277,11 @@ final class StrategyExport {
          * The walked SplitPlay of a part took its group from the Strategy's own groups and table
          * (FullIndexFit's record), while the file's group lines are the refit's and the round trip
          * reads both rankings at the group the file gives; so a fold whose Strategy groups or table
-         * are not the refit's is refused here, as a same-count pair of groups with other bounds
-         * would pass every other check (SHOE_SPEC.md B7).
+         * are not the refit's is refused here (Refused), as a same-count pair of groups with other
+         * bounds would pass every other check (SHOE_SPEC.md B7). Each split the last round valued
+         * is kept with its fingerprint (valued), for the round trip to play again from the files.
+         * Anything else wrong with the strategies given is a mistake of the caller's and throws as
+         * such.
          */
         Refit(SystemScorer scorer, int p, FullIndexFit.Strategy[] two) {
             if (two.length != 2 || two[0] == null || two[1] == null) {
@@ -307,11 +316,25 @@ final class StrategyExport {
                 }
                 if (!Arrays.equals(t.groups.lo, plays[f].groups.lo) || !Arrays.equals(t.groups.hi, plays[f].groups.hi)
                         || !Arrays.equals(t.table, plays[f].table)) {
-                    throw new IllegalStateException(t + ": the strategy's groups " + Arrays.toString(t.groups.hi)
+                    throw new Refused(t + ": the strategy's groups " + Arrays.toString(t.groups.hi)
                             + " or their table are not the refit's " + Arrays.toString(plays[f].groups.hi)
                             + ", so its split hands were not played in the groups the file gives (B7)");
                 }
                 walked(f, t.now.ranking);
+                valued.add(FullIndexFit.valuedSplits(t));
+            }
+        }
+
+        /**
+         * A fold B7 refuses to export, its strategy being as it should: groups or a table not the
+         * refit's, or a walked ranking of another number of groups. The replay's export keeps it
+         * as the failure of each row of the item and goes on (ReplayExport.after).
+         */
+        static final class Refused extends IllegalStateException {
+            private static final long serialVersionUID = 1L;
+
+            Refused(String message) {
+                super(message);
             }
         }
 
@@ -322,7 +345,7 @@ final class StrategyExport {
          */
         void walked(int f, PlayerMove[][][] table) {
             if (table.length != ranking[f].length) {
-                throw new IllegalStateException(count.name + " at " + SystemScorer.PENETRATIONS[p] + ", fold " + f
+                throw new Refused(count.name + " at " + SystemScorer.PENETRATIONS[p] + ", fold " + f
                         + ": the walked play ranks " + table.length + " groups, the refit " + ranking[f].length);
             }
             walked[f] = table;
@@ -1527,6 +1550,8 @@ final class StrategyExport {
         final List<String> lines = new ArrayList<>();
         double worst;
         long compared;
+        /** The splits a strategy's last round valued, each played again from the files (playedAsValued). */
+        long splits;
 
         /** a and b equal within RELATIVE of the larger, or refused, naming what. */
         void same(double a, double b, String what) {
@@ -1640,9 +1665,10 @@ final class StrategyExport {
     /**
      * The same for any scope: a full-play file's first moves are valued from its fold's Hit and
      * Split values when rf holds them (each part's key held to the engine's part key), its later
-     * lines, groups, first lines and the rankings its split hands read held to rf's, and
+     * lines, groups, first lines and the rankings its split hands read held to rf's, and every
+     * split the strategy's last round valued played again from the file (playedAsValued);
      * otherwise its round values are taken from verified, which states.bin's section must equal
-     * to the bit; its insurance and bets are worked out from the file either way.
+     * to the bit. Its insurance and bets are worked out from the file either way.
      */
     static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
                                        ExportBundle.Section bin, Report r, Refit rf, ExportBundle.Section verified,
@@ -1799,8 +1825,9 @@ final class StrategyExport {
             // The rankings no state's round value reads: every first line, whole, against the
             // refit's, whose tail no hand reads where a split line stands; and every ranking split
             // hands read (B2.4, the split line, else the first line) against the walked play's.
-            // With the groups and later lines above, the SplitPlay the file describes for any part
-            // is then the one the last round valued its split with, and no split is valued again.
+            // Then every split the last round valued, played again from the files alone and held
+            // to the fingerprint the strategy kept (playedAsValued): that holds the split hands to
+            // what the Split values were worked out under, not to walked, which is Refit's own.
             for (int f = 0; f < 2; f++) {
                 ExportBundle.Strategy s = files[f];
                 for (int g = 0; g < s.lo.length; g++) {
@@ -1818,6 +1845,9 @@ final class StrategyExport {
                     }
                 }
             }
+            for (int f = 0; f < 2; f++) {
+                playedAsValued(st.rules, files[f], rf.valued.get(f), where + ", fold " + f, r);
+            }
         }
         for (int f = 0; f < 2; f++) {
             r.same(files[f].trained, trained[f], where + ": fold " + f + "'s training weight");
@@ -1829,6 +1859,68 @@ final class StrategyExport {
                 r.require(listed.equals(testKeys.get(f)), where + ": " + plan.label + " of fold " + f
                         + " lists bets at keys " + listed + ", its test states hold " + testKeys.get(f));
             }
+        }
+        return out;
+    }
+
+    /**
+     * Each split a strategy's last round valued (FullIndexFit.valuedSplits) played again
+     * from its full-play file alone: the SplitPlay B2.4 describes for the pair deal in group g and
+     * later group l (filePlay), whose SplitValues fingerprint must be the one the strategy kept,
+     * answer for answer. A Split value is worked out from its play's fingerprint (equal prints,
+     * equal values), so the file's split hands then play every split as it was valued. Neither
+     * Refit.walked nor the refit is read. Refused where the strategy valued no split, which would
+     * leave nothing to hold.
+     */
+    static void playedAsValued(RoundRules rules, ExportBundle.Strategy file, List<FullIndexFit.ValuedSplit> valued,
+                               String where, Report r) {
+        r.require(valued != null && !valued.isEmpty(), where + ": the strategy's last round valued no split");
+        for (FullIndexFit.ValuedSplit v : valued) {
+            String split = where + ": a split of " + Deals.P1[v.deal] + "s against " + Deals.UP[v.deal] + " in group "
+                    + v.group + ", later group " + v.later;
+            r.require(v.group < file.lo.length && v.later >= 0 && v.later < file.laterLo.length, split
+                    + ", which the file's groups do not have");
+            byte[] print = SplitValues.fingerprint(rules, v.deal, filePlay(file, v.deal, v.group, v.later));
+            int at = Arrays.mismatch(print, v.print);
+            r.require(at < 0, at < 0 ? null : split + ": its split hands play " + answer(print, at) + " by the file at "
+                    + SplitValues.slotWords(at) + ", and were valued playing " + answer(v.print, at));
+            r.splits++;
+        }
+    }
+
+    /** A fingerprint's answer in a refusal: the move's letter, or none where the decision is not reached. */
+    private static String answer(byte[] print, int at) {
+        return print[at] == 0 ? "nothing" : String.valueOf(ExportBundle.letter(PlayerMove.values()[print[at] - 1]));
+    }
+
+    /**
+     * B2.4's split hands of a full-play file for pair deal i, the deal's key in group g and later
+     * group l, read from the file alone: each two-card decision from splitRanking(g, ·), each
+     * later decision from `later l` at a contested spot and the chart elsewhere, as the engine's
+     * later play falls back on it (FullIndexFit.Strategy.stands).
+     */
+    static SplitPlay filePlay(ExportBundle.Strategy file, int i, int g, int l) {
+        int up = Deals.UP[i];
+        boolean[] stands = file.stands[l];
+        return new SplitPlay(Deals.P1[i], up, (total, soft) -> {
+            int c = total >= 0 && total < 22 ? LATER_CELL[up - 1][soft ? 1 : 0][total] : -1;
+            return c < 0 ? PlayerTree.CHART.stands(total, soft, up, 0) : stands[c];
+        }, d -> file.splitRanking(g, d));
+    }
+
+    /** ExportBundle.cells()'s place of a contested spot, [up - 1][soft][total]; -1 at every other spot. */
+    private static final int[][][] LATER_CELL = laterCells();
+
+    private static int[][][] laterCells() {
+        int[][][] out = new int[10][2][22];
+        for (int[][] u : out) {
+            for (int[] s : u) {
+                Arrays.fill(s, -1);
+            }
+        }
+        int[][] cells = ExportBundle.cells();
+        for (int c = 0; c < cells.length; c++) {
+            out[cells[c][0] - 1][cells[c][2]][cells[c][1]] = c;
         }
         return out;
     }
@@ -1966,7 +2058,9 @@ final class StrategyExport {
             keys(dir.resolve("keys-sample.tsv"), st, keyCounts, r);
         }
         lookups(dir.resolve("lookups.tsv"), st, chart, byFile, r);
-        r.lines.add("the round trip compared " + r.compared + " values; largest relative difference " + r.worst);
+        r.lines.add("the round trip compared " + r.compared + " values" + (r.splits == 0 ? ""
+                : " and played again from the files " + r.splits + " splits the last round valued")
+                + "; largest relative difference " + r.worst);
         return r;
     }
 
@@ -2958,28 +3052,30 @@ final class StrategyExport {
             st = scorer.st;
             ArrayList<RowExport> kept = new ArrayList<>();
             Refit rf = null;
-            RuntimeException refused = null;
+            Refit.Refused refused = null;
             List<int[]> sample = sample(st.size, seed);
             List<int[]> later = laterLines(st, sample);
             for (SystemScorer.Entry e : scored.fullEntries) {
                 if (e.ownValue || !wanted(e.name, item.pen)) {
                     continue;
                 }
+                // One refit serves the item's rows. One B7 refuses (Refit.Refused: groups or a table
+                // not the refit's) refuses each of them, kept so the replay goes on; anything else
+                // Refit throws is a mistake in what the replay hands the hook, and stops it here.
+                if (rf == null && refused == null) {
+                    try {
+                        rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
+                    } catch (Refit.Refused ex) {
+                        refused = ex;
+                    }
+                    for (int f = 0; rf != null && f < 2; f++) {
+                        log.printf("export: %s at %s, %s%n", rf.count.name, SystemScorer.PENETRATIONS[item.pen],
+                                rf.splitWords(f));
+                    }
+                }
                 RowExport x = new RowExport();
                 x.expect = Expect.of(e, item.pen);
                 try {
-                    // One refit serves the item's rows; one refused (B7's groups) refuses each of them.
-                    if (rf == null && refused == null) {
-                        try {
-                            rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
-                        } catch (RuntimeException ex) {
-                            refused = ex;
-                        }
-                        for (int f = 0; rf != null && f < 2; f++) {
-                            log.printf("export: %s at %s, %s%n", rf.count.name, SystemScorer.PENETRATIONS[item.pen],
-                                    rf.splitWords(f));
-                        }
-                    }
                     if (refused != null) {
                         throw refused;
                     }
@@ -2990,11 +3086,13 @@ final class StrategyExport {
                         x.text[f] = format(b.fold[f]);
                         x.columns[f] = LookupColumn.of(b.lookup[f], st, sample, later);
                     }
-                    log.printf("export: %s at %s checked on its values, %d values compared, largest relative difference "
-                            + "%s%n", e.name, SystemScorer.PENETRATIONS[item.pen], r.compared, r.worst);
+                    log.printf("export: %s at %s checked on its values, %d values compared, %d splits the last round "
+                                    + "valued played again from its files, largest relative difference %s%n", e.name,
+                            SystemScorer.PENETRATIONS[item.pen], r.compared, r.splits, r.worst);
                 } catch (RuntimeException ex) {
                     // Kept, not thrown: one row that cannot be exported must not stop a replay of hours.
-                    x.failure = ex.getMessage();
+                    // An exception without a message is kept by its class, so finish still refuses the row.
+                    x.failure = ex.getMessage() != null ? ex.getMessage() : String.valueOf(ex);
                     log.printf("export: %s at %s is not exported: %s%n", e.name, SystemScorer.PENETRATIONS[item.pen],
                             x.failure);
                 }

@@ -79,6 +79,8 @@ final class PageLook {
         String[] plans = {"same-8"};
         /** Passed to the replay, for a test to make small batches. */
         double batchBytes;
+        /** Further hooks for the replay, after the look's own: for a test to see each item's strategies. */
+        final List<FullIndexReplay.Hook> hooks = new ArrayList<>();
     }
 
     /**
@@ -478,6 +480,7 @@ final class PageLook {
         // Counted in the look's own check, before its ledger line, so never refused after it.
         r.budget = Long.MAX_VALUE;
         r.hooks.add(new Step8(CeilingReport.read(r.fitFrom.resolve("results.ser"))));
+        r.hooks.addAll(o.hooks);
         return FullIndexReplay.run(r, commit, log);
     }
 

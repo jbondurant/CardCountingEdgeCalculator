@@ -2632,4 +2632,52 @@ final class FullIndexFit {
             return 4.0 * parts.key.length + (parts.start == null ? 0 : 4.0 * parts.start.length + 8.0 * parts.share.length);
         }
     }
+
+    // ------------------------------------------------------------- the splits a last round valued
+
+    /**
+     * A split a strategy's last round valued (valuedSplits): its pair deal, the groups its parts'
+     * keys fall in, first-decision and later (-1 before the later groups are formed), and its
+     * post-split play's SplitValues fingerprint, the answer its split hands gave to every decision
+     * they could reach. The print is the strategy's own array; it is not to be changed.
+     */
+    static final class ValuedSplit {
+        final int deal;
+        final int group;
+        final int later;
+        final byte[] print;
+
+        ValuedSplit(int deal, int group, int later, byte[] print) {
+            this.deal = deal;
+            this.group = group;
+            this.later = later;
+            this.print = print;
+        }
+    }
+
+    /**
+     * The post-split plays a strategy's last round valued, until release lets them go: the play
+     * in force's splits (Strategy.split, whose key is ((deal x 65536 + g1) x 65536 + g2 + 1)).
+     * Every Split value the strategy is scored with was worked out under one of them. In deal,
+     * group and later group order; refused before the last round is done.
+     */
+    static List<ValuedSplit> valuedSplits(Strategy t) {
+        if (t.phase != Phase.DONE) {
+            throw new IllegalStateException(t + " has not finished its last round");
+        }
+        List<ValuedSplit> out = new ArrayList<>();
+        for (Map.Entry<Long, SplitEntry> e : t.now.splits.entrySet()) {
+            long k = e.getKey();
+            int g2 = (int) (k % 65536) - 1;
+            int g1 = (int) (k / 65536 % 65536);
+            int i = (int) (k / 65536 / 65536);
+            if (((long) i * 65536 + g1) * 65536 + g2 + 1 != k) {
+                throw new AssertionError("split key " + k);
+            }
+            out.add(new ValuedSplit(i, g1, g2, e.getValue().print));
+        }
+        out.sort((a, b) -> a.deal != b.deal ? Integer.compare(a.deal, b.deal)
+                : a.group != b.group ? Integer.compare(a.group, b.group) : Integer.compare(a.later, b.later));
+        return out;
+    }
 }

@@ -59,7 +59,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * Planted for the split lines on 19 October 2026, the same way, each failing
  * theHooksOutputsHoldWhatTheReplayScored: the replay's log line of how each strategy's fit ended
  * left out; and lookups.tsv written without its split lines, which the export's own round trip
- * refuses at the replay's end (0 split lines, all 1,000 due).
+ * refuses at the replay's end (0 split lines, all 1,000 due). After the review of 134da21, the
+ * splits the last round valued not played again from the files failed it too (0 played).
  */
 public class FullIndexReplayTest {
 
@@ -448,7 +449,8 @@ public class FullIndexReplayTest {
      * Part B says, play their first moves as the replayed fit and their later cells as the play in
      * force, and its states.bin gives the replayed figures. Each file's first lines are the replayed
      * fit's ranking whole, and the ranking its split hands read (B2.4) is the strategy's walked one,
-     * with a split line wherever the two differ, none on this fixture; lookups.tsv holds the 1,000
+     * with a split line wherever the two differ, none on this fixture; every split the last round
+     * valued, played again from the files, is played as valued; lookups.tsv holds the 1,000
      * split lines. The log says, for every strategy replayed, how its fit ended and its
      * refitDiffers, and for every fold exported its split lines. Planted: a P8 one unit in its last
      * place off, an entry without its wide figures, a round value or a bet moved in the bundle's
@@ -561,6 +563,17 @@ public class FullIndexReplayTest {
             }
         }
         assertEquals(4 * o.exportRows.size(), checkedFiles);
+        // Each row's check on its values played every split its strategies' last round valued again
+        // from its files (StrategyExport.playedAsValued), so the split hands are held to what the
+        // Split values were worked out under, not only to the walked ranking Refit took.
+        java.util.regex.Matcher played = java.util.regex.Pattern.compile("checked on its values, \\d+ values compared, "
+                + "(\\d+) splits the last round valued played again from its files").matcher(log);
+        int rowsPlayed = 0;
+        while (played.find()) {
+            assertTrue(Integer.parseInt(played.group(1)) > 0, played.group());
+            rowsPlayed++;
+        }
+        assertEquals(2 * o.exportRows.size(), rowsPlayed, log);
         ExportBundle.Lookups lk = ExportBundle.readLookups(bundle.resolve("lookups.tsv"), true);
         int splitLines = 0;
         for (ExportBundle.LookupLine l : lk.lines) {

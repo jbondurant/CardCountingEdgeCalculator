@@ -39,7 +39,7 @@ pays it about 4 times.
 **Not yet, then.** Item 1 is still pending: the 15 full-play rows of the main run and the page
 look's F50/F52 export, both refused under open item 1 (INTEGRATION.md:377). Only PageLook makes
 the F50/F52 export, and PageLook reads trees only from a kept store (`--trees-read-only`,
-PageLook.java:179-181). So deleting A before item 1 is done would block that export until
+PageLook.java:181-183). So deleting A before item 1 is done would block that export until
 PageLook gets a `--trees none` option. Even then the export would be slow: a full run has 49
 rounds, and 48 of them read trees (full-c06c061.log). The recommendation, from the 2 GB review
 (DISK_2GB.md), is A after item 1. B and C can go now.
