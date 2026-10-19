@@ -443,6 +443,18 @@ Open:
      look's two bundles (runs/sim/d2check-0f087c4, p2 at K = 20): D2 1,386,378 of 1,386,378 keys
      equal, 0 mismatches, the 21 and 3 columns named; D1, D4 and D5 as before, export-full's 4,000
      split cells equal.
+   - **Part 2's pilot again, and the wide plans** (19 October 2026). With 0f087c4 the pilot ran on
+     all four bundles and wrote all four files (runs/sim/pilot-part2-0f087c4), but `SimCheckPlan
+     fill` refused them: "no pilot file of part 2 holds F43 to F48". The replay's export attached
+     the wide plans SIM_CHECK.md registers (F43 to F48: Hi-Lo's and Victor APC + ace's full play at
+     80% under P16, B0,8 and X-1,8) only when no `--export-row` was given, and row 6's export again
+     had to name its rows, since `--only` needs them; so export-part2-replay-f3cade3 has none.
+     Fixed in b388df5 (merged wide-named-rows): each exported row gets its registered wide plans
+     with `--wide`, named or not (StrategyExportTest.theRegisteredWidePlansFollowTheirRowsNamedOrNot,
+     planted). The whole suite at b388df5: 838 of 838, the simulator's 103 of 103. The replay's
+     bundle is exported again from classes-b388df5 into runs/sim/export-part2-replay-b388df5
+     (runs/site-runs/export15-b388df5.sh, started 13:30), its identity row to replace
+     export-part2-replay-f3cade3's before the pilot reruns.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
