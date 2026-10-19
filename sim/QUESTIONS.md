@@ -32,21 +32,44 @@ run's output. It compiled src/ and test/ unread and ran test/SimReadsExportTest.
 box, looking only at its counts (1 passed, 1 skipped: its disabled half, as before). Items 24 on
 are this session's.
 
-**Fourth session, 19 October 2026 (branch split-ranking-sim, off split-ranking at 46d76a5).** It
-made sim/ read SHOE_SPEC.md's `split` lines (B2.1, B2.4, B6 item 12, B8, "Changes to Part B"):
-INTEGRATION.md open item 1's bullet addressed to the clean-room session, relayed in the task's
-words; nothing else of INTEGRATION.md was read, and the file itself was not opened. It read:
-ROUND_CONTRACT.md; SHOE_SPEC.md Part B but B7 (lines 514 to 970 and 1097 to 1240, the last few
-Part C's opening), A4 to A7 (lines 328 to 427, which B2.4 and B8 cite for the split hands' legal
-moves and the frozen key), and "Answers to the simulator's questions", "How this file is held to
-the engine" and "Changes to Part B" (line 1305 to the end); SIM_CHECK.md's identity table and
-deviation 1 (lines 1 to 73), sections 5, 9, 10 and 12, and the headings of both files; this file;
-in sim/, Strategy, Lookups, Round, Table, Rules, Plants, Bundle and Sim's exact checks and entry
-point, and in sim/test BundleFixture, StrategyFixture, StrategyTest, LookupsTest,
-SimCommandsTest, SpecCopyTest, FormatsTest's reading of this file and TableTest's varied fixture,
-with searches of sim/ by grep; and `git log` of sim/. It opened nothing under src/ or test/, no other worktree,
-no run's output, and neither PLAN_COMPUTE.md, RESULTS_SITE.md nor counting-systems.json. Items 28
-on are this session's.
+**Fourth session, 19 October 2026 (branch split-ranking-sim, off split-ranking at 46d76a5).** Its
+dates, here and in the test classes' records of plants, are UTC; by the local clock (EDT, UTC − 4)
+its first commit, 285f0fb, and the plants recorded with it were made on the evening of 18
+October. It made sim/ read SHOE_SPEC.md's `split` lines (B2.1, B2.4, B6 item 12, B8, "Changes to
+Part B"): INTEGRATION.md open item 1's bullet addressed to the clean-room session, relayed in the
+task's words; nothing else of INTEGRATION.md was read, and the file itself was not opened. It
+read: ROUND_CONTRACT.md; SHOE_SPEC.md Part B but B7 (lines 514 to 970 and 1097 to 1240, the last
+few Part C's opening), A4 to A7 (lines 328 to 427, which B2.4 and B8 cite for the split hands'
+legal moves and the frozen key), and "Answers to the simulator's questions", "How this file is
+held to the engine" and "Changes to Part B" (line 1305 to the end); SIM_CHECK.md's identity table
+and deviation 1 (lines 1 to 73), sections 5, 9, 10 and 12, and the headings of both files; this
+file; in sim/, Strategy, Lookups, Round, Table, Rules, Plants, Bundle and Sim's exact checks and
+entry point, and in sim/test BundleFixture, StrategyFixture, StrategyTest, LookupsTest,
+SimCommandsTest, SpecCopyTest and TableTest's varied fixture (FormatsTest only as item 27 names
+it; the file was not opened), with searches of sim/ by grep, one of which, for the wording of the
+plant records, also printed the 3 lines of PLAN_COMPUTE.md and the 1 of SIM_CHECK.md that match
+it; and `git log` of sim/. It opened nothing under src/ or test/, no other worktree, no run's
+output, and neither PLAN_COMPUTE.md (beyond those 3 lines), RESULTS_SITE.md nor
+counting-systems.json. (This paragraph was corrected after the review, from its reading of the
+session's tool calls: it had listed FormatsTest as read and left out the grep's other files.)
+Items 28 on are this session's.
+
+**The fourth session's review fixes, 19 October 2026 (the same branch).** A clean-room review of
+285f0fb, against the same sources, found two major problems (no test read a `split` line whose list
+starts with its `first` line's move; no test held Hit and Double legal after a cell's `:`) and five
+minor ones (the low rank and up-card refusals, a `split` line's `state` and `hit`, item 28, this
+file's account of what was read, and the dates); the second commit on this branch fixes all seven.
+For it the session read: sim/Strategy and Lookups; searches of Sim (for D5, lookups and split), of
+Bundle (for its refusals) and of Round (for the legal moves' bits), and Sim's D5 lines; in sim/test
+LookupsTest, StrategyTest, StrategyFixture, SimCommandsTest, BundleFixture and TableTest's varied
+fixture; this file; SHOE_SPEC.md B2 (lines 592 to 771), B6 items 10 to 12 (925 to 970), B8 (1097 to
+1174) and the headings; SIM_CHECK.md lines 1 to 73, section 5 (349 to 392), section 12 (711 to 725)
+and the headings; the first commit's scratch scripts for its plants and its runs of old against
+new; and sim/ at 46d76a5 (`git archive 46d76a5 sim`), to build it for that comparison again. A
+search for `split` over SHOE_SPEC.md also printed 27 lines of B7 (lines 984 to 1091), which is for
+the exporter; nothing in them was used. A search for `checks.txt` over SIM_CHECK.md, SHOE_SPEC.md
+and ROUND_CONTRACT.md printed SIM_CHECK.md's line 713 alone. It opened nothing under src/ or test/,
+no other worktree, no INTEGRATION.md and no run's output.
 
 1. **Soft 17.** Loto-Québec's PDF leaves hit-or-stand on soft 17 to the sign at the table.
    *Chosen:* the dealer hits soft 17, from SHOE_SPEC.md A2 (`rule.hits.soft.17 = true`) and
@@ -277,19 +300,29 @@ sim-pilot-partN.tsv	part|setup|time|sd|v|exact
 ```
 
 28. **Split cells, counted apart** (B8: D5 "counts the `split` cells apart from the others, and
-    fails if the bundle holds a file of scope `full` and no `split` cell was compared"). *Chosen:*
-    a split cell is every cell of a `split` line, the `-` of a file not of scope `full` included,
-    as D5 has always counted every cell of a `first` or `later` line; the totals of lines, cells
-    and mismatches include them, and `splitCells` and `splitMismatches` are the part on `split`
-    lines. A full-play column gets its letters whatever its count (a colour count too) and its
+    fails if the bundle holds a file of scope `full` and no `split` cell was compared"; SIM_CHECK.md
+    section 5: for the full-play instances, every split hand's first decision in every group, and
+    "Those cells are counted apart"). *Chosen, after the review:* the split cells are the
+    full-play files' columns of the `split` lines, the decisions section 5 names; the other files'
+    columns of those lines, each `-`, are compared too and counted apart from them. (285f0fb
+    counted every cell of a `split` line as a split cell, the `-` included: 5,000 in LookupsTest,
+    where 1,000 are of a full-play file.) The totals of lines, cells and mismatches still include
+    every line and cell, as D5 has always counted every cell of a `first` or `later` line and as
+    the task's figures for LookupsTest count them (1,025 lines and 5,125 cells); `splitLines`,
+    `splitCells`, `splitMismatches`, `splitOtherCells` and `splitOtherMismatches` are the parts on
+    `split` lines, so the `first` and `later` lines' own counts are the totals less these. A
+    full-play column gets its letters whatever its count (a colour count too) and its
     penetration, since B8 gives a `split` cell no state and no key. checks.txt keeps its D5 line
-    as before and gains a second, `D5`, a tab and `split cells: N of M equal to lookups.tsv's; K
-    mismatches; the bundle holds a|no file of scope full`; on a bundle with no full-play file the first line
-    is byte for byte what fe9a91e wrote and the second says 0 of 0 (what deviation 1's check on
-    part 1's bundle reads as "no `split` cell"). Since the reader refuses lookups.tsv when the
-    bundle holds a full-play file and the `split` lines are not all 1,000 in order, the "none
-    compared" failure cannot be reached through a whole file; `Lookups.Result.passes` holds it
-    anyway, and a test holds the rule itself.
+    as before and gains a second: `D5`, a tab and `split cells, the full-play files' columns of L
+    split lines: N of M equal to lookups.tsv's; K mismatches; the other files' columns there, each
+    -: N' of M' equal; the bundle holds a|no file of scope full`. On a bundle with no full-play
+    file the first line is byte for byte what fe9a91e wrote and the second gives 0 split lines and
+    0 of 0 (what deviation 1's check on part 1's bundle reads as "no `split` cell"). Since the
+    reader refuses lookups.tsv when the bundle holds a full-play file and the `split` lines are not
+    all 1,000 in order, the "none compared" failure cannot be reached through a whole file;
+    `Lookups.Result.passes` holds it anyway, on the full-play columns alone, and a test holds the
+    rule itself. *For the engine side:* confirm that the split cells are the full-play columns'
+    (checks.txt gives both counts, so either reading can be read from it).
 
 29. **What the strategy reader refuses of a `split` line, and the one refusal it adds.** *Chosen:*
     each refusal B2.1 lists, with its own message: a file not of scope `full`; a group outside 0
@@ -300,6 +333,9 @@ sim-pilot-partN.tsv	part|setup|time|sd|v|exact
     short of `first` lines can have (and the count of `first` lines refuses it anyway). Not
     refused, since B2.1 does not refuse it: a `split` line whose first move no split hand of the
     deal can play, such as `P` on a deal that is not a pair; the hand plays the first legal move.
+    Nor a `split` line whose list starts with its `first` line's move and differs after it (B6 item
+    12's pair of threes against an ace, both lists starting with `H`): it is read like any other,
+    and StrategyTest and LookupsTest each hold one.
 
 30. **The legal moves of D5's split cells, and of a round's split hands.** B8 fixes Montreal's
     legal moves for the cells "whatever the simulator's own rules are set to". *Chosen:* Lookups
@@ -323,6 +359,10 @@ sim-pilot-partN.tsv	part|setup|time|sd|v|exact
     Hi-Lo's full-play fold files in place of its first-decision ones), sim/ at 46d76a5 and at this
     session's commit ran `p3`, `p3 --moving`, `p2` (K = 20, with a plant on, since the fixture's
     made-up states fail D1) and `variants`; every file they wrote was the same byte for byte but
-    checks.txt's added D5 line and the summaries' load average. The check deviation 1 asks for,
-    on part 1's real bundle against runs/sim/part1-0e0920d, is still to be run, and the identity
-    table's simulator commit for part 2 still to be recorded; this session read no run's output.
+    checks.txt's added D5 line and the summaries' load average. After the review's fixes the same
+    runs were made again, by sim/ at 46d76a5 and by the fixed sim/, on copies of the same two
+    bundles: of the 54 files each wrote, all were the same byte for byte but checks.txt's added D5
+    line (and the p2 log that prints it), the summaries' wall seconds and load average, and the
+    output paths in the logs. The check deviation 1 asks for, on part 1's real bundle against
+    runs/sim/part1-0e0920d, is still to be run, and the identity table's simulator commit for part
+    2 still to be recorded; this session read no run's output.

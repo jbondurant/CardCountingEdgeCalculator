@@ -28,7 +28,13 @@ import org.junit.jupiter.api.Test;
  * splitHandsAreFrozenAtTheDealsKeyUnlessTheCountMoves); an ace and a ten no longer stood, and a
  * split hand's list read without regard to what is legal (eleven tests each, among them splitAces...
  * and aSplitHandPlaysTheFirstListedMoveThatIsLegal here, and tests of LookupsTest, TableTest,
- * P2Test, P3Test and VariantsTest).
+ * P2Test, P3Test and VariantsTest). After the clean-room review, also in the reader: a split line
+ * whose first move is its first line's refused (splitLinesAreRead..., the fixture's own file
+ * refused, and all five of LookupsTest's tests, whose full-play file holds such a line too), or
+ * read and then dropped (splitLinesAreRead..., and LookupsTest's theSplitCellsAreB24sWorkedByHand
+ * and splitHandsThatReadTheFirstLineAreCaught); and the refusal of a p1 below 1, an up-card below 1 or
+ * above 10, left out all at once, the p1 alone and the up-card alone (splitLinesAreRead..., where
+ * a p1 of 0 was then read as (1, 6)'s line and an up-card of 0 refused only as an array index).
  */
 class StrategyTest {
 
@@ -236,12 +242,17 @@ class StrategyTest {
         assertEquals(2, r.main);
     }
 
-    /** A full-play file with two split lines: group 0's (3, 8) against a 6, and group 1's (10, 10) against a 6. */
+    /**
+     * A full-play file with three split lines: group 0's (3, 3) against an ace, whose list starts with
+     * Hit as its first line's does and differs after it (SHOE_SPEC.md B6 item 12's case), group 0's
+     * (3, 8) against a 6, and group 1's (10, 10) against a 6.
+     */
     static StrategyFixture withSplitLines() {
         StrategyFixture f = withPlans();
         f.scope = "full";
-        f.first = (g, p1, p2, up) -> p1 == p2 ? "P\tS\tH\tD" : "S\tH\tD";
-        f.split = (g, p1, p2, up) -> g == 0 && p1 == 3 && p2 == 8 && up == 6 ? "D\tS\tH"
+        f.first = (g, p1, p2, up) -> p1 == 3 && p2 == 3 && up == 1 ? "H\tP\tS\tD" : p1 == p2 ? "P\tS\tH\tD" : "S\tH\tD";
+        f.split = (g, p1, p2, up) -> g == 0 && p1 == 3 && p2 == 3 && up == 1 ? "H\tS\tP\tD"
+                : g == 0 && p1 == 3 && p2 == 8 && up == 6 ? "D\tS\tH"
                 : g == 1 && p1 == 10 && p2 == 10 && up == 6 ? "S\tP\tH\tD" : null;
         return f;
     }
@@ -264,9 +275,10 @@ class StrategyTest {
     @Test
     void splitLinesAreReadAndRefusedWhereB21RefusesThem() throws IOException {
         StrategyFixture f = withSplitLines();
+        String threes = "split\t0\t3\t3\t1\tH\tS\tP\tD";
         String g0 = "split\t0\t3\t8\t6\tD\tS\tH";
         String g1 = "split\t1\t10\t10\t6\tS\tP\tH\tD";
-        assertTrue(f.lines().containsAll(List.of(g0, g1)));
+        assertTrue(f.lines().containsAll(List.of("first\t0\t3\t3\t1\tH\tP\tS\tD", threes, g0, g1)));
         Strategy s = f.read();
         int hd = Round.L_HIT | Round.L_DOUBLE;
         assertEquals(Round.DOUBLE, s.splitFirstMove(0, 3, 8, 6, hd), "a split 3 that draws an 8 reads the split line");
@@ -274,6 +286,13 @@ class StrategyTest {
         assertEquals(Round.STAND, s.splitFirstMove(1, 3, 8, 6, hd), "group 1 has no split line for it: its first line");
         assertEquals(Round.STAND, s.splitFirstMove(1, 10, 10, 6, hd | Round.L_SPLIT));
         assertEquals(Round.SPLIT, s.splitFirstMove(0, 10, 10, 6, hd | Round.L_SPLIT));
+        // A split line that starts with its first line's move is read too. Under Montreal's rules a
+        // split 3 that draws a 3 may always hit, so both lists give Hit; with Hit taken away (no
+        // such hand, but it shows which list is read) the split line's next move is Stand, where
+        // the first line's, as group 1 reads it, is Split.
+        assertEquals(Round.HIT, s.splitFirstMove(0, 3, 3, 1, hd | Round.L_SPLIT));
+        assertEquals(Round.STAND, s.splitFirstMove(0, 3, 3, 1, Round.L_DOUBLE | Round.L_SPLIT), "the split line read");
+        assertEquals(Round.SPLIT, s.splitFirstMove(1, 3, 3, 1, Round.L_DOUBLE | Round.L_SPLIT), "the first line read");
         // a file not of scope full
         StrategyFixture first = withSplitLines();
         first.scope = "first";
@@ -286,6 +305,12 @@ class StrategyTest {
         refusedFor(f, "p1 <= p2", insert(g1, 0, "split\t1\t10\t9\t6\tH\tS\tD"));
         // a rank outside 1 to 10, after the last line (read as a place, it would be (1, 1) against a 7)
         refusedFor(f, "ranks 1 to 10", insert(g1, 1, "split\t1\t10\t11\t6\tS\tP\tH\tD"));
+        // p1 of 0, where (1, 6) against a 6 would come in order: read as a place, deal(0, 5, 6) is
+        // deal(1, 6, 6), and these are that deal's moves in another order
+        refusedFor(f, "ranks 1 to 10", insert(g0, 0, "split\t0\t0\t5\t6\tH\tS\tD"));
+        // an up-card of 0 or 11
+        refusedFor(f, "ranks 1 to 10", insert(g1, 0, "split\t1\t3\t8\t0\tD\tS\tH"));
+        refusedFor(f, "ranks 1 to 10", insert(g1, 1, "split\t1\t3\t8\t11\tD\tS\tH"));
         // the natural, which has no first line
         refusedFor(f, "natural", insert(g0, 0, "split\t0\t1\t10\t6\tS"));
         // out of first-line order, and a deal given twice

@@ -108,12 +108,44 @@ class SimCommandsTest {
     /**
      * D5's line in checks.txt reads as it did before split lines existed, and a second line counts
      * the split cells apart: none on a bundle with no full-play file, which is what SIM_CHECK.md
-     * deviation 1's check on part 1's bundle looks for. Planted on 19 October 2026 in a scratch copy
-     * of sim/ outside the worktree: the second line left out of checks.txt failed this test.
+     * deviation 1's check on part 1's bundle looks for; on a bundle whose two Hi-Lo files play in
+     * full, their columns of the 1,000 split lines, and none of another file. Planted on 19 October
+     * 2026 in a scratch copy of sim/ outside the worktree, one at a time; each failed this test:
+     * the second line left out of checks.txt; the full-play columns' cells and the other columns'
+     * given in each other's place.
      */
     @Test
     void checksTxtCountsTheSplitCellsApart() throws Exception {
         Path dir = BundleFixture.write(tmp.resolve("b"));
+        int lines = writeLookups(dir, false);
+        assertEquals(List.of("D5\t" + 2 * lines + " of " + 2 * lines + " lookups equal to lookups.tsv's on " + lines
+                        + " lines; 0 mismatches",
+                "D5\tsplit cells, the full-play files' columns of 0 split lines: 0 of 0 equal to lookups.tsv's; 0"
+                        + " mismatches; the other files' columns there, each -: 0 of 0 equal; the bundle holds no file"
+                        + " of scope full"),
+                d5Lines(dir, tmp.resolve("run")));
+        // Hi-Lo's two fold files at full play, and one of fold 1's split cells changed in lookups.tsv
+        Path full = BundleFixture.write(tmp.resolve("full"));
+        for (int fold = 0; fold < 2; fold++) {
+            String path = "strategy-hi-lo-hi-lo-lite-p80-f" + fold + ".txt";
+            BundleFixture.write(full.resolve(path), BundleFixture.hiLo("full", fold).lines());
+            BundleFixture.reseal(full, path + "\t" + BundleFixture.HILO + "\t80\t" + fold + "\tfull");
+        }
+        int all = writeLookups(full, true);
+        assertEquals(List.of("D5\t" + (2 * all - 1) + " of " + 2 * all + " lookups equal to lookups.tsv's on " + all
+                        + " lines; 1 mismatches",
+                "D5\tsplit cells, the full-play files' columns of 1000 split lines: 1999 of 2000 equal to"
+                        + " lookups.tsv's; 1 mismatches; the other files' columns there, each -: 0 of 0 equal; the"
+                        + " bundle holds a file of scope full"),
+                d5Lines(full, tmp.resolve("runFull")));
+    }
+
+    /**
+     * Writes lookups.tsv for the bundle from the simulator's own answers: a first line for (9, 9)
+     * against a 6 at every fifth state and, if asked, the 1,000 split lines, fold 1's first split
+     * cell changed. Returns the number of lines after the header.
+     */
+    static int writeLookups(Path dir, boolean splits) throws Exception {
         Bundle b = new Bundle(dir, Plants.NONE);
         States s = b.states();
         List<String> text = new java.util.ArrayList<>(List.of("# lookups.tsv: SHOE_SPEC.md B8, format 1",
@@ -126,16 +158,29 @@ class SimCommandsTest {
             }
             text.add(line.toString());
         }
+        for (int up = 1; splits && up <= 10; up++) {
+            for (int r = 1; r <= 10; r++) {
+                for (int x = 1; x <= 10; x++) {
+                    StringBuilder line = new StringBuilder("split\t-\t" + r + "\t" + x + "\t" + up + "\t-");
+                    for (String p : b.strategyPaths()) {
+                        String cell = Lookups.split(b.strategyAt(p), r, x, up);
+                        boolean changed = up == 1 && r == 1 && x == 1 && p.endsWith("-f1.txt");
+                        line.append('\t').append(changed ? cell.replace('S', 'H') : cell);
+                    }
+                    text.add(line.toString());
+                }
+            }
+        }
         BundleFixture.write(dir.resolve("lookups.tsv"), text);
         BundleFixture.reseal(dir, "lookups.tsv\t-\t-\t-\t-");
-        Path out = tmp.resolve("run");
+        return text.size() - 3;
+    }
+
+    /** Runs p2 on the bundle (a plant on, so that it goes past the fixture's failed checks); checks.txt's D5 lines. */
+    static List<String> d5Lines(Path dir, Path out) throws Exception {
         Sim.p2(new String[]{"--bundle", dir.toString(), "--out", out.toString(), "--sim-commit", "test", "--k", "2",
                 "--plant", "s17"});
-        int lines = text.size() - 3;
-        assertEquals(List.of("D5\t" + 2 * lines + " of " + 2 * lines + " lookups equal to lookups.tsv's on " + lines
-                        + " lines; 0 mismatches",
-                "D5\tsplit cells: 0 of 0 equal to lookups.tsv's; 0 mismatches; the bundle holds no file of scope full"),
-                Files.readAllLines(out.resolve("checks.txt")).stream().filter(l -> l.startsWith("D5\t")).toList());
+        return Files.readAllLines(out.resolve("checks.txt")).stream().filter(l -> l.startsWith("D5\t")).toList();
     }
 
     static String[] concat(String[] a, String... b) {

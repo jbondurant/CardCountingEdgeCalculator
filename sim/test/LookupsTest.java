@@ -27,7 +27,14 @@ import org.junit.jupiter.api.Test;
  * of these left out in turn: the count of 1,000, the order of r, x and up, the refusal of split
  * lines with no full-play file, the refusal of a first or later line after them, and the failure
  * when a full-play file is present and no split cell was compared. The split cells not counted
- * apart failed everyCellIsComparedAndADifferenceIsNamed.
+ * apart failed everyCellIsComparedAndADifferenceIsNamed. After the clean-room review, also: the
+ * part after ':' worked with Split alone legal, or without Hit (theSplitCellsAreB24sWorkedByHand
+ * and splitHandsThatReadTheFirstLineAreCaught), or without Double (theSplitCellsAreB24sWorkedByHand);
+ * a split line's state and hit left unchecked, together and each alone
+ * (theThousandSplitLinesAreThereInOrderOrRefused); every column of a split line counted as a split
+ * cell, the other files' columns not counted, and a mismatch there counted as a split cell's
+ * (everyCellIsComparedAndADifferenceIsNamed); and D5 passed when only other files' columns of
+ * split lines were compared (theThousandSplitLinesAreThereInOrderOrRefused).
  */
 class LookupsTest {
 
@@ -79,16 +86,21 @@ class LookupsTest {
     }
 
     /**
-     * The full-play file: pairs split first and other deals hit first, in both groups. Its split
-     * lines: group 1's (10, 10) against a 6 stands first (B2.4's example, in group 1 of 2), and group
-     * 0's (3, 8) and (1, 5) against a 6 double first.
+     * The full-play file: pairs split first and other deals hit first, in both groups, but (5, 5)
+     * against a 6, which doubles first. Its split lines, all against a 6: group 1's (10, 10) stands
+     * first (B2.4's example, in group 1 of 2), its (4, 4) hits first, and its (6, 6) splits first as
+     * its first line does and then hits, not stands (the two lists start with the same move, as in
+     * SHOE_SPEC.md B6 item 12's pair of threes against an ace); group 0's (3, 8) and (1, 5) double
+     * first.
      */
     static StrategyFixture full() {
         StrategyFixture b = new StrategyFixture();
         b.scope = "full";
         b.later = (l, total, soft, up) -> l == 0 ? "H" : "S";
-        b.first = (g, p1, p2, up) -> p1 == p2 ? "P\tS\tH\tD" : "H\tS\tD";
+        b.first = (g, p1, p2, up) -> p1 == 5 && p2 == 5 && up == 6 ? "D\tP\tS\tH"
+                : p1 == p2 ? "P\tS\tH\tD" : "H\tS\tD";
         b.split = (g, p1, p2, up) -> up != 6 ? null : g == 1 && p1 == 10 && p2 == 10 ? "S\tP\tH\tD"
+                : g == 1 && p1 == 4 && p2 == 4 ? "H\tP\tS\tD" : g == 1 && p1 == 6 && p2 == 6 ? "P\tH\tS\tD"
                 : g == 0 && (p1 == 3 && p2 == 8 || p1 == 1 && p2 == 5) ? "D\tH\tS" : null;
         return b;
     }
@@ -186,6 +198,14 @@ class LookupsTest {
         assertEquals("SS", cell(splitRow(1, 10, 6, f), 1));
         assertEquals("SS", cell(splitRow(10, 1, 6, f), 1));
         assertEquals("SS:PP", cell(splitRow(2, 2, 6, f), 1), "no split line: the first line in both groups");
+        // Hit and Double are legal in both parts: (5, 5)'s first line (D P S H) doubles with Split
+        // legal or not; group 1's split line for (4, 4) (H P S D) hits in both parts, where group 0's
+        // first line stands, then splits
+        assertEquals("DD:DD", cell(splitRow(5, 5, 6, f), 1));
+        assertEquals("SH:PH", cell(splitRow(4, 4, 6, f), 1));
+        // group 1's split line for (6, 6) starts with P as its first line does: with Split not legal
+        // it hits by the split line, where the first line (group 0) stands; with Split legal both split
+        assertEquals("SH:PP", cell(splitRow(6, 6, 6, f), 1));
         for (int c : new int[]{0, 2, 3, 4}) {
             assertEquals("-", cell(splitRow(10, 10, 6, f), c), "not a full-play file");
         }
@@ -213,8 +233,13 @@ class LookupsTest {
         assertTrue(clean.passes(), clean.first().toString());
         assertEquals(1025, clean.lines());
         assertEquals(5125, clean.cells());
-        assertEquals(5000, clean.splitCells());
+        // the split cells are the full-play file's column of the 1,000 split lines; the other four
+        // files' columns there are counted apart from them
+        assertEquals(1000, clean.splitLines());
+        assertEquals(1000, clean.splitCells());
         assertEquals(0, clean.splitMismatches());
+        assertEquals(4000, clean.splitOtherCells());
+        assertEquals(0, clean.splitOtherMismatches());
         // the colour count's parts in another order still agree
         List<String> reordered = new ArrayList<>(text);
         reordered.set(3, reordered.get(3).replace("1:1:S:-;2:1:S:-;3:1:S:-", "3:1:S:-;1:1:S:-;2:1:S:-"));
@@ -234,7 +259,16 @@ class LookupsTest {
         Lookups.Result badSplit = Lookups.check(split, paths, f::get, Chart.textbook(), s);
         assertEquals(1, badSplit.mismatches(), badSplit.first().toString());
         assertEquals(1, badSplit.splitMismatches());
+        assertEquals(0, badSplit.splitOtherMismatches());
         assertTrue(badSplit.first().get(0).contains("split 10 drawing 10 up 6"), badSplit.first().get(0));
+        // a letter where a file not of scope full has "-" (column 0) is a mismatch among the other columns
+        List<String> dash = new ArrayList<>(text);
+        dash.set(tens, dash.get(tens).replace("\t-\tSS:PS\t", "\tSS\tSS:PS\t"));
+        Lookups.Result badDash = Lookups.check(dash, paths, f::get, Chart.textbook(), s);
+        assertEquals(1, badDash.mismatches(), badDash.first().toString());
+        assertEquals(0, badDash.splitMismatches());
+        assertEquals(1, badDash.splitOtherMismatches());
+        assertFalse(badDash.passes());
         // a header whose columns are not the files in path order is refused
         List<String> header = new ArrayList<>(text);
         header.set(2, Lookups.HEADER + "\t" + String.join("\t", paths.subList(1, paths.size())));
@@ -278,6 +312,16 @@ class LookupsTest {
         swapped.addAll(splits);
         java.util.Collections.swap(swapped, head.size() + 554, head.size() + 555);
         assertThrows(IOException.class, () -> Lookups.check(swapped, paths, f::get, Chart.textbook(), s));
+        // a split line whose state or hit is not "-"
+        for (String[] change : new String[][]{{"split\t-\t", "split\t0\t"}, {"\t6\t-\t", "\t6\t1\t"}}) {
+            List<String> marked = new ArrayList<>(head);
+            marked.addAll(splits);
+            int at = head.size() + 599;
+            assertTrue(marked.get(at).startsWith("split\t-\t10\t10\t6\t-\t"), marked.get(at));
+            marked.set(at, marked.get(at).replaceFirst(change[0], change[1]));
+            assertThrows(IOException.class, () -> Lookups.check(marked, paths, f::get, Chart.textbook(), s),
+                    marked.get(at));
+        }
         // a later line after the split lines
         List<String> late = new ArrayList<>(head);
         late.addAll(splits);
@@ -296,11 +340,15 @@ class LookupsTest {
         assertTrue(before.passes(), before.first().toString());
         assertEquals(15, before.lines());
         assertEquals(60, before.cells());
+        assertEquals(0, before.splitLines());
         assertEquals(0, before.splitCells());
+        assertEquals(0, before.splitOtherCells());
         assertFalse(before.fullPlay());
-        // D5 fails when the bundle holds a full-play file and no split cell was compared
-        assertFalse(new Lookups.Result(25, 125, 0, List.of(), 0, 0, true).passes());
-        assertTrue(new Lookups.Result(25, 125, 0, List.of(), 0, 0, false).passes());
+        // D5 fails when the bundle holds a full-play file and no split cell was compared, even when
+        // other files' columns of split lines were
+        assertFalse(new Lookups.Result(25, 125, 0, List.of(), 0, 0, 0, 0, 0, true).passes());
+        assertFalse(new Lookups.Result(1025, 5125, 0, List.of(), 1000, 0, 0, 5000, 0, true).passes());
+        assertTrue(new Lookups.Result(25, 125, 0, List.of(), 0, 0, 0, 0, 0, false).passes());
     }
 
     @Test
@@ -311,19 +359,19 @@ class LookupsTest {
         List<String> text = firstAndLater(paths, f, s, true);
         text.addAll(splitRows(f));
         // The full-play file read without its split lines: its split hands read the first line, as a
-        // simulator would that knew no split line. Four cells differ, in B8's order (3, 8), (5, 1),
-        // (8, 3) and (10, 10), against a 6. Every first and later cell still agrees.
+        // simulator would that knew no split line. Six cells differ, in B8's order (3, 8), (4, 4),
+        // (5, 1), (6, 6), (8, 3) and (10, 10), against a 6. Every first and later cell still agrees.
         StrategyFixture b = full();
         b.split = (g, p1, p2, up) -> null;
         Map<String, Strategy> firstOnly = new LinkedHashMap<>(f);
         firstOnly.put("strategy-b-p80-f1.txt", b.read());
         Lookups.Result r = Lookups.check(text, paths, firstOnly::get, Chart.textbook(), s);
         assertFalse(r.passes());
-        assertEquals(4, r.mismatches(), r.first().toString());
-        assertEquals(4, r.splitMismatches());
-        assertEquals(4, r.first().size());
-        for (String[] m : new String[][]{{"3", "8", "DH", "HH"}, {"5", "1", "DH", "HH"}, {"8", "3", "DH", "HH"},
-                {"10", "10", "SS:PS", "SS:PP"}}) {
+        assertEquals(6, r.mismatches(), r.first().toString());
+        assertEquals(6, r.splitMismatches());
+        assertEquals(6, r.first().size());
+        for (String[] m : new String[][]{{"3", "8", "DH", "HH"}, {"4", "4", "SH:PH", "SS:PP"}, {"5", "1", "DH", "HH"},
+                {"6", "6", "SH:PP", "SS:PP"}, {"8", "3", "DH", "HH"}, {"10", "10", "SS:PS", "SS:PP"}}) {
             assertTrue(r.first().stream().anyMatch(x -> x.contains("split " + m[0] + " drawing " + m[1] + " up 6")
                     && x.endsWith("the file says " + m[2] + ", the simulator " + m[3])), r.first().toString());
         }

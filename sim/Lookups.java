@@ -21,8 +21,10 @@ import java.util.TreeMap;
  * use) under Montreal's legal moves, whatever the simulator's own rules are set to. The 1,000
  * {@code split} lines, by up-card, then split rank, then the card drawn, come after every
  * {@code later} line when the bundle holds a file of scope {@code full}, and never otherwise; the
- * file is refused if it has any other number, or any out of order (B8). Their cells are counted
- * apart, and D5 fails when the bundle holds a full-play file and no split cell was compared.
+ * file is refused if it has any other number, or any out of order (B8). The split cells, the
+ * full-play files' columns of those lines (SIM_CHECK.md section 5: "for the full-play instances
+ * ... Those cells are counted apart"), are counted apart, as are the other files' columns there,
+ * each {@code -}; D5 fails when the bundle holds a full-play file and no split cell was compared.
  */
 public final class Lookups {
 
@@ -32,11 +34,13 @@ public final class Lookups {
     static final int SPLIT_LINES = 1000;
 
     /**
-     * D5's counts: every line and cell compared (split lines and cells included), and the split
-     * cells apart, with whether the bundle holds a file of scope full.
+     * D5's counts: every line and cell compared (split lines and cells included); apart, the split
+     * lines, their cells in full-play files' columns (the split cells) and their cells in the other
+     * files' columns; and whether the bundle holds a file of scope full.
      */
-    public record Result(long lines, long cells, long mismatches, List<String> first, long splitCells,
-                         long splitMismatches, boolean fullPlay) {
+    public record Result(long lines, long cells, long mismatches, List<String> first, long splitLines,
+                         long splitCells, long splitMismatches, long splitOtherCells, long splitOtherMismatches,
+                         boolean fullPlay) {
         public boolean passes() {
             return mismatches == 0 && cells > 0 && (!fullPlay || splitCells > 0);
         }
@@ -188,6 +192,8 @@ public final class Lookups {
         long bad = 0;
         long splitCells = 0;
         long splitBad = 0;
+        long otherCells = 0;
+        long otherBad = 0;
         int splits = 0;
         List<String> first = new ArrayList<>();
         boolean laterSeen = false;
@@ -217,13 +223,22 @@ public final class Lookups {
                 splits++;
                 lines++;
                 for (int c = 0; c < cols.size(); c++) {
+                    boolean fullColumn = "full".equals(cols.get(c).scope);
                     String mine = split(cols.get(c), r, x, up);
                     String cell = f[6 + c];
                     cells++;
-                    splitCells++;
+                    if (fullColumn) {
+                        splitCells++;
+                    } else {
+                        otherCells++;
+                    }
                     if (!mine.equals(cell)) {
                         bad++;
-                        splitBad++;
+                        if (fullColumn) {
+                            splitBad++;
+                        } else {
+                            otherBad++;
+                        }
                         if (first.size() < 10) {
                             first.add(where + " split " + r + " drawing " + x + " up " + up + ", " + paths.get(c)
                                     + ": the file says " + cell + ", the simulator " + mine);
@@ -271,6 +286,6 @@ public final class Lookups {
             throw new IOException("lookups.tsv: " + splits + " split lines, not " + SPLIT_LINES
                     + ", though the bundle holds a file of scope full (B8)");
         }
-        return new Result(lines, cells, bad, first, splitCells, splitBad, full);
+        return new Result(lines, cells, bad, first, splits, splitCells, splitBad, otherCells, otherBad, full);
     }
 }
