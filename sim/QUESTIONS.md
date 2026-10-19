@@ -71,6 +71,51 @@ the exporter; nothing in them was used. A search for `checks.txt` over SIM_CHECK
 and ROUND_CONTRACT.md printed SIM_CHECK.md's line 713 alone. It opened nothing under src/ or test/,
 no other worktree, no INTEGRATION.md and no run's output.
 
+**Fifth session, 19 October 2026 (branch d2-sim, off d188bca).** It made D2 leave out, and name, a
+keys-sample.tsv column whose name no count of the catalog or of the bundle's files has: the bullet
+d188bca added to SHOE_SPEC.md B4 after part 2's pilot stopped on D2 for the page look's two
+bundles, with the requirements for checks.txt as the task relayed them. It read: SHOE_SPEC.md B0 to
+B6 (lines 514 to 980), B9 (1224 to 1275, and Part C's heading on 1276) and the headings of the
+whole file (which also printed the `#` lines of the examples in B1, B4, B5, B8 and C4), and d188bca
+itself (`git show`: its message and its diff of B4); SIM_CHECK.md section 5 (lines 349 to 392),
+section 12 (711 to 725) and its headings; ROUND_CONTRACT.md's first 60 lines; this file; in sim/,
+KeysSample and Catalog, Sim's exact checks (lines 255 to 335) and Outputs' first 60 lines, with
+searches of sim/ by grep for D2, keys-sample.tsv, checks.txt and wider patterns, whose hits
+included single lines of Catalog, Lookups, Plants, Rules, States, Pilot and Sim (none of the first
+three patterns matches Lookups, Plants, Rules or States; the review found that patterns such as
+`checks` and `KeysSample` do, and this sentence, which had tied those files to the three, was
+corrected after it), of Pilot and Sim for the exact checks' callers, and of States and Bundle for
+one method each; in sim/test, KeysSampleTest, FormatsTest, SimCommandsTest and BundleFixture,
+StatesFixture's first 80 lines and LookupsTest's record of plants (lines 19 to 33), with searches
+of sim/test for D2 and KeysSample's result and of StrategyFixture for its counts; `git log` of the
+branch and of sim/; and, of the runs' output, the one file the task named,
+runs/sim/pilot-part2-ae283e4/look-first/pilot-part2-checks.txt, for its lines' text. For item 34 it
+built sim/ at d188bca (`git archive d188bca sim`) outside the worktree. It opened nothing under
+src/ or test/, no other worktree, no INTEGRATION.md, neither PLAN_COMPUTE.md, RESULTS_SITE.md,
+SHOE_SPEC.md B7 or B8, nor counting-systems.json (which the tests read), and no other run's output.
+Items 33 on are this session's.
+
+**The fifth session's review fixes, 19 October 2026 (the same branch).** A clean-room review of
+268b2d0, against the same sources, found one major problem (a column of a file's count that is
+misnamed was left out as no count's, so the bundle's own count went unchecked and D2 passed, where
+at d188bca it failed) and one minor one (the paragraph above tied the grep's files to patterns that
+do not match them); the second commit on this branch fixes both (item 33's last paragraph). For it
+the session read: the review's findings as the task relayed them; sim/KeysSample (all), Sim's exact
+checks and p2's arguments (lines 255 to 380), Strategy's fields (30 to 60), Bundle's reading of the
+strategy files (95 to 135), with searches of sim/ for KeysSample, leftOut and D2 (hits in Catalog,
+Lookups, Pilot and Sim), of sim/ and SHOE_SPEC.md for playcount and betcount, of Bundle for its
+strategies and refusals, of Catalog for `named` and `all`, of Strategy for `parse` and of EvByKey
+for its rows; in sim/test KeysSampleTest and BundleFixture (all), SimCommandsTest's lines 1 to 60,
+108 to 160 and 185 to 330, FormatsTest's lines 1 to 30 and 88 to 140 and P3ExtrasTest's 160 to 200
+(a fixture whose files name a count "Other"), with searches of sim/test for keys-sample.tsv,
+KeysSample, playcount and `Result(`; SHOE_SPEC.md's headings, B2's opening and its table (lines 592
+to 625), B4 (818 to 872), B6's opening (907 to 930) and B9 (1224 to 1275); this file's first 120
+lines and items 33 and 34; the one pilot checks.txt again; the first commit's scratch plant script
+and runs of old against new; and `git status` and `git log` of the branch. It opened nothing under
+src/ or test/, no other worktree, no INTEGRATION.md, no bundle and no other run's output, and this
+time neither SIM_CHECK.md, ROUND_CONTRACT.md, PLAN_COMPUTE.md, RESULTS_SITE.md nor
+counting-systems.json (which the tests read).
+
 1. **Soft 17.** Loto-Québec's PDF leaves hit-or-stand on soft 17 to the sign at the table.
    *Chosen:* the dealer hits soft 17, from SHOE_SPEC.md A2 (`rule.hits.soft.17 = true`) and
    PLAN_COMPUTE.md 1.4 ("the dealer hits soft 17"). The walk's totals agree with A8 to the
@@ -366,3 +411,95 @@ sim-pilot-partN.tsv	part|setup|time|sd|v|exact
     output paths in the logs. The check deviation 1 asks for, on part 1's real bundle against
     runs/sim/part1-0e0920d, is still to be run, and the identity table's simulator commit for part
     2 still to be recorded; this session read no run's output.
+
+33. **The columns D2 leaves out** (SHOE_SPEC.md B4's bullet of 19 October 2026). *Chosen:* a
+    column is left out when its name is none of the catalog's 39 counts (the 30 entries, the null
+    count and the 8 ace variants, B9) and is neither the `playcount` nor the `betcount` of any
+    strategy file of the bundle; that is the one test, and nothing else is left out. A column left
+    out is not compared: its cells are not read (a line must still have as many fields as the
+    header, as before), they are not among the cells counted, and none is a mismatch. Every other
+    column is held key for key as before, with item 13's reading of a registered count's
+    parameters. D2 still fails when a catalog count or ace variant is missing from the header, when
+    a key or chance of a column compared differs, or when no cell was compared, and now also when a
+    count a strategy file of the bundle names has no column (below). B4's "the counts of
+    the bundle's own strategy files with their betting variants" is read as the names the files'
+    `playcount` and `betcount` lines give, so a registered count's betting variant that no file of
+    the bundle bets with is left out even when its base's file is there, its bet tags and ace weight
+    being in no file.
+
+    In checks.txt the D2 line keeps its form, `D2`, a tab and `C − M of C keys equal to
+    keys-sample.tsv's on L lines; M mismatches; catalog counts missing from its header: [...]`,
+    with C now the cells of the columns compared and M their mismatches alone, and nothing after
+    the list. Right after it comes a second line, always, also when no column was left out. Its
+    form, the engine side's reference, is the `sim-checks` block below, which `sim/test/FormatsTest`
+    holds the writer to: fields separated by tabs; `D2`; the fixed text and N, the number of
+    columns left out, in decimal; then N fields, each a column's name exactly as the header gives
+    it, in header order (`NAME…` stands for them; with N = 0 the line ends after the 0). B0 lets no
+    field hold a tab, so no name does and the line splits on tabs; a name may hold ", " (nothing in
+    B4 forbids it), which is why the names are not written as a Java list, as the missing counts
+    are. Then, as before, the notes of the first ten cells that differ. The notes `column NAME: no
+    count of the catalog or of the bundle's files has this name`, one a column and capped with the
+    cells' notes at ten, are no longer written: they were mismatch notes, and the second line names
+    every column (the pilot's look-first checks.txt named 10 of its 21). When the bundle has no keys-sample.tsv,
+    `D2	not run: …` stands alone, with no second line, since there is no comparison for it to
+    follow. *For the engine side:* confirm the form, and say whether a D2 that did not run should
+    have a second line too.
+
+    *What the pilot's line will read.* By d188bca's code, the look-first bundle's D2 line,
+    `1386357 of 1386378 keys … on 33009 lines; 21 mismatches`, counted each column left out as one
+    mismatch, counted none of its cells among the cells, and wrote cells less mismatches before
+    "of". So if the 21 mismatches were the 21 columns, as d188bca's message says, the cells compared
+    were 1,386,378 = 33,009 lines × 42 columns (the catalog's 39 and 3 more that a file names), all
+    equal, and the new line will read `1386378 of 1386378 keys equal to keys-sample.tsv's on 33009
+    lines; 0 mismatches; catalog counts missing from its header: []`, not 1,386,357 of 1,386,357 as
+    d188bca's message has it. That is arithmetic on the old code and the one line; this session ran
+    nothing on a real bundle.
+
+```sim-checks
+D2	columns left out, since no count of the catalog or of the bundle's files has the name: N	NAME…
+```
+
+    *Every count the bundle's files name must have its column* (after the clean-room review of
+    268b2d0). B4's header lists the registered counts and their own betting variants, and its first
+    sentence makes the file hold every count the comparison scores, so a correct export has a column
+    for each count a strategy file of the bundle plays or bets with. At 268b2d0 a column of such a
+    count that was misnamed (`F9 Test` for a file's `F9 test`) was left out as no count's, and D2
+    passed with the bundle's own count, the one the simulator plays and bets with, unchecked; at
+    d188bca the same bundle failed D2, the misnamed column counting as a mismatch. (A header with no
+    column for it at all passed at both.) *Chosen:* D2 fails when no column of the header is named
+    exactly as a file's `playcount` or `betcount`. A catalog count's absence is in the first line's
+    list already and is not named again. checks.txt names each such count once, in the order of the
+    bundle's strategy files (index.tsv's, by path), `playcount` before `betcount`, in a note of its
+    own right after the two D2 lines and before the cells' notes:
+    `count NAME, which a strategy file of the bundle plays or bets with: no column of
+    keys-sample.tsv's header has this name, so D2 holds none of its keys` (one line, no tab; held
+    by sim/test/SimCommandsTest). The first line keeps its form, its mismatches are still the
+    cells' alone and nothing follows its list; summary's `D2` reads `failed`. A misnamed column is
+    still left out and named on the second line, so a misnaming shows on both. Where every file's
+    count has its column, as B4 requires, no note is written and checks.txt is as at 268b2d0.
+    *For the engine side:* this session could not look at part 1's, the replay's or the page
+    look's bundles (the clean room lets it read none). If one of them has no column for a count its
+    files name, D2 now fails on it with that note where at 268b2d0 it passed. The look-first line's
+    42 columns compared (the catalog's 39 and 3 a file names) show that three are there in that
+    bundle, not whether its files name a fourth. Confirm that the exports write a column for every
+    count of their files, or rule that they need not; the ruling goes here.
+
+34. **Bundles without such columns, read as before.** Not a question; a record of what this session
+    could check without a run's output. Four scratch fixture bundles were written with sim/test's
+    helpers: BundleFixture's with a keys-sample.tsv of the catalog's 39 columns from the simulator's
+    own keys and a lookups.tsv of `first` lines; the same with Hi-Lo's full-play fold files and
+    lookups.tsv's 1,000 `split` lines; the first with one Hi-Lo key changed; and the first with
+    twelve columns no count names (ten after the null count, two at the end). sim/ at d188bca and
+    this session's sim/ each ran `p2 --k 20` on each, with and without `--plant s17` (the fixture's
+    made-up bets fail D4, so only a plant takes p2 past the checks). On the three bundles without
+    such columns, every file the two wrote (checks.txt, and with the plant summary-p2.json,
+    swings-p2.tsv and P2's chunk) was the same byte for byte but for checks.txt's added line
+    `D2	columns left out, …: 0`, right after the D2 line, and the summary's load average; the changed
+    key's note still follows the D2 lines. On the fourth, checks.txt's D2 line went from `924 of 936
+    …; 12 mismatches` with ten `column …` notes to `936 of 936 …; 0 mismatches` with the second line
+    naming all twelve, and summary-p2.json's `D2` from `failed` to `passed`; nothing else changed
+    but the load average. The same check on part 1's and the replay's real bundles, against their
+    recorded runs, is still to be made; this session read no run's output but the one file named.
+    After the review's fix (item 33's last paragraph), the same eight runs gave every file the same
+    byte for byte as 268b2d0's but the load average: the four bundles' files play Hi-Lo, a catalog
+    count, so the new rule adds nothing there.

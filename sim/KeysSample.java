@@ -17,6 +17,16 @@ import java.util.TreeMap;
  * {@code playcount} names it (B9's last paragraph). A colour or face count's play cell lists every
  * key the deal can have with its chance, the deal's three cards drawn without replacement from the
  * kinds left; D2 holds the keys equal and each chance within 1e-12 relative, whatever their order.
+ *
+ * <p>A column whose name no count of the catalog or of the bundle's files has, such as a registered
+ * count with no strategy file in the bundle (B4's bullet of 19 October 2026), cannot have its keys
+ * worked out: D2 leaves it out of its comparison and of its mismatches, and names it, every such
+ * column in header order ({@link Result#leftOut}, written to checks.txt by {@link #leftOutLine}).
+ * Every catalog count and ace variant must still be in the header, and so must every count a
+ * strategy file of the bundle plays or bets with (its {@code playcount} and {@code betcount}): B4's
+ * header lists the registered counts and their own betting variants. A file's count the header
+ * lacks is named ({@link Result#unlisted}, one note each by {@link #unlistedNote}) and fails D2,
+ * since its keys, the very ones the simulator plays and bets with, would otherwise go unchecked.
  */
 public final class KeysSample {
 
@@ -29,11 +39,43 @@ public final class KeysSample {
         }
     }
 
-    /** What D2 found: lines and cells compared, cells that differ (the first few named), catalog counts the header lacks. */
-    public record Result(long lines, long cells, long mismatches, List<String> first, List<String> missing) {
+    /**
+     * What D2 found: lines and cells compared, cells that differ (the first few named), catalog counts
+     * the header lacks, the counts of the bundle's files (not the catalog's) the header lacks, each
+     * once, in the files' order, playcount before betcount, and every column left out (B4), in header
+     * order; a column left out is neither a cell nor a mismatch.
+     */
+    public record Result(long lines, long cells, long mismatches, List<String> first, List<String> missing,
+                         List<String> unlisted, List<String> leftOut) {
         public boolean passes() {
-            return mismatches == 0 && missing.isEmpty() && cells > 0;
+            return mismatches == 0 && missing.isEmpty() && unlisted.isEmpty() && cells > 0;
         }
+    }
+
+    /** The second D2 line's text before the number of columns left out (sim/QUESTIONS.md item 33). */
+    static final String LEFT_OUT = "columns left out, since no count of the catalog or of the bundle's files has the name: ";
+
+    /**
+     * checks.txt's second D2 line, written after the first whether or not a column was left out:
+     * {@code D2}, a tab, {@link #LEFT_OUT} and the number of columns left out, then a tab and the
+     * name of each, in header order. A name holds no tab (B0), so the line splits on tabs.
+     */
+    static String leftOutLine(List<String> leftOut) {
+        StringBuilder b = new StringBuilder("D2\t" + LEFT_OUT + leftOut.size());
+        for (String name : leftOut) {
+            b.append('\t').append(name);
+        }
+        return b.toString();
+    }
+
+    /**
+     * checks.txt's note for a count of the bundle's files that keys-sample.tsv's header lacks, one for
+     * each such count, written after the two D2 lines and before the cells' notes (sim/QUESTIONS.md
+     * item 33).
+     */
+    static String unlistedNote(String name) {
+        return "count " + name + ", which a strategy file of the bundle plays or bets with: no column of"
+                + " keys-sample.tsv's header has this name, so D2 holds none of its keys";
     }
 
     private KeysSample() {
@@ -170,12 +212,14 @@ public final class KeysSample {
         String[] header = text.get(2).split("\t", -1);
         List<Column> columns = new ArrayList<>();
         List<String> first = new ArrayList<>();
+        List<String> leftOut = new ArrayList<>();
         long mismatches = 0;
         for (int c = 8; c < header.length; c++) {
             Column col = column(header[c], catalog, files, plants.on(Plants.TRUNCATE));
             if (col == null) {
-                mismatches++;
-                note(first, "column " + header[c] + ": no count of the catalog or of the bundle's files has this name");
+                // no count of the catalog or of the bundle's files has this name, so its keys cannot be
+                // worked out: left out of the comparison and of the mismatches, and named (B4)
+                leftOut.add(header[c]);
             }
             columns.add(col);
         }
@@ -183,6 +227,17 @@ public final class KeysSample {
         for (Catalog.Count k : catalog.all()) {
             if (!List.of(header).contains(k.name())) {
                 missing.add(k.name());
+            }
+        }
+        // B4's header lists the registered counts and their own betting variants, so every count a file
+        // plays or bets with has a column; a catalog count's absence is in missing already
+        List<String> counts = List.of(header).subList(8, header.length);
+        List<String> unlisted = new ArrayList<>();
+        for (Strategy s : files) {
+            for (String name : List.of(s.playCount, s.betCount)) {
+                if (catalog.named(name) == null && !counts.contains(name) && !unlisted.contains(name)) {
+                    unlisted.add(name);
+                }
             }
         }
         long lines = 0;
@@ -238,7 +293,7 @@ public final class KeysSample {
                 }
             }
         }
-        return new Result(lines, cells, mismatches, first, missing);
+        return new Result(lines, cells, mismatches, first, missing, unlisted, leftOut);
     }
 
     static void note(List<String> first, String what) {
