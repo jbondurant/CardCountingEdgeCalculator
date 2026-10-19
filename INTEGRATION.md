@@ -403,6 +403,23 @@ Open:
      "Finishing the look of 17 October 2026", has the command; not yet run); (3) SHOE_SPEC.md's three passages in "How this file
      is held to the engine" that still describe the split lines as to come (7dca9f5), to be
      corrected in a commit the identity table records again.
+   - **The page look's resume of 19 October 2026** (COUNT_DESIGN.md section 5: a page look's
+     resume writes no ledger line, and its record goes here). runs/page-look-0e0920d/resume-68c7c52.txt:
+     resumed 10:49:58 under 68c7c52 (look.txt's commit 0e0920d), no ledger line, replayed step 8's
+     F1 and F2 at 80% (their fold fits) into replay-68c7c52, only the export and Step8 hooks; finished
+     12:04:27 and wrote export-full (manifest.sha256's SHA-256 a6942f6a…34db81), its round trip
+     passed (4,242,480 values, largest relative difference 3.9e-15); both items step 8's to the bit
+     (816,626 and 1,186,705 numbers) and all 60,743 perfect values; 2 records let go (25,751,809
+     bytes). Nothing else in the look's directory changed (PageLook's check of its files). Split
+     lines: F1's fold 1 one (10,10 against 6), F2's fold 0 two (9,9 against 5; 10,10 against 4),
+     fold 1 one (10,10 against 6). Run by runs/site-runs/pagelook-resume-68c7c52.sh, log
+     runs/page-look-0e0920d-resume-68c7c52.log. Row 6's export (runs/sim/export-part2-replay-f3cade3,
+     210ab68b…bf21c85) finished at 08:55: every item c06c061's to the bit, 16 split lines in its 30
+     full-play files, all but one a pair of tens against 4, 5 or 6 (the other Victor APC + ace's
+     3,3 against an ace, where no hand reads the difference). Every strategy with a split line
+     stopped at the pass cap with pass 3's play kept and refitDiffers 1 (the replay's new log
+     line), which bears out the inference above. The identity table records all three part 2
+     bundles.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
