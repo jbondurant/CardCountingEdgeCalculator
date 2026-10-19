@@ -56,9 +56,13 @@ import java.util.List;
  * penetrations replayed unless --export-row names others, at the 1-8 same schedule unless
  * --export-plans names others), each checked on its strategies' values as its item is replayed,
  * written as EXPORT_DIR.partial at the end with keys-sample.tsv and lookups.tsv, round-tripped and
- * renamed EXPORT_DIR. A row that cannot be exported (one whose fold strategies rank a deal two ways,
- * B2.4) is named in the log as its item is replayed and refused at the end, after the other hooks
- * have written their files.
+ * renamed EXPORT_DIR. Where a fold's refit ranks a deal otherwise than the play its splits were
+ * valued under, the file gives split hands that play's ranking (SHOE_SPEC.md B2.4's split lines), and
+ * the log names each fold's count of them; the log also says, for every strategy replayed, whether
+ * its fit converged or stopped at the pass cap, and its refitDiffers. A row that cannot be exported
+ * (a fold whose strategy groups are not the refit's, or whose files fail their check on the values)
+ * is named in the log as its item is replayed and refused at the end, after the other hooks have
+ * written their files.
  *
  * The runs folder's budget (DiskBudget) is checked before anything is written, DiskBudget.REPLAY_ITEM
  * an item for the records and the hooks' files. Once the replay has returned, its caller lets the
@@ -729,11 +733,16 @@ final class FullIndexReplay {
                         first ? values[0] : null);
                 own.writeRecord(it.record(), r);
                 first = false;
+                List<String> fitted = new ArrayList<>();
                 for (FullIndexFit.Strategy t : FullIndexFit.strategiesOf(fits.get(it.count), it.pen, it.halves)) {
+                    fitted.add(howFitted(t));
                     t.release();
                 }
                 replayed++;
                 log.printf("%s: %s%n", it, r.diff.describe());
+                for (String f : fitted) {
+                    log.printf("  %s%n", f);
+                }
                 log.flush();
                 if (o.afterItem != null) {
                     o.afterItem.accept(replayed);
@@ -776,6 +785,20 @@ final class FullIndexReplay {
             }
         }
         return new Record(it, r, d, kept, perfectStates, perfectValues);
+    }
+
+    /**
+     * How a strategy's fit ended, for the log: its passes, whether it converged or stopped at the
+     * pass cap (then the pass whose play it kept and its clean-ups), and refitDiffers, the
+     * (group, deal) cells whose first move the refit of its last round's values plays otherwise
+     * than the play kept. Where that refit ranks a deal otherwise, the export writes a split line
+     * (SHOE_SPEC.md B2.4), so each split line's cause is on record beside it.
+     */
+    static String howFitted(FullIndexFit.Strategy t) {
+        String end = t.capped ? "stopped at the pass cap of " + t.maxPasses + ", pass " + t.bestPass + "'s play kept, "
+                + t.cleanUps + " clean-ups (" + t.flipped + " later cells flipped)"
+                : t.converged ? "converged" : "neither converged nor capped";
+        return t + ": " + t.passes + " passes, " + end + "; refitDiffers " + t.refitDiffers;
     }
 
     /**

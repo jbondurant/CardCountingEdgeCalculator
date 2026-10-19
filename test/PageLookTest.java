@@ -27,6 +27,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * run C's collector, the registered rows' wide figures, the first-decision and full-play exports
  * (their round trips passed), the replay's wide.ser and run D's collector. A further look without
  * --resume is refused, the ledger holding the page look already.
+ *
+ * The full-play export is the one real difference of the tests (INTEGRATION.md open item 1): F1's
+ * fold 0 fit stops at its pass cap here, so the play its splits were valued under ranks deals
+ * otherwise than its refit, and the files carry split lines (SHOE_SPEC.md B2.4). Planted on 19
+ * October 2026 in a scratch copy of StrategyExport: build refusing a fold whose two rankings
+ * differ, as it did before the split lines, failed the look's test (the full-play export writes
+ * no bundle).
  */
 public class PageLookTest {
 
@@ -37,7 +44,11 @@ public class PageLookTest {
             + "\"searchCommit\": \"abc\", ";
     static final String CELLS = "\"cells\": {\"flat\": [\"F1\"], \"same\": [\"F1\"], \"own\": [\"F1\"]}, ";
 
-    /** The fixture's shoes: enough that the full-play fit ranks every deal one way (open item 1), as FullPlayExportTest's does. */
+    /**
+     * The fixture's shoes. On these 12 F1's full play ranks a deal two ways (INTEGRATION.md open
+     * item 1), so its export has split lines (SHOE_SPEC.md B2.4); FullPlayExportTest's 12 shoes of
+     * another seed rank every deal one way.
+     */
     static final int SHOES = 12;
 
     /** MainFileLookTest's repository, on a main-seed synthetic file of the shoes given. */
@@ -167,14 +178,31 @@ public class PageLookTest {
         assertEquals(List.of(), WideReport.check(w));
         assertTrue(w.rows.stream().anyMatch(x -> x.name.equals("F1")), "the registered rows' wide figures");
         assertTrue(Files.isRegularFile(made.exportFirst.resolve("manifest.sha256")), "the first-decision export passed");
-        // The full-play export passes, or is refused for a row that ranks a deal two ways (open item 1,
-        // which this fixture's F1 meets), and then only the bundle is missing.
-        if (made.exportFullRefused == null) {
-            assertTrue(Files.isRegularFile(made.exportFull.resolve("manifest.sha256")), "the full-play export passed");
-        } else {
-            assertTrue(made.exportFullRefused.contains("a file has one ranking (B2.4)"), made.exportFullRefused);
-            assertFalse(Files.exists(made.exportFull));
-            assertTrue(log.contains("open item 1"), log);
+        // The full-play export passes. This fixture's F1 full play ranks a deal two ways (INTEGRATION.md
+        // open item 1): its split hands were valued under the walked play's ranking where the dealt
+        // hand plays the refit's, so its files carry split lines (SHOE_SPEC.md B2.4), which the round
+        // trip held to the walked play, and lookups.tsv carries B8's 1,000 split lines.
+        assertNull(made.exportFullRefused, made.exportFullRefused);
+        assertTrue(Files.isRegularFile(made.exportFull.resolve("manifest.sha256")), "the full-play export passed");
+        int split = 0;
+        int fullFiles = 0;
+        for (java.util.Map.Entry<String, String[]> f : ExportBundle.readIndex(made.exportFull.resolve("index.tsv")).entrySet()) {
+            if (f.getValue()[4].equals("full")) {
+                split += ExportBundle.readStrategy(made.exportFull.resolve(f.getKey())).splitLines();
+                fullFiles++;
+            }
+        }
+        assertEquals(2, fullFiles, "F1's full play at 80%, both folds");
+        assertTrue(split > 0, "F1's full play ranks no deal two ways here: " + log);
+        assertTrue(log.matches("(?s).*export: F1 at 80%, fold \\d: [1-9]\\d* split lines?, the first group .*"), log);
+        long splitLines = ExportBundle.readLookups(made.exportFull.resolve("lookups.tsv"), true).lines.stream()
+                .filter(l -> l.split).count();
+        assertEquals(1000, splitLines);
+        // On record: each fold's split lines, and how each of F1's fold fits ended (FullIndexReplay.howFitted).
+        for (String l : log.split("\n")) {
+            if (l.startsWith("export: F1 at 80%, fold ") || l.startsWith("  F1 80% fold ")) {
+                System.out.println(l);
+            }
         }
         assertTrue(Files.isRegularFile(made.replay.resolve("wide.ser")));
         KeyEdges.Collector d = KeyEdges.Collector.read(made.runD.resolve(ReplayHooks.Sink.FILE));

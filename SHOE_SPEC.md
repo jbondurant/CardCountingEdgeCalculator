@@ -979,8 +979,8 @@ clean-ups):
 - `group`: the play's `Groups.lo` and `hi`; `lgroup`: `Strategy.later`'s.
 - `first`: `FullIndexFit.rankings(st, rules, fit)[g][deal]`, which is `fit.move[g][deal]`
   followed by the other legal moves by `fit.sum`, or `chartRanking` where `fit.reach` is 0. For
-  full play `fit` is the refit of the strategy's values (`Refit`, src/StrategyExport.java:282 and
-  286), the fit SystemScorer.score plays the dealt hand by (src/SystemScorer.java:2624-2627).
+  full play `fit` is the refit of the strategy's values (`Refit`, src/StrategyExport.java:298 and
+  302), the fit SystemScorer.score plays the dealt hand by (src/SystemScorer.java:2624-2628).
 - `split` (full play only): `t.now.ranking[g][deal]`, the ranking of the play in force when the
   Strategy finishes (B2.4's kept play). It is the ranking the last round handed to every split it
   valued: `record` (src/FullIndexFit.java:872-881) builds, for each part of a pair deal that may
@@ -988,15 +988,15 @@ clean-ups):
   `pol.stands` at `g2`, and the score takes those Split values (`SystemScorer.value`,
   src/SystemScorer.java:661-671) without playing the split again. A line is written for each
   non-natural (g, deal) whose `t.now.ranking[g][deal]` is not `Arrays.equals` to the `first`
-  line's ranking, the comparison `Refit` makes today (src/StrategyExport.java:292-303), and for
-  no other. Both lists index one set of groups, but only because two calls agree: the Strategy
+  line's ranking, the comparison `Refit.walked` counts and `Refit.splitLines` writes from
+  (src/StrategyExport.java:323-357), and for no other. Both lists index one set of groups, but only because two calls agree: the Strategy
   forms its groups with `scorer.groups(parts, p, use, w, null)` (src/FullIndexFit.java:605) on
   `use = SystemScorer.drawn(p.train[fold], w)` (582), and `foldPlay` with
   `groups(parts, pen, pen.train[f], pen.weight, null)` (src/SystemScorer.java:1045). `drawn`
   drops only the states of weight 0 (SystemScorer.java:1058-1071), every estimate weight is
   1/q > 0 (src/ScoringStates.java:117), and the fold Strategies are built with `w = p.weight`
   and `units = null` (src/FullIndexFit.java:1576), so the states, their order, the valued count
-  and the threshold are the same, and so are the groups. `Refit` is to check this, not assume
+  and the threshold are the same, and so are the groups. `Refit` checks this rather than assume
   it (below). The reach does not depend on the play (src/FullIndexFit.java:930-932; a sum of
   positive weights is 0 in any order exactly when nothing reached), so a cell no training state
   reached is `chartRanking` in both and gets no line.
@@ -1032,67 +1032,85 @@ What `StrategyExport` does beyond the lines above (9 October 2026):
   measured size.
 - Full-play rows come from the replay (PLAN_COMPUTE.md 6.1), which holds each fold's strategy
   after its last round; `StrategyExport.ReplayExport` is the replay hook that exports them, and
-  the replay's `--export` option is to construct it. For each fold the play is fitted again from
+  the replay's `--export` option constructs it. For each fold the play is fitted again from
   the strategy's Hit and Split values as SystemScorer.score fits the full-play entries (`foldPlay`
   with those values), the moves ranked from that fit, the later groups and stands from the play
   the last round walked (`now`). Where the refit ranks a deal otherwise than that play, the play's
-  own ranking is to be written as a `split` line (above, B2.4, and the notes below); until it is,
-  such a fold is refused. `rvPlay` is the refit play's round value, Hit and Split valued from the
-  strategy (so its split hands are the kept play's), the other moves from the stored values. Each item's rows are checked while its values
-  are held: the files read back and every state replayed from them on those values, every later
-  line held to the play walked (and, once the `split` lines are written, the ranking every split
-  hand reads from the file), and the figures against the entry's. A row that fails is kept with
+  own ranking is written as a `split` line (above, B2.4, and the notes below). `rvPlay` is the
+  refit play's round value, Hit and Split valued from the strategy (so its split hands are the
+  kept play's), the other moves from the stored values. Each item's rows are checked while its
+  values are held: the files read back and every state replayed from them on those values, every
+  later line held to the play walked, every `first` line whole to the refit's ranking and the
+  ranking every split hand reads from the file to the walked play's, and the figures against the
+  entry's. A row that fails is kept with
   its reason rather than stopping the replay; at the end the bundle is refused, naming it.
   Otherwise the bundle is written from the replay's records, and its round trip holds each
   full-play section to the one checked, to the bit. `test/FullPlayExportTest.java` does both on a
   fixture run and requires the two bundles equal byte for byte, and equal again after a replay
   killed and resumed.
 
-**The `split` lines, specified 18 October 2026 and not yet written** (INTEGRATION.md open item 1).
-Until they are, `build` refuses a fold whose two rankings differ anywhere
-(src/StrategyExport.java:336-342), and `ReplayExport.finish` then writes no bundle (2764-2771).
-The exporter is to do this:
+**The `split` lines, specified 18 October 2026 and written 19 October 2026** (INTEGRATION.md
+open item 1). Before them `build` refused a fold whose two rankings differed anywhere, and
+`ReplayExport.finish` then wrote no bundle. The exporter does this:
 
-- `Refit` keeps `walked[f] = t.now.ranking` beside `ranking[f]`. It refuses a fold whose
-  Strategy groups are not the refit's: `Arrays.equals(t.groups.lo, plays[f].groups.lo)`, the
-  same for `hi`, and `Arrays.equals(t.table, plays[f].table)` (`Strategy.groups` and `table`
+- `Refit` keeps `walked[f] = t.now.ranking` beside `ranking[f]` (`Refit.walked`). It refuses a
+  fold whose Strategy groups are not the refit's: `Arrays.equals(t.groups.lo, plays[f].groups.lo)`,
+  the same for `hi`, and `Arrays.equals(t.table, plays[f].table)` (`Strategy.groups` and `table`
   are package-private fields, src/FullIndexFit.java:475-476), and a walked ranking with another
   number of groups. The walked `SplitPlay` took its group from the Strategy's table
   (src/FullIndexFit.java:874-875) while the file's `group` lines and the check below index by
   the refit's, so without this a same-count, other-bounds pair of groups would pass every other
-  check. It counts the differing cells it counts today; `build` no longer refuses them but hands
-  them to the model (`ExportBundle.Strategy` gains the table, null where there is no line), and
+  check. A refit refused so refuses each row of its item, and the replay's export keeps each
+  with its reason rather than stopping the replay (`ReplayExport.after`). `Refit` counts the
+  differing cells (`rankingDiffers`); `build` hands them to the model as
+  `ExportBundle.Strategy.split`, [g][deal], null where there is no line (`Refit.splitLines`), and
   `format` writes them after the `first` lines. The log names each fold's count of `split` lines
-  and the first of them, as the refusal names its first cell now.
+  and the first of them: `fold F: N split lines, the first group g, deal p1 p2 up: M… by the refit
+  (its first line), M… by the walked play (its split line)`.
 - `ExportBundle` reads `split` lines in B2.1's order and refuses every line B2.1 refuses: one in
-  a file whose scope is not `full`, out of order, for a natural or a group past the last, with
-  moves that are not its `first` line's in another order, or repeating that order. It gives the
-  ranking split hands read by B2.4: the `split` line, else the `first` line; the dealt hand's
-  first move stays `first[g][i][0]`. Its `readLookups` reads B8's `split` lines and refuses a
-  lookups.tsv whose bundle holds a full-play file and lacks any of the 1,000, or holds none and
-  has one.
-- `checkFull`'s replay (src/StrategyExport.java:1521-1538, beside the later lines) holds, for each
-  fold and every non-natural (g, deal), the ranking `ExportBundle` gives split hands to
-  `walked[f][g][deal]` by `Arrays.equals`, and the `first` line to `ranking[f][g][deal]` the same
-  way (today only its first move is replayed, 1603-1611, so a `first` line's tail where a `split`
-  line stands, which no hand reads, would otherwise go unchecked). With the groups held equal in
-  `Refit`, the group B2.3 gives a part's key from the file's `group` lines is the one `record`
-  took from the Strategy's table; with the later lines already held to `now.stands` cell by cell,
-  the `SplitPlay` the file describes for any part is then the one `record` built, so its
-  `SplitValues.fingerprint` (src/SplitValues.java:266-295) and its Split value are the walked
-  play's, and the figures' split hands are the file's. No split is valued again.
+  a file whose scope is not `full`, out of order or twice, for a natural or a group past the last,
+  with moves that are not its `first` line's in another order, or repeating that order. It gives
+  the ranking split hands read by B2.4, `Strategy.splitRanking(g, deal)`: the `split` line, else
+  the `first` line; the dealt hand's first move is `Strategy.dealtFirst(g, deal)`,
+  `first[g][deal][0]`, which the round trip's replay of every state and its `first` cells of
+  lookups.tsv read. `readLookups(file, full)` reads B8's `split` lines and refuses a lookups.tsv
+  that, with `full`, lacks any of the 1,000 or has one out of place, or, without it, has one.
+  `full` says whether the bundle holds a file of scope `full`, which index.tsv's scopes say and
+  lookups.tsv does not; the round trip gives it from the strategy files it has read.
+- The round trip's `replay` (src/StrategyExport.java:1647-1834), which `checkFull` runs on each
+  full-play row while its values are held, holds the file's groups to the refit's beside the
+  later lines, and, after every state's values, for each fold and every non-natural (g, deal),
+  the `first` line to `ranking[f][g][deal]` by `Arrays.equals` and the ranking `ExportBundle`
+  gives split hands to `walked[f][g][deal]` the same way. These two come after the states, so
+  that a first move written wrong is still refused by the round values it moves, and a `first`
+  line's tail or a `split` line, which no round value reads, by them. The value replay stays on
+  the dealt hand's first move. With the groups held equal in `Refit`, the group B2.3 gives a
+  part's key from the file's `group` lines is the one `record` took from the Strategy's table;
+  with the later lines already held to `now.stands` cell by cell, the `SplitPlay` the file
+  describes for any part is then the one `record` built, so its `SplitValues.fingerprint`
+  (src/SplitValues.java:266-296) and its Split value are the walked play's, and the figures'
+  split hands are the file's. No split is valued again.
 - `Lookup` takes the walked ranking too, for B8's `split` cells, and writes all 1,000 lines
   whenever the bundle holds a full-play file: for group g, split rank r, second card x and
   up-card u, the letter is the answer of `SplitPlay(r, u, any later play, d -> walked[g][d])` to
-  the split hand's first decision on (r, x), Split offered or not. These are the `FIRST` slots of
-  `SplitValues.fingerprint(rules, Deals.index(r, r, u), play)` (src/SplitValues.java:281-289),
-  the answers the last round's fingerprints held, under Montreal's rules, which give B8's fixed
-  legal sets. The round trip's `lookups` (src/StrategyExport.java:2224-2288) works out the
-  `split` lines from B8's words, refuses lookups.tsv if any is missing or out of place, and holds
-  every cell to the answer `ExportBundle`'s file gives by B2.4.
+  the split hand's first decision on (r, x), Split offered or not, read from the `FIRST` slots of
+  `SplitValues.fingerprint(rules, Deals.index(r, r, u), play)` (`SplitValues.firstSlot`), the
+  answers the last round's fingerprints held, under Montreal's rules, which give B8's fixed legal
+  sets. The round trip's `lookups` (src/StrategyExport.java:2443-2533) works out the `split`
+  lines from B8's words, refuses lookups.tsv if any is missing or out of place, and holds every
+  cell to the answer the file gives by B2.4 (`fileSplit`: `splitRanking` under B8's legal sets,
+  written out there, not taken from `RoundRules`). It counts the full-play files' split cells
+  apart and refuses a bundle with a full-play file where it compared none.
+- The replay's log says, for every strategy it replays, whether its fit converged or stopped at
+  the pass cap (then the pass whose play it kept and its clean-ups), and its `refitDiffers`
+  (`FullIndexReplay.howFitted`), so each `split` line's cause is on record beside it. On
+  test/PageLookTest.java's fixture, F1's full play at 80%: fold 0 stopped at the cap of 6 with
+  pass 0's play kept, refitDiffers 29, and has 31 `split` lines; fold 1 converged, refitDiffers 0,
+  and has one, a pair of tens against a 10 ranked S P H D by the refit and S H D P by the walked
+  play, which no split hand reads differently.
 - The replay's rows have to be exported again: `RowExport` keeps a row's text, section and
-  lookups (src/StrategyExport.java:2463-2472), and a refused row kept none, so the full-play
-  items are replayed with `--export` once the lines are written.
+  lookups (src/StrategyExport.java:2715-2723), and a refused row kept none, so the full-play
+  items are replayed with `--export` with these classes.
 
 ### B8. lookups.tsv
 

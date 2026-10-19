@@ -286,13 +286,22 @@ final class SplitValues {
                 RoundPolicy.Decision d = new RoundPolicy.Decision(total, soft, 2, x == r ? r : 0, up, true, true,
                         mayHit && total < 21, rules.doubleAfterSplit[r], canSplit, surrender);
                 PlayerMove m = ask(play, d);
-                print[FIRST + (x - 1) * 2 + offered] = (byte) (m.ordinal() + 1);
+                print[firstSlot(x, canSplit)] = (byte) (m.ordinal() + 1);
                 if (m == PlayerMove.Hit) {
                     follow(play, up, hard, ace, print, followed);
                 }
             }
         }
         return print;
+    }
+
+    /**
+     * Where a fingerprint holds the split hand's two-card decision on second card x, with Split
+     * offered or not: what the play answers there is the byte, ordinal + 1, and 0 where the
+     * decision is not reached (a resplit where none is allowed, a split pair paid as a natural).
+     */
+    static int firstSlot(int x, boolean offered) {
+        return FIRST + (x - 1) * 2 + (offered ? 1 : 0);
     }
 
     /** Every later decision a hit on this hard total, with or without an ace, can lead to, and what the play answers. */

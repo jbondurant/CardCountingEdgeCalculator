@@ -149,6 +149,12 @@ final class ExportBundle {
         int[] hi;
         /** [g][deal]: the deal's legal first moves, best first; null for a player natural, and for scope betting. */
         PlayerMove[][][] first;
+        /**
+         * Scope full only, null otherwise: [g][deal], B2.1's split line for the deal in group g,
+         * the ranking split hands read where it is not the first line's, null where the file has
+         * no line (B2.4).
+         */
+        PlayerMove[][][] split;
         /** [g][ace-up deal]: whether the deal is insured in group g. */
         boolean[][] insure;
         /** Scope full only: the later-play groups and, [l][cell], whether the cell stands. */
@@ -172,6 +178,42 @@ final class ExportBundle {
 
         int laterGroup(int key) {
             return groupOf(laterHi, key);
+        }
+
+        /**
+         * B2.4: the dealt hand's first move in group g, the first move of its first line, for scope
+         * first and full. The dealt hand never reads a split line.
+         */
+        PlayerMove dealtFirst(int g, int deal) {
+            if (first == null || Deals.playerNatural(deal)) {
+                throw new IllegalStateException(row + ": no first line for deal " + deal + " in a file of scope "
+                        + scope.word());
+            }
+            return first[g][deal][0];
+        }
+
+        /**
+         * B2.4: the moves a split hand of a full-play file reads for a deal in group g, in order: the
+         * split line if the file has one, else the first line.
+         */
+        PlayerMove[] splitRanking(int g, int deal) {
+            if (scope != Scope.FULL) {
+                throw new IllegalStateException(row + ": split hands of a file of scope " + scope.word()
+                        + " play the chart (B2.4)");
+            }
+            PlayerMove[] own = split == null ? null : split[g][deal];
+            return own != null ? own : first[g][deal];
+        }
+
+        /** The file's split lines, counted. */
+        int splitLines() {
+            int n = 0;
+            for (int g = 0; split != null && g < split.length; g++) {
+                for (PlayerMove[] m : split[g]) {
+                    n += m != null ? 1 : 0;
+                }
+            }
+            return n;
         }
 
         Plan plan(String label) {
@@ -427,6 +469,7 @@ final class ExportBundle {
         if (s.scope != Scope.BETTING) {
             s.first = firstLines(c, s.lo.length);
         }
+        s.split = splitLines(c, s);
         s.insure = insureLines(c, s.lo.length);
         if (s.scope == Scope.FULL) {
             int[][] l = groupLines(c, "lgroups", "lgroup");
@@ -506,6 +549,69 @@ final class ExportBundle {
                 }
                 out[g][i] = moves;
             }
+        }
+        return out;
+    }
+
+    /**
+     * B2.1's split lines, after every first line: [g][deal] for a file of scope full, null where
+     * there is no line; null for another scope, which may have none. Each names a group and deal
+     * that have a first line, in the first lines' order and at most once, and lists that line's
+     * moves, each as many times, in another order; anything else is refused.
+     */
+    private static PlayerMove[][][] splitLines(Cursor c, Strategy s) {
+        PlayerMove[][][] out = s.scope == Scope.FULL ? new PlayerMove[s.lo.length][Deals.COUNT][] : null;
+        int previous = -1;
+        while ("split".equals(c.peek())) {
+            String[] f = c.next("split", -1);
+            if (s.scope != Scope.FULL) {
+                throw c.fail("a split line in a file of scope " + s.scope.word() + "; only scope full has them");
+            }
+            if (f.length < 6) {
+                throw c.fail("a split line names at least one move");
+            }
+            int g = c.integer(f[1]);
+            int p1 = c.integer(f[2]);
+            int p2 = c.integer(f[3]);
+            int up = c.integer(f[4]);
+            if (g < 0 || g >= out.length || p1 < 1 || p1 > p2 || p2 > 10 || up < 1 || up > 10) {
+                throw c.fail("split " + g + " " + p1 + " " + p2 + " " + up + " names no group and deal of the file");
+            }
+            int i = Deals.index(p1, p2, up);
+            if (Deals.playerNatural(i)) {
+                throw c.fail("a split line for the player's natural, which has no first line");
+            }
+            int order = g * Deals.COUNT + i;
+            if (order <= previous) {
+                throw c.fail("split lines go by group, then up-card, then p1, then p2, each at most once");
+            }
+            previous = order;
+            PlayerMove[] moves = new PlayerMove[f.length - 5];
+            for (int k = 0; k < moves.length; k++) {
+                try {
+                    moves[k] = move(f[5 + k]);
+                } catch (IllegalArgumentException e) {
+                    throw c.fail(e.getMessage());
+                }
+            }
+            PlayerMove[] first = s.first[g][i];
+            if (Arrays.equals(moves, first)) {
+                throw c.fail("a split line repeats its first line's order; a file has none where the two agree");
+            }
+            int[] count = new int[MOVE_LETTERS.length()];
+            for (PlayerMove m : moves) {
+                count[m.ordinal()]++;
+            }
+            for (PlayerMove m : first) {
+                count[m.ordinal()]--;
+            }
+            for (int n : count) {
+                if (n != 0) {
+                    throw c.fail("a split line lists " + Arrays.toString(moves) + ", not its first line's moves "
+                            + Arrays.toString(first) + " in another order");
+                }
+            }
+            out[g][i] = moves;
         }
         return out;
     }
@@ -1078,9 +1184,25 @@ final class ExportBundle {
         final List<LookupLine> lines = new ArrayList<>();
     }
 
-    /** One line: first (hit 0) or later, its state and deal, and one cell a file, as text. */
+    /** B8: the split lines of a bundle holding a file of scope full, one each split rank, second card and up-card. */
+    static final int SPLIT_LINES = 1_000;
+
+    /**
+     * B8's split line n, 0 to 999, in its order (up-card, then the split rank r, then the second
+     * card x): {r, x, up}.
+     */
+    static int[] splitLine(int n) {
+        return new int[]{n / 10 % 10 + 1, n % 10 + 1, n / 100 + 1};
+    }
+
+    /**
+     * One line: first (hit 0), later or split, and one cell a file, as text. A first or later
+     * line holds its state and deal; a split line its split rank in p1 and second card in p2, as
+     * written, state -1.
+     */
     static final class LookupLine {
         boolean later;
+        boolean split;
         int state;
         int p1;
         int p2;
@@ -1089,8 +1211,13 @@ final class ExportBundle {
         String[] cells;
     }
 
-    /** B8's lines read and their fields checked for form; the cells are compared as text by the caller. */
-    static Lookups readLookups(Path file) throws IOException {
+    /**
+     * B8's lines read and their fields checked for form; the cells are compared as text by the
+     * caller. full says whether the bundle holds a file of scope full, which index.tsv's scopes
+     * say and lookups.tsv does not: then exactly B8's 1,000 split lines are due, in their order,
+     * after every other line; otherwise none.
+     */
+    static Lookups readLookups(Path file, boolean full) throws IOException {
         List<String> lines = lines(file);
         String source = file.getFileName().toString();
         if (lines.size() < 3 || !lines.get(0).equals(LOOKUPS_FIRST) || !lines.get(1).startsWith("# sample seed ")
@@ -1104,19 +1231,46 @@ final class ExportBundle {
         out.files = Arrays.copyOfRange(header, 6, header.length);
         c.at = 1;
         boolean later = false;
+        int split = 0;
         while (!c.done()) {
             String[] f = c.fields.get(c.at);
             c.last = c.number.get(c.at) + 2;
             c.at++;
-            if (f.length != header.length || !f[0].equals("first") && !f[0].equals("later")) {
-                throw c.fail("a first or later line of " + header.length + " fields is due");
+            if (f.length != header.length || !f[0].equals("first") && !f[0].equals("later") && !f[0].equals("split")) {
+                throw c.fail("a first, later or split line of " + header.length + " fields is due");
             }
             LookupLine l = new LookupLine();
             l.later = f[0].equals("later");
-            if (later && !l.later) {
+            l.split = f[0].equals("split");
+            if (split > 0 && !l.split) {
+                throw c.fail("split lines come after every first and later line");
+            }
+            if (later && !l.later && !l.split) {
                 throw c.fail("first lines come before every later line");
             }
-            later = l.later;
+            later |= l.later;
+            if (l.split) {
+                if (!full) {
+                    throw c.fail("a split line, and the bundle holds no file of scope full");
+                }
+                if (split == SPLIT_LINES) {
+                    throw c.fail("more than " + SPLIT_LINES + " split lines");
+                }
+                int[] want = splitLine(split++);
+                if (!f[1].equals("-") || !f[5].equals("-")) {
+                    throw c.fail("a split line has - for state and hit");
+                }
+                l.state = -1;
+                l.p1 = c.integer(f[2]);
+                l.p2 = c.integer(f[3]);
+                l.up = c.integer(f[4]);
+                if (l.p1 != want[0] || l.p2 != want[1] || l.up != want[2]) {
+                    throw c.fail("split " + want[0] + " " + want[1] + " " + want[2] + " is due");
+                }
+                l.cells = Arrays.copyOfRange(f, 6, f.length);
+                out.lines.add(l);
+                continue;
+            }
             l.state = c.integer(f[1]);
             l.p1 = c.integer(f[2]);
             l.p2 = c.integer(f[3]);
@@ -1134,6 +1288,10 @@ final class ExportBundle {
             }
             l.cells = Arrays.copyOfRange(f, 6, f.length);
             out.lines.add(l);
+        }
+        if (full && split != SPLIT_LINES) {
+            throw c.failHere(split + " split lines; the bundle holds a file of scope full, so all " + SPLIT_LINES
+                    + " are due");
         }
         return out;
     }

@@ -260,9 +260,12 @@ final class PageLook {
         List<SystemScorer.Result> first;
         FullIndexReplay.Assembled full;
         /**
-         * Why the full-play export wrote no bundle, or null: a row whose fold strategies rank a deal
-         * two ways (INTEGRATION.md open item 1, SHOE_SPEC.md B2.4) is refused at the replay's end,
-         * after wide.ser and the sink's file are written, so the look keeps those and says this.
+         * Why the full-play export wrote no bundle, or null: a row that cannot be exported (a fold
+         * whose strategy groups are not the refit's, or whose files fail their check on its values,
+         * StrategyExport.ReplayExport) is refused at the replay's end, after wide.ser and the sink's
+         * file are written, so the look keeps those and says this. A fold whose split hands were
+         * valued under another ranking than its dealt hand plays is exported with split lines
+         * (SHOE_SPEC.md B2.4), not refused.
          */
         String exportFullRefused;
     }
@@ -304,8 +307,8 @@ final class PageLook {
                 throw e;
             }
             m.exportFullRefused = e.getMessage();
-            log.println("PageLook: the full-play export wrote no bundle (INTEGRATION.md open item 1); the replay's "
-                    + "wide.ser and run D's collector are written. " + e.getMessage());
+            log.println("PageLook: the full-play export wrote no bundle; the replay's wide.ser and run D's collector "
+                    + "are written. " + e.getMessage());
         }
         log.printf("PageLook: wrote %s, %s, %s, %s, %s and %s; commit the ledger's line in %s%n", m.runC, m.wideFirst,
                 m.exportFirst, m.replay.resolve("wide.ser"), m.runD.resolve(ReplayHooks.Sink.FILE), m.exportFull,
