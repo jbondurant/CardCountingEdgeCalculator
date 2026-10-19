@@ -168,6 +168,20 @@ final class SiteSim {
         return out;
     }
 
+    /**
+     * checks.txt's second D2 line, as sim.Sim p2 writes it since 0f087c4 (sim/QUESTIONS.md item 33's
+     * sim-checks block): the key-sample columns D2 left out, whose counts neither the catalog nor
+     * the bundle's files give (SHOE_SPEC.md B4). It reports; it does not fail D2.
+     */
+    static final String D2_LEFT_OUT = "columns left out, since no count of the catalog or of the bundle's files has the name: ";
+    /**
+     * The note sim.Sim p2 writes since 0f087c4 for a count a strategy file of the bundle plays or
+     * bets with that the key sample has no column for: D2 then holds none of its keys and fails,
+     * though its first line may show no mismatch (sim/QUESTIONS.md item 33).
+     */
+    static final Pattern D2_FILE_COUNT_MISSING = Pattern.compile("count (.+), which a strategy file of the bundle plays or "
+            + "bets with: no column of keys-sample\\.tsv's header has this name, so D2 holds none of its keys");
+
     /** checks.txt's second D5 line, as sim.Sim p2 writes it since ae283e4. */
     static final Pattern SPLIT_CELLS = Pattern.compile("split cells, the full-play files' columns of (\\d+) split lines: "
             + "(\\d+) of (\\d+) equal to lookups\\.tsv's; (\\d+) mismatches; the other files' columns there, each -: "
@@ -177,7 +191,9 @@ final class SiteSim {
      * checks.txt as sim.Sim p2 writes it: the D checks that failed, each with its line (nothing when
      * all of D1, D2, D4 and D5 passed); a check missing, not run, with a mismatch or a count short
      * of its total, D1's round starts other than A8's, D2's catalog counts missing, or no line for
-     * D3 is a failure. D5's line for the split cells (SHOE_SPEC.md B8, counted apart as sim/QUESTIONS.md
+     * D3 is a failure. D2's second line, the columns it left out (SHOE_SPEC.md B4), passes when
+     * its count of names is right; a note that a count of the bundle's files has no column fails
+     * D2. D5's line for the split cells (SHOE_SPEC.md B8, counted apart as sim/QUESTIONS.md
      * item 28 words them) passes with none compared on a bundle with no full-play file, and fails
      * with none on a bundle with one (SIM_CHECK.md section 5).
      */
@@ -192,6 +208,10 @@ final class SiteSim {
         Pattern mismatches = Pattern.compile("; (\\d+) mismatches");
         Pattern a8 = Pattern.compile("(\\d+) round starts, A8 says (\\d+)");
         for (String l : lines) {
+            if (D2_FILE_COUNT_MISSING.matcher(l).matches()) {
+                failed.add("D2: " + l);
+                continue;
+            }
             String[] f = l.split("\t", 2);
             if (f.length < 2 || !f[0].matches("D\\d")) {
                 continue;
@@ -207,6 +227,10 @@ final class SiteSim {
             Matcher s = SPLIT_CELLS.matcher(f[1]);
             if (f[1].startsWith("not run")) {
                 ok = false;
+            } else if (f[0].equals("D2") && f[1].startsWith(D2_LEFT_OUT)) {
+                // The columns D2 left out: N, then N names, tab-separated.
+                String[] g = f[1].substring(D2_LEFT_OUT.length()).split("\t", -1);
+                ok = g[0].matches("\\d+") && Integer.parseInt(g[0]) == g.length - 1;
             } else if (f[0].equals("D5") && s.matches()) {
                 long compared = Long.parseLong(s.group(3));
                 ok = s.group(2).equals(s.group(3)) && s.group(4).equals("0") && s.group(5).equals(s.group(6))
