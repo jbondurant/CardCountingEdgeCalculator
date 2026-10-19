@@ -42,23 +42,35 @@ import java.util.Map;
  * whole look writes; the replay's records are let go once the look is done (FullIndexReplay.letGo).
  *
  * --resume finishes an interrupted look, its line committed, and writes no second line. The look
- * resumed must be the look made: OUT/look.txt, written once with the line and never again, must
- * be what these files give in every line but its commit (the states file, both registrations and
- * their blobs, step 7's save and its SHA-256, step 8's run, the trees), else the resume is refused
- * naming the lines, before anything is written. Its commit names the classes that wrote it; a
- * resume may come under others, and then:
+ * resumed must be the look made: the ledger must hold its line as lookOnMain wrote it, naming
+ * this OUT, under look.txt's commit (so a look.txt copied into another OUT is no look to resume),
+ * and OUT/look.txt, written once with the line and never again, must be what these files give in
+ * every line but its commit (the states file, both registrations and their blobs, step 7's save
+ * and its SHA-256, step 8's run, the trees), else the resume is refused naming what differs,
+ * before anything is written. Its commit names the classes that wrote it; a resume may come under
+ * others, and then:
  * - when OUT/replay holds a replay of these classes, or none, the resume goes on as the look
  *   would have, into OUT/replay, writing what is missing (run C's files are each held equal to
  *   what is there, settle);
  * - when OUT/replay holds a replay of other classes (its run.id names another commit), that replay
  *   cannot be resumed by these classes, and its outputs stand: the resume writes export-full
- *   alone. It needs every other output there (run-c.ser, wide-first.ser, export-first, replay/'s
- *   replay.txt and wide.ser, run-d/run-b.ser) and export-full not, and replays step 8's fit into a
- *   directory of its own, OUT/replay-SHORT (SHORT these classes' commit, 7 characters; resumed
- *   there when an attempt of these classes was interrupted), with the export and Step8 alone, no
- *   wide plans and no sink, and only the items whose full-play rows export-full holds. Every file
- *   of OUT outside replay-SHORT, export-full and the record is held to its size and time before and
- *   after, and the replay may write into none of the look's outputs (refuseKept).
+ *   alone, once. It needs every other output there (run-c.ser, wide-first.ser, export-first,
+ *   replay/'s replay.txt and wide.ser, run-d/run-b.ser), and is refused while OUT holds
+ *   export-full, export-full.partial, another such resume's replay-* directory, or a resume record
+ *   saying export-full was written. It replays step 8's fit into a directory of its own,
+ *   OUT/replay-SHORT (SHORT these classes' commit, 7 characters; resumed there when an attempt of
+ *   these classes was interrupted), with Step8, LookFiles and the export alone, no wide plans and
+ *   no sink, and only the items whose full-play rows export-full holds. That replay is the look's
+ *   own apart from its classes, its items and its wide plans and sink: replay/run.id's source and
+ *   fit.ckpt SHA-256, its export's rows, plans and sample seed, and the source's identity must be
+ *   the new replay's, else it is refused before anything is written. The replay may write into
+ *   none of the look's outputs (refuseKept). Every file of OUT outside replay-SHORT, export-full
+ *   (and its .partial) and the record is listed by size and time in replay-SHORT/look-files.tsv
+ *   when the first such attempt starts, and held to that list as every attempt starts and again
+ *   once every item is kept, before the bundle is written (LookFiles, ahead of the export among
+ *   the replay's hooks): a file changed, gone or new stops the resume with no export-full, and
+ *   the record says so. The bundle's writing, after that check, writes export-full.partial alone
+ *   and renames it export-full.
  * Every resume adds lines to OUT/resume-SHORT.txt (when it started under which classes, where it
  * replayed, what it wrote or why it stopped, and the records let go), the look's history beside
  * look.txt.
@@ -88,6 +100,11 @@ final class PageLook {
      */
     static final String[] KEPT = {"run-c.ser", "wide-first.ser", "export-first/manifest.sha256", "replay/replay.txt",
             "replay/wide.ser", "run-d/" + ReplayHooks.Sink.FILE};
+    /**
+     * In OUT/replay-SHORT: every file the look held when the first resume of these classes that
+     * writes export-full alone started, by size and time, written once and never again.
+     */
+    static final String LOOK_FILES = "look-files.tsv";
 
     private PageLook() {
     }
@@ -186,6 +203,21 @@ final class PageLook {
         return false;
     }
 
+    /** The page look's ledger description, as lookOnMain writes it for a look into OUT (absolute, normalized). */
+    static String lookLine(Path out) {
+        return WHAT + " (PageLook into " + out + ")";
+    }
+
+    /** Whether the ledger holds the page look's own line: this commit, this blob, into this OUT. */
+    static boolean holdsLook(List<String[]> lines, String commit, String blob, Path out) {
+        for (String[] f : lines) {
+            if (f.length >= 4 && f[0].equals(commit) && f[1].equals(blob) && f[3].equals(lookLine(out))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** What the checks before the ledger line found, for the run after it. */
     static final class Checked {
         CustomCounts.Listing registration;
@@ -271,7 +303,7 @@ final class PageLook {
      * replay, and what it wrote stands, so the resume writes export-full alone, through a replay of
      * its own. Refused unless the look holds every other output (KEPT) and not export-full.
      */
-    static void otherClasses(Options o, Checked c, Path out, String commit) {
+    static void otherClasses(Options o, Checked c, Path out, String commit) throws IOException {
         String why = out.resolve("replay") + " holds the replay of " + c.replayCommit + ", not of these classes ("
                 + commit + "), so this resume would write " + out.resolve("export-full") + " alone, replaying step 8's "
                 + "fit into " + c.replayInto + ", and change nothing the look holds";
@@ -279,11 +311,84 @@ final class PageLook {
                 + "every output, and there is nothing to resume");
         refuse(Files.exists(out.resolve("export-full.partial")), why + "; but " + out.resolve("export-full.partial")
                 + " is there, and a bundle is written once");
+        // Once: one such resume finishes the look. Another's replay, or a record saying such a resume
+        // wrote export-full (its "finished" line), stops every further one, whatever its classes.
+        String wrote = ": wrote " + out.resolve("export-full") + " (";
+        try (java.util.stream.Stream<Path> s = Files.list(out)) {
+            for (Path p : (Iterable<Path>) s.sorted()::iterator) {
+                String name = p.getFileName().toString();
+                refuse(Files.isDirectory(p) && name.startsWith("replay-") && !p.equals(c.replayInto), why + "; but " + p
+                        + " holds another resume's replay, and export-full is written once, by one resume");
+                if (Files.isRegularFile(p) && name.startsWith("resume-") && name.endsWith(".txt")) {
+                    for (String l : Files.readAllLines(p, StandardCharsets.UTF_8)) {
+                        refuse(l.startsWith("finished ") && l.contains(wrote), why + "; but " + p + " says a resume "
+                                + "wrote export-full already, and it is written once: " + l);
+                    }
+                }
+            }
+        }
         for (String kept : KEPT) {
             refuse(!Files.isRegularFile(out.resolve(kept)), why + "; but the look holds no " + out.resolve(kept)
                     + ", which only a resume under " + c.replayCommit + "'s classes writes");
         }
         c.only = itemsFor(o.fullRows == null ? registeredRows("step 8") : o.fullRows, c.fullPlay.counts());
+    }
+
+    /** The full-play rows exported, as NAME@P: the options' own, else SIM_CHECK.md's from step 8. */
+    static List<String> fullRows(Options o) {
+        return o.fullRows == null ? registeredRows("step 8") : o.fullRows;
+    }
+
+    /** The full-play export, into the directory given: the look's rows and plans, the replay's sample seed. */
+    static StrategyExport.ReplayExport exportHook(Options o, Checked c, Path into, PrintStream log) {
+        return new StrategyExport.ReplayExport(into.toAbsolutePath().normalize(), o.states, c.shoes,
+                StrategyExport.ReplayExport.named(fullRows(o), c.pens), o.plans.clone(), StrategyExport.SAMPLE_SEED, log);
+    }
+
+    /**
+     * How the replay a resume under other classes would make differs from the look's own replay,
+     * OUT/replay/run.id, in what fixes export-full: the run replayed and its fit.ckpt's SHA-256,
+     * the export's rows, plans and sample seed, and the source's identity; its items must be among
+     * the look's. Its commit, its items and its other hooks (the look's had the wide plans and the
+     * sink) may differ. Empty when they agree.
+     */
+    static String replayDiffers(Options o, Checked c, Path out) throws Exception {
+        Path id = out.resolve("replay").resolve("run.id");
+        String was = new String(Files.readAllBytes(id), StandardCharsets.UTF_8);
+        Path source = o.fullplayRun.toAbsolutePath().normalize();
+        StringBuilder d = new StringBuilder();
+        String run = "of the run in " + source + ", its fit.ckpt SHA-256 "
+                + FullIndexReplay.sha256(source.resolve("fit.ckpt"));
+        if (!run.equals(line(was, "of the run in "))) {
+            d.append("  was: ").append(line(was, "of the run in ")).append("\n  now: ").append(run).append('\n');
+        }
+        String items = line(was, "items: ");
+        String all = "items: the fold fits only";
+        boolean among = all.equals(items);
+        if (!among && items != null && items.startsWith(all + ", only ")) {
+            String listed = ", " + items.substring((all + ", only ").length()) + ", ";
+            among = true;
+            for (String it : c.only) {
+                among &= listed.contains(", " + it + ", ");
+            }
+        }
+        if (!among) {
+            d.append("  was: ").append(items).append("\n  now: ").append(all).append(", only ")
+                    .append(String.join(", ", c.only)).append(" (the items must be among the look's)\n");
+        }
+        String export = exportHook(o, c, out.resolve("export-full"), new PrintStream(java.io.OutputStream.nullOutputStream()))
+                .describe();
+        String hooks = line(was, "hooks:");
+        if (hooks == null || !hooks.contains(export)) {
+            d.append("  was: ").append(hooks).append("\n  now: ... ").append(export).append(" ...\n");
+        }
+        String block = "\nthe source's identity:\n";
+        int at = was.indexOf(block);
+        String sourceWas = at < 0 ? "" : was.substring(at + block.length());
+        if (!sourceWas.equals(c.step8)) {
+            d.append("the source's identity:\n").append(FullIndexCheckpoint.differences(sourceWas, c.step8));
+        }
+        return d.toString();
     }
 
     /**
@@ -320,9 +425,19 @@ final class PageLook {
         refuse(!made && o.resume, ledgerFile + " holds no page look to resume; commit its line first, or start it anew");
         Path out = o.out.toAbsolutePath().normalize();
         refuse(!o.resume && Files.exists(out), out + " exists; the page look writes a new directory");
-        refuse(o.resume && !Files.isRegularFile(out.resolve("look.txt")), out + " holds no page look to resume");
+        refuse(o.resume && !Files.isRegularFile(out.resolve(LOOK)), out + " holds no page look to resume");
         refuse(out.getParent() == null || !Files.isDirectory(out.getParent()), "the directory of " + out
                 + " does not exist");
+        if (o.resume) {
+            // The look resumed is the one the ledger holds: its line, as lookOnMain wrote it, names this
+            // OUT and look.txt's commit. A look.txt copied elsewhere names a look the ledger never made.
+            String lookCommit = line(new String(Files.readAllBytes(out.resolve(LOOK)), StandardCharsets.UTF_8), "commit ");
+            refuse(lookCommit == null, out.resolve(LOOK) + " names no commit");
+            lookCommit = lookCommit.substring("commit ".length());
+            refuse(!holdsLook(lines, lookCommit, c.blob, out), ledgerFile + " holds no line of the page look into " + out
+                    + " under " + lookCommit + " (" + LOOK + "'s commit), blob " + c.blob + ", \"" + lookLine(out) + "\"; "
+                    + "a look is resumed only in the directory its ledger line names, so nothing is written");
+        }
         // Step 7's save: these states, this registration's blob.
         c.saved = CeilingReport.readSaved(o.saved);
         String states = FullIndexRun.stateFile(o.states);
@@ -374,6 +489,11 @@ final class PageLook {
         long more = BYTES - DiskBudget.bytes(o.out);
         if (c.otherClasses) {
             otherClasses(o, c, out, commit);
+            String differ8 = replayDiffers(o, c, out);
+            refuse(!differ8.isEmpty(), out.resolve("replay") + " holds the replay of " + c.replayCommit + ", and the one "
+                    + "this resume would make in " + c.replayInto + " is not that replay apart from its classes, items, "
+                    + "wide plans and sink, so nothing is written; " + out.resolve("replay").resolve("run.id")
+                    + " differs in:\n" + differ8);
             // A record an item, and a bundle the size of the first-decision one.
             more = DiskBudget.REPLAY_ITEM * c.only.size() + DiskBudget.bytes(out.resolve("export-first"))
                     - DiskBudget.bytes(c.replayInto);
@@ -398,6 +518,8 @@ final class PageLook {
         boolean otherClasses;
         /** A resume's record beside look.txt, OUT/resume-SHORT.txt; null for a look not resumed. */
         Path record;
+        /** When otherClasses, every file the look held as the first such attempt found it (LOOK_FILES), by path in OUT. */
+        Map<String, String> lookFiles;
         List<SystemScorer.Result> first;
         FullIndexReplay.Assembled full;
         /**
@@ -421,7 +543,7 @@ final class PageLook {
         Path out = o.out.toAbsolutePath().normalize();
         if (!o.resume) {
             // The one look, through the same checks as every main-file look (lookOnMain calls checkOnMain).
-            String blob = CustomCounts.lookOnMain(c.registration, commit, WHAT + " (PageLook into " + out + ")");
+            String blob = CustomCounts.lookOnMain(c.registration, commit, lookLine(out));
             refuse(!blob.equals(c.blob), "the registration's blob moved during the checks");
             Files.createDirectories(out);
             Files.write(out.resolve(LOOK), identity(o, c, commit).getBytes(StandardCharsets.UTF_8));
@@ -447,13 +569,25 @@ final class PageLook {
                     ? m.replay + " holds the replay of " + c.replayCommit + ", kept as it is, as are " + m.runC.getFileName()
                     + ", " + m.wideFirst.getFileName() + ", " + m.exportFirst.getFileName() + " and " + m.runD.getFileName()
                     + "; step 8's fit replayed into " + m.replayInto + " (" + (again ? "resuming its interrupted replay"
-                    : "a new replay") + "), items " + String.join(", ", c.only) + ", hooks export and Step8, for "
+                    : "a new replay") + "), items " + String.join(", ", c.only) + ", hooks Step8, LookFiles and export, for "
                     + m.exportFull.getFileName() + " alone"
                     : (Files.exists(m.exportFirst) ? "run C and export-first written before; " : "run C and its export; ")
                     + "step 8's fit replayed into " + m.replayInto + " (" + (again ? "resuming its replay" : "a new replay")
                     + ") with the look's hooks"));
         }
-        Map<String, String> kept = c.otherClasses ? keptFiles(m) : null;
+        if (c.otherClasses) {
+            // Every file the look holds, as the first such attempt found it, and held to that as this
+            // one starts: an interrupted attempt that changed one is found here, before any replay.
+            m.lookFiles = lookFiles(m);
+            List<String> changed = changes(m.lookFiles, keptFiles(m));
+            if (!changed.isEmpty()) {
+                String why = "the look's own files are not as they were when the first resume under these classes "
+                        + "started (" + m.replayInto.resolve(LOOK_FILES) + "), so nothing is replayed and no export-full "
+                        + "is written:\n" + String.join("\n", changed);
+                note(m.record, "stopped " + now() + ": " + why.replace("\n", "; "));
+                refuse(true, why);
+            }
+        }
         if (!Files.exists(m.exportFirst)) {
             ScoringStates st = FullIndexPilot.load(o.states, c.shoes);
             refuse(st.size != c.size, o.states + " holds " + st.size + " valued states, step 8's run " + c.size);
@@ -463,51 +597,38 @@ final class PageLook {
             m.full = replay(o, c, m, commit, log);
         } catch (IllegalStateException e) {
             if (e.getMessage() == null || !e.getMessage().startsWith("--export writes no bundle")) {
-                note(m.record, "stopped " + now() + ": " + e.getMessage());
+                note(m.record, "stopped " + now() + ": " + String.valueOf(e.getMessage()).replace("\n", "; "));
                 throw e;
             }
             m.exportFullRefused = e.getMessage();
-            log.println("PageLook: the full-play export wrote no bundle; the replay's wide.ser and run D's collector "
-                    + "are written. " + e.getMessage());
+            log.println("PageLook: the full-play export wrote no bundle" + (m.otherClasses ? "" : "; the replay's "
+                    + "wide.ser and run D's collector are written") + ". " + e.getMessage());
         } catch (Exception | Error e) {
             note(m.record, "stopped " + now() + ": " + e);
             throw e;
         }
-        if (kept != null) {
-            // Nothing the look held before this resume was written, moved or let go by it: every file
-            // there before is there after, its size and time the same. (So the resume's log goes
-            // outside OUT, as the look's did.)
-            Map<String, String> after = keptFiles(m);
-            List<String> changed = new ArrayList<>();
-            for (Map.Entry<String, String> f : kept.entrySet()) {
-                if (!f.getValue().equals(after.get(f.getKey()))) {
-                    changed.add(f.getKey() + ": " + f.getValue() + " before, " + after.get(f.getKey()) + " after");
-                }
-            }
-            if (!changed.isEmpty()) {
-                note(m.record, "stopped " + now() + ": the look's own files changed during this resume: " + changed);
-            }
-            refuse(!changed.isEmpty(), "the look's own files changed during this resume, which writes export-full alone:\n"
-                    + String.join("\n", changed));
-        }
         if (m.exportFullRefused != null) {
-            note(m.record, "finished " + now() + ": export-full refused, " + m.exportFullRefused);
+            note(m.record, "finished " + now() + ": export-full refused, " + m.exportFullRefused.replace("\n", "; "));
         } else if (m.otherClasses) {
             note(m.record, "finished " + now() + ": wrote " + m.exportFull + " (manifest.sha256's SHA-256 "
                     + KeyEdgesRun.sha256(m.exportFull.resolve("manifest.sha256")) + "), from the replay in " + m.replayInto
                     + " (run.id, replay.txt, perfect.ser and " + m.full.items.size() + " records); every other file of "
-                    + out + " as it was, " + kept.size() + " files by size and time");
+                    + out + " held, as this attempt started and before the bundle was written, to "
+                    + m.replayInto.resolve(LOOK_FILES) + ", " + m.lookFiles.size() + " files by size and time");
         } else {
             note(m.record, "finished " + now() + ": " + out + " holds run-c.ser, wide-first.ser, export-first, "
                     + "replay/wide.ser, run-d/" + ReplayHooks.Sink.FILE + " and export-full");
         }
+        String noBundle = m.exportFullRefused == null ? null : m.exportFull + " is not written: its export was refused";
         if (m.otherClasses) {
-            log.printf("PageLook: wrote %s alone, from the replay in %s; %s, %s, %s, %s and %s are as they were%n",
-                    m.exportFull, m.replayInto, m.runC, m.wideFirst, m.exportFirst, m.replay, m.runD);
+            log.printf("PageLook: %s, from the replay in %s; %s, %s, %s, %s and %s are as they were%n",
+                    noBundle != null ? noBundle : "wrote " + m.exportFull + " alone", m.replayInto, m.runC, m.wideFirst,
+                    m.exportFirst, m.replay, m.runD);
         } else {
-            log.printf("PageLook: wrote %s, %s, %s, %s, %s and %s; commit the ledger's line in %s%n", m.runC, m.wideFirst,
-                    m.exportFirst, m.replay.resolve("wide.ser"), m.runD.resolve(ReplayHooks.Sink.FILE), m.exportFull,
-                    o.countDesign);
+            log.printf("PageLook: wrote %s, %s, %s, %s and %s%s%s%n", m.runC, m.wideFirst, m.exportFirst,
+                    m.replay.resolve("wide.ser"), m.runD.resolve(ReplayHooks.Sink.FILE),
+                    noBundle != null ? "; " + noBundle : " and " + m.exportFull,
+                    o.resume ? "" : "; commit the ledger's line in " + o.countDesign);
         }
         return m;
     }
@@ -536,7 +657,7 @@ final class PageLook {
     /**
      * Every file of OUT a resume that writes export-full alone leaves as it is, by its path in OUT,
      * with its size and time: all but those under the replay's own directory and export-full (and its
-     * .partial) and the resume's record.
+     * .partial) and the resume's record, and the .DS_Store a Finder window leaves, which is no output.
      */
     static Map<String, String> keptFiles(Made m) throws IOException {
         Map<String, String> out = new java.util.TreeMap<>();
@@ -544,7 +665,7 @@ final class PageLook {
         try (java.util.stream.Stream<Path> files = Files.walk(m.out)) {
             for (Path p : (Iterable<Path>) files::iterator) {
                 if (!Files.isRegularFile(p) || p.startsWith(m.replayInto) || p.startsWith(m.exportFull)
-                        || p.startsWith(partial) || p.equals(m.record)) {
+                        || p.startsWith(partial) || p.equals(m.record) || p.getFileName().toString().equals(".DS_Store")) {
                     continue;
                 }
                 out.put(m.out.relativize(p).toString(), Files.size(p) + " bytes, modified "
@@ -552,6 +673,80 @@ final class PageLook {
             }
         }
         return out;
+    }
+
+    /**
+     * The look's files as the first attempt of these classes found them, from OUT/replay-SHORT's
+     * LOOK_FILES; written there now, from keptFiles, when it is not there yet (never rewritten).
+     */
+    static Map<String, String> lookFiles(Made m) throws IOException {
+        Path f = m.replayInto.resolve(LOOK_FILES);
+        String head = "The files of " + m.out + " as the first resume under these classes found them, each held to "
+                + "its size and time while it writes export-full alone (PageLook), by path in it:";
+        Map<String, String> out = new java.util.TreeMap<>();
+        if (!Files.exists(f)) {
+            out.putAll(keptFiles(m));
+            StringBuilder b = new StringBuilder(head).append('\n');
+            for (Map.Entry<String, String> e : out.entrySet()) {
+                b.append(e.getKey()).append('\t').append(e.getValue()).append('\n');
+            }
+            Files.createDirectories(m.replayInto);
+            FullIndexReplay.writeWhole(f, w -> w.write(b.toString().getBytes(StandardCharsets.UTF_8)));
+            return out;
+        }
+        List<String> lines = Files.readAllLines(f, StandardCharsets.UTF_8);
+        refuse(lines.isEmpty() || !lines.get(0).equals(head), f + " is not the list of " + m.out + "'s files");
+        for (String l : lines.subList(1, lines.size())) {
+            String[] x = l.split("\t", -1);
+            refuse(x.length != 2, f + ": not a path and its size and time: " + l);
+            out.put(x[0], x[1]);
+        }
+        return out;
+    }
+
+    /** Every file of was changed, gone or new in now, a line each; empty when they agree. */
+    static List<String> changes(Map<String, String> was, Map<String, String> now) {
+        List<String> out = new ArrayList<>();
+        java.util.Set<String> paths = new java.util.TreeSet<>(was.keySet());
+        paths.addAll(now.keySet());
+        for (String p : paths) {
+            String a = was.get(p);
+            String b = now.get(p);
+            if (a == null) {
+                out.add(p + ": not there before, " + b + " now");
+            } else if (b == null) {
+                out.add(p + ": " + a + " before, not there now");
+            } else if (!a.equals(b)) {
+                out.add(p + ": " + a + " before, " + b + " now");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The look's files held to the list once every item is kept, before the bundle is written: a
+     * hook of the replay that writes export-full alone, ahead of the export, so a file changed, gone
+     * or new stops the replay with no bundle.
+     */
+    static final class LookFiles implements FullIndexReplay.Hook {
+        final Made m;
+
+        LookFiles(Made m) {
+            this.m = m;
+        }
+
+        @Override
+        public String name() {
+            return "the look's files";
+        }
+
+        @Override
+        public void finish(FullIndexReplay.Assembled all) throws Exception {
+            List<String> changed = changes(m.lookFiles, keptFiles(m));
+            refuse(!changed.isEmpty(), "the look's own files changed during this resume, which writes export-full alone, "
+                    + "so no bundle is written; they are not as " + m.replayInto.resolve(LOOK_FILES) + " lists them:\n"
+                    + String.join("\n", changed));
+        }
     }
 
     /** Refuses a directory the replay would write into that is, holds, or lies inside one of the look's outputs before it. */
@@ -714,7 +909,8 @@ final class PageLook {
      * only, each checked against step 8's part by the replay and against step 8's results.ser to the
      * bit by Step8 before its record is kept; the wide plans, the sink into run-d and the full-play
      * rows' export. On a resume under other classes than OUT/replay's: into OUT/replay-SHORT, the
-     * items of the rows exported alone, the export and Step8 alone (see the class comment).
+     * items of the rows exported alone, with Step8, LookFiles and the export alone, in that order, so
+     * the look's files are held to their list before the bundle is written (see the class comment).
      */
     static FullIndexReplay.Assembled replay(Options o, Checked c, Made m, String commit, PrintStream log)
             throws Exception {
@@ -736,19 +932,25 @@ final class PageLook {
         r.wide = !m.otherClasses;
         r.sink = m.otherClasses ? null : m.runD;
         r.only = m.otherClasses ? new ArrayList<>(c.only) : null;
-        r.export = m.exportFull;
-        if (m.otherClasses) {
-            for (Path dir : new Path[]{r.out, r.sink, r.export}) {
-                refuseKept(dir, m);
-            }
-        }
-        r.exportRows = new ArrayList<>(o.fullRows == null ? registeredRows("step 8") : o.fullRows);
-        r.exportPlans = o.plans.clone();
         r.look = c.fullBlob;
         r.batchBytes = o.batchBytes;
         // Counted in the look's own check, before its ledger line, so never refused after it.
         r.budget = Long.MAX_VALUE;
         r.hooks.add(new Step8(CeilingReport.read(r.fitFrom.resolve("results.ser"))));
+        if (m.otherClasses) {
+            // The export is a hook given here, not the replay's own --export, so that LookFiles comes
+            // before it: the replay's hooks finish in order, and the bundle is written in the export's.
+            for (Path dir : new Path[]{r.out, r.sink, m.exportFull}) {
+                refuseKept(dir, m);
+            }
+            refuse(m.lookFiles == null, "the look's files were not listed before its replay");
+            r.hooks.add(new LookFiles(m));
+            r.hooks.add(exportHook(o, c, m.exportFull, log));
+        } else {
+            r.export = m.exportFull;
+            r.exportRows = new ArrayList<>(fullRows(o));
+            r.exportPlans = o.plans.clone();
+        }
         r.hooks.addAll(o.hooks);
         return FullIndexReplay.run(r, commit, log);
     }

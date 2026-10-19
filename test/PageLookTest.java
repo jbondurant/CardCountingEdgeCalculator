@@ -8,6 +8,7 @@ import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -37,15 +38,27 @@ import static org.junit.jupiter.api.Assertions.*;
  * resumed under "test" as before, into replay, F1's record read back, writing no second line and
  * every output: run C's collector, the registered rows' wide figures, the first-decision and
  * full-play exports (their round trips passed), the replay's wide.ser and run D's collector, and
- * its resume record. Its export-full is deleted, standing for the one the real look's export
- * refused, and its replay's records are kept, as main kept the real one's. Under commit "other":
- * a resume with another step 7 save, and one with run D's collector not there, are refused with
- * nothing written; a resume interrupted in its own replay leaves replay-other holding its run.id;
- * resumed there, it writes export-full alone, from F1's item alone, with no wide plans and no sink:
- * every other file of OUT the same in bytes and time, no ledger line, the bundle the look's own
- * replay wrote file for file and byte for byte, and the record of both attempts beside look.txt.
- * Its records are let go in replay-other, not in replay; a further resume under "other" is refused,
- * export-full being there, and a second look too.
+ * its resume record. Its look.txt copied into another directory is no look to resume there, under
+ * either classes: the ledger's line names the look's own OUT. Its export-full is deleted, standing
+ * for the one the real look's export refused, and its replay's records are kept, as main kept the
+ * real one's. Under commit "other", each of these is refused with nothing written: look.txt naming
+ * another commit than the ledger's line; another step 7 save; run D's collector not there;
+ * export-full.partial there; replay/run.id with another fit.ckpt SHA-256, with items not among the
+ * resume's, or with another source identity; and other export rows than replay/'s. A resume
+ * interrupted in its own replay leaves replay-other holding its run.id and look-files.tsv, which
+ * lists every file the look held. With a file new in run-d, the next attempt stops as it starts.
+ * With replay/wide.ser touched as F1's item is scored, the attempt keeps the item and stops before
+ * the bundle, writing no export-full. Once the file is put back, the next attempt reads F1's item
+ * back and writes export-full alone, with no wide plans and no sink: every other file of OUT the
+ * same in bytes and time, no ledger line, the bundle the look's own replay wrote file for file and
+ * byte for byte, and the record of all four attempts beside look.txt. Step8 passes that item as
+ * replayed and refuses it once step 8's F1 full-play estimate at 80% is moved one ulp. The records
+ * are let go in replay-other, not in replay. A further resume under "other" is refused, export-full
+ * being there; with export-full set aside, a resume under "other" is refused by its record and one
+ * under "other2" by replay-other; and a second look is refused too.
+ *
+ * The third: itemsFor maps a full-play row to its count's item, a betting variant's row (F52's) to
+ * the count's own, each item once, and refuses a row of no count.
  *
  * The full-play export ranks deals two ways here (INTEGRATION.md open item 1): F1's fold 0 fit
  * stops at its pass cap, so the play its splits were valued under ranks deals otherwise than its
@@ -62,25 +75,47 @@ import static org.junit.jupiter.api.Assertions.*;
  * file and P as valued), the splits the last round valued not played again (0 played), and the
  * fingerprints played against worked out from Refit.walked (fold 0's split hands given the
  * refit's ranking, nothing refused). These checks are on the export of the resume under "other"
- * since the resume under other classes was written.
+ * since the resume under other classes was written; the values and the log they read are those
+ * of the attempt the touch stopped, which scored F1's item.
  *
- * Planted on 19 October 2026 for the resume, each in a scratch copy of the code outside the
- * worktree (/private/tmp/pagelook-plants-1019), each failing the test named (the second unless
- * said): look.txt not held to the files on --resume (the first: resumed with the true save, the
- * look went on and wrote every output); held to them in its commit line too (refused for that
- * line where the absent collector was due); a replay of other classes never seen as such (the
- * resume went on into replay, refused there by its run.id); the sink left on in the replay of
- * other classes (refused by refuseKept, run-d being the look's); the sink left on with refuseKept
- * and PageLook's check of the look's files both taken out (run-d/run-b.ser written again, its
- * SHA-256 and time not the snapshot's); a ledger line written by that resume (a line more after
- * its interrupted attempt); no resume record written (resume-test.txt not there); the records
- * let go nowhere on that path (no records-let-go.txt in replay-other); replay-other not resumed
- * after its interrupted attempt (refused there, holding a run already); export-full there not
- * refused (the further resume refused only by the replay's own records-let-go.txt); the look's
- * other outputs not required (the resume with run D's collector aside went on); every item
- * replayed, not the exported rows' alone (2 items, not 1); the wide plans on (wide among the
- * replay's hooks); and a resume under the replay's own classes taken as one under others
- * (refused, the look's replay.txt not there yet).
+ * Planted on 19 October 2026 for the resume, after the review of 9fb5bdf, each in a scratch copy
+ * of the code outside the worktree (/private/tmp/pagelook-plants-1019c, whose unplanted copy
+ * passes), each failing the test named (the second unless said):
+ * - look.txt not held to the files on --resume (the first: resumed with the true save, the look
+ *   went on); held to them in its commit line too (refused for that line where the absent
+ *   collector was due);
+ * - the ledger's line not held to the look's OUT (the resume in the copied look.txt's directory
+ *   went on), or to look.txt's commit (the resume with look.txt naming "forged" went on);
+ * - a replay of other classes never seen as such (the resume went on into replay, refused there by
+ *   its run.id); a resume under the replay's own classes taken as one under others (refused, the
+ *   look's replay.txt not there yet);
+ * - the sink left on in the replay of other classes (refused by refuseKept, run-d being the
+ *   look's); the sink left on with refuseKept and both checks of the look's files taken out (the
+ *   attempt with a file new in run-d went on);
+ * - a ledger line written by that resume (a line more after its interrupted attempt); no resume
+ *   record written (resume-test.txt not there); the records let go nowhere on that path (no
+ *   records-let-go.txt in replay-other); replay-other not resumed after its interrupted attempt
+ *   (refused there, holding a run already);
+ * - export-full there not refused (the further resume refused by the record instead);
+ *   export-full.partial there not refused (refused later by the export's own check, after
+ *   replay-other was made); the look's other outputs not required (the resume with run D's
+ *   collector aside went on); another resume's replay-* directory allowed (the resume under
+ *   "other2" refused by the record instead); the record saying export-full was written ignored
+ *   (the resume under "other" refused by the replay's records-let-go.txt instead);
+ * - replay/run.id not held in its fit.ckpt SHA-256, in its items or in its source's identity (each
+ *   edited resume went on), nor in its export (the resume with the control's row too went on);
+ * - every item replayed, not the exported rows' alone (2 items, not 1); the wide plans on (wide
+ *   among the replay's hooks);
+ * - the look's files not held as an attempt starts (the file new in run-d found only before the
+ *   bundle); a new file not counted as a change (that attempt went on and wrote export-full); the
+ *   list taken anew at each attempt, not read back from look-files.tsv (the same); the check
+ *   before the bundle taken out (the attempt with wide.ser touched wrote export-full); that check
+ *   put after the export among the hooks (export-full written before it refused);
+ * - Step8's refusal taken out (the item with step 8's estimate moved passed);
+ * - itemsFor's betting-variant branch dropped (the third: F2 + betting vector's row was no row of
+ *   step 8's counts).
+ * Fourteen of these were planted first on 9fb5bdf (/private/tmp/pagelook-plants-1019), and all
+ * thirty here, on the code as it stands.
  */
 public class PageLookTest {
 
@@ -178,6 +213,63 @@ public class PageLookTest {
                 throw new IllegalStateException("interrupted at " + item);
             }
             return null;
+        }
+    }
+
+    /**
+     * Moves a file's time on by two seconds after each item when on, standing for a slip that
+     * writes one of the look's files during a resume; off, it does nothing. Its name is in the
+     * replay's identity either way, so every attempt of one replay gives it.
+     */
+    static final class Touch implements FullIndexReplay.Hook {
+        final Path file;
+        final boolean on;
+
+        Touch(Path file, boolean on) {
+            this.file = file;
+            this.on = on;
+        }
+
+        @Override
+        public String name() {
+            return "touch";
+        }
+
+        @Override
+        public Serializable after(FullIndexReplay.Item item, SystemScorer s, SystemScorer.Result scored,
+                                  List<FullIndexFit.Strategy> two) throws Exception {
+            if (on) {
+                Files.setLastModifiedTime(file, FileTime.fromMillis(Files.getLastModifiedTime(file).toMillis() + 2000));
+            }
+            return null;
+        }
+    }
+
+    /** A resume's options under other classes, with the hooks every attempt of its replay gives: ranking, refits, touch, interrupt. */
+    static PageLook.Options otherHooks(Look k, Refits refits, Touch touch, int interruptAt) {
+        PageLook.Options o = options(k, k.saved, k.out, true);
+        o.hooks.add(new FullIndexReplayTest.RankingHook());
+        o.hooks.add(refits);
+        o.hooks.add(touch);
+        o.hooks.add(new Interrupt(interruptAt));
+        return o;
+    }
+
+    /** A file's bytes and time, put back as they were after a change made to see a refusal. */
+    static final class Kept {
+        final Path file;
+        final byte[] bytes;
+        final FileTime time;
+
+        Kept(Path file) throws Exception {
+            this.file = file;
+            this.bytes = Files.readAllBytes(file);
+            this.time = Files.getLastModifiedTime(file);
+        }
+
+        void putBack() throws Exception {
+            Files.write(file, bytes);
+            Files.setLastModifiedTime(file, time);
         }
     }
 
@@ -392,6 +484,18 @@ public class PageLookTest {
                 + "ledger line: run C and export-first written before; step 8's fit replayed into " + out.resolve("replay")
                 + " (resuming its replay)") && record.contains("\nfinished "), record);
 
+        // look.txt copied into another OUT: the ledger's line names this OUT, not that one, so a resume
+        // there is refused under either classes and writes nothing.
+        Path copy = dir.resolve("runs").resolve("look-copied");
+        Files.createDirectories(copy);
+        Files.copy(out.resolve(PageLook.LOOK), copy.resolve(PageLook.LOOK));
+        for (String commit : new String[]{"test", "other"}) {
+            String m = refusal(options(k, k.saved, copy, true), r, commit);
+            assertTrue(m.contains("holds no line of the page look into " + copy.toAbsolutePath().normalize()
+                    + " under test (look.txt's commit)"), m);
+            assertEquals(List.of(PageLook.LOOK), listing(copy), "nothing written there");
+        }
+
         // As the real look stood: export-full refused. Deleted here to stand for it, its files' bytes kept
         // to compare; replay's records not let go, as main did not after a refused export.
         Map<String, String> refused = new TreeMap<>();
@@ -408,9 +512,18 @@ public class PageLookTest {
         assertTrue(held.containsKey("replay/wide.ser") && held.containsKey("run-d/" + ReplayHooks.Sink.FILE)
                 && held.containsKey("replay/replayed-part-0-2-folds.ckpt"), held.keySet().toString());
 
+        // look.txt naming another commit than the ledger's line: refused, nothing written.
+        Kept lookTxt = new Kept(out.resolve(PageLook.LOOK));
+        Files.write(lookTxt.file, new String(lookTxt.bytes, StandardCharsets.UTF_8).replace("\ncommit test\n",
+                "\ncommit forged\n").getBytes(StandardCharsets.UTF_8));
+        String m = refusal(options(k, k.saved, out, true), r, "other");
+        assertTrue(m.contains("holds no line of the page look into " + out + " under forged (look.txt's commit)"), m);
+        lookTxt.putBack();
+        assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
+
         // Under other classes with another step 7 save than look.txt names: refused, nothing written.
         Path moved = moved(k);
-        String m = refusal(options(k, moved, out, true), r, "other");
+        m = refusal(options(k, moved, out, true), r, "other");
         assertTrue(m.contains("names another look than this resume") && m.contains("  was: step 7 ")
                 && m.contains("  now: step 7 " + moved.toAbsolutePath().normalize()), m);
         assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
@@ -426,16 +539,56 @@ public class PageLookTest {
         Files.move(aside, sink);
         assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
 
-        // Under other classes, interrupted in its own replay: replay-other holds its run.id, and nothing else
-        // the look held is touched.
-        PageLook.Options o1 = options(k, k.saved, out, true);
-        o1.hooks.add(new FullIndexReplayTest.RankingHook());
-        o1.hooks.add(new Refits());
-        o1.hooks.add(new Interrupt(0));
+        // A bundle half written by an earlier start (export-full.partial): refused, a bundle is written once.
+        Path partial = out.resolve("export-full.partial");
+        Files.createDirectories(partial);
+        m = refusal(options(k, k.saved, out, true), r, "other");
+        assertTrue(m.contains("; but " + partial + " is there, and a bundle is written once"), m);
+        Files.delete(partial);
+        assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
+
+        // The replay it would make is held to the look's own, replay/run.id, but for its classes, items,
+        // wide plans and sink: another fit.ckpt, items not among the look's, another source, or other
+        // export rows are each refused before anything is written.
+        Kept runId = new Kept(out.resolve("replay").resolve("run.id"));
+        String id = new String(runId.bytes, StandardCharsets.UTF_8);
+        String ofRun = PageLook.line(id, "of the run in ");
+        String[][] edits = {
+                {ofRun, ofRun.substring(0, ofRun.length() - 64) + "0".repeat(64), "  was: " + ofRun.substring(0,
+                        ofRun.length() - 64) + "0".repeat(64) + "\n  now: " + ofRun + "\n"},
+                {"\nitems: the fold fits only\n", "\nitems: the fold fits only, only Hi-Lo = Hi-Lo Lite@2\n",
+                        "  was: items: the fold fits only, only Hi-Lo = Hi-Lo Lite@2\n  now: items: the fold fits only, "
+                                + "only F1@2 (the items must be among the look's)\n"},
+                {"\nthe source's identity:\n", "\nthe source's identity:\nanother run\n", "the source's identity:\n"
+                        + "  was: another run\n  now: FullIndexRun joint run\n"},
+        };
+        for (String[] edit : edits) {
+            assertTrue(id.contains(edit[0]), edit[0]);
+            Files.write(runId.file, id.replace(edit[0], edit[1]).getBytes(StandardCharsets.UTF_8));
+            m = refusal(options(k, k.saved, out, true), r, "other");
+            assertTrue(m.contains("is not that replay apart from its classes, items, wide plans and sink, so nothing is "
+                    + "written") && m.contains(edit[2]), m);
+            runId.putBack();
+            assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
+        }
+        PageLook.Options rows = options(k, k.saved, out, true);
+        rows.fullRows = List.of("F1, full play@80", "Hi-Lo = Hi-Lo Lite, full play@80");
+        m = refusal(rows, r, "other");
+        assertTrue(m.contains("is not that replay apart") && m.contains("\n  now: ... export (rows [F1, full play@80, "
+                + "Hi-Lo = Hi-Lo Lite, full play@80]; plans same-8; sample seed " + StrategyExport.SAMPLE_SEED + ") ...\n"), m);
+        assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
+
+        // Under other classes, interrupted in its own replay: replay-other holds its run.id and the list of
+        // the look's files as it found them, and nothing else the look held is touched.
+        Path wide = out.resolve("replay").resolve("wide.ser");
+        PageLook.Options o1 = otherHooks(k, new Refits(), new Touch(wide, false), 0);
         e = assertThrows(IllegalStateException.class, () -> PageLook.run(o1, "other", r.nowhere));
         assertTrue(e.getMessage().startsWith("interrupted at "), e.getMessage());
         Path own = out.resolve("replay-other");
         assertTrue(Files.isRegularFile(own.resolve("run.id")));
+        List<String> listed = Files.readAllLines(own.resolve(PageLook.LOOK_FILES));
+        assertEquals(held.keySet(), new java.util.TreeSet<>(listed.subList(1, listed.size()).stream()
+                .map(l -> l.split("\t")[0]).toList()), "every file the look held, listed");
         assertFalse(Files.exists(out.resolve("export-full")));
         assertEquals(lines, r.ledgerLines(), "a resume writes no line, interrupted or not");
         Map<String, String> interrupted = FullIndexReplayTest.snapshot(out);
@@ -443,14 +596,37 @@ public class PageLookTest {
             assertEquals(x.getValue(), interrupted.get(x.getKey()), x.getKey());
         }
 
-        // Resumed there, it writes export-full.
-        PageLook.Options o2 = options(k, k.saved, out, true);
-        o2.hooks.add(new FullIndexReplayTest.RankingHook());
+        // A file new in run-d since that attempt: the next attempt stops as it starts, before any replay.
+        Path extra = out.resolve("run-d").resolve("extra");
+        Files.write(extra, new byte[]{1});
+        Map<String, String> ownBefore = FullIndexReplayTest.snapshot(own);
+        m = refusal(otherHooks(k, new Refits(), new Touch(wide, false), -1), r, "other");
+        assertTrue(m.startsWith("the look's own files are not as they were when the first resume under these classes "
+                + "started (" + own.resolve(PageLook.LOOK_FILES) + "), so nothing is replayed and no export-full is "
+                + "written:\nrun-d/extra: not there before, 1 bytes, modified "), m);
+        assertEquals(ownBefore, FullIndexReplayTest.snapshot(own), "its replay not touched");
+        Files.delete(extra);
+
+        // Resumed there with the look's wide.ser touched as F1's item is scored: the item is kept, and the
+        // replay stops once every item is, before the bundle is written. Put back, its time as it was.
         Refits refits = new Refits();
-        o2.hooks.add(refits);
-        o2.hooks.add(new Interrupt(-1));
+        PageLook.Options o2 = otherHooks(k, refits, new Touch(wide, true), -1);
         text.reset();
-        PageLook.Made other = PageLook.run(o2, "other", new PrintStream(text, true, "UTF-8"));
+        e = assertThrows(IllegalStateException.class, () -> PageLook.run(o2, "other",
+                new PrintStream(text, true, "UTF-8")));
+        String replayed = text.toString("UTF-8");
+        assertTrue(e.getMessage().startsWith("the look's own files changed during this resume, which writes export-full "
+                + "alone, so no bundle is written; they are not as " + own.resolve(PageLook.LOOK_FILES) + " lists them:\n"
+                + "replay/wide.ser: ") && e.getMessage().split("\n").length == 2, e.getMessage());
+        assertFalse(Files.exists(out.resolve("export-full")) || Files.exists(partial), "no bundle");
+        assertTrue(Files.isRegularFile(own.resolve("replayed-part-0-2-folds.ckpt")), "F1's item kept");
+        assertEquals(lines, r.ledgerLines());
+        Files.setLastModifiedTime(wide, FileTime.fromMillis(Long.parseLong(held.get("replay/wide.ser").split(" ")[1])));
+
+        // Resumed again, F1's item read back: it writes export-full.
+        text.reset();
+        PageLook.Made other = PageLook.run(otherHooks(k, new Refits(), new Touch(wide, false), -1), "other",
+                new PrintStream(text, true, "UTF-8"));
         log = text.toString("UTF-8");
         // Every file the look held, byte for byte and time for time, as it was: only replay-other,
         // export-full and the record are new.
@@ -467,9 +643,13 @@ public class PageLookTest {
         assertEquals(own, other.replayInto);
         assertEquals(own, other.full.out);
         assertTrue(log.contains("FullIndexRun replay other, resumed: ") && log.contains("1 items, the fold fits only")
-                && log.contains("hooks export, step 8 to the bit, ranking, refits, interrupt;"), log);
-        assertTrue(new String(Files.readAllBytes(own.resolve("run.id")), StandardCharsets.UTF_8)
-                .contains("\nitems: the fold fits only, only F1@2\n"));
+                && log.contains("1 of 1 items were replayed before") && log.contains("hooks step 8 to the bit, the look's "
+                + "files, export, ranking, refits, touch, interrupt;"), log);
+        assertTrue(log.contains("PageLook: wrote " + other.exportFull + " alone, from the replay in " + own), log);
+        String ownId = new String(Files.readAllBytes(own.resolve("run.id")), StandardCharsets.UTF_8);
+        assertTrue(ownId.contains("\nitems: the fold fits only, only F1@2\n") && ownId.contains(ofRun + "\n")
+                && ownId.endsWith("\nthe source's identity:\n" + id.substring(id.indexOf("\nthe source's identity:\n")
+                + "\nthe source's identity:\n".length())), ownId);
         assertFalse(Files.exists(own.resolve("wide.ser")), "no wide plans in its replay");
 
         // export-full: the bundle the look's own replay wrote, file for file and byte for byte.
@@ -480,26 +660,32 @@ public class PageLookTest {
         assertEquals(refused, wrote, "export-full is the bundle the look's replay wrote");
         record = new String(Files.readAllBytes(out.resolve("resume-other.txt")), StandardCharsets.UTF_8);
         assertTrue(record.startsWith("PageLook's resumes under these classes"), record);
-        assertEquals(2, record.split("\nresumed ", -1).length - 1, record);
+        assertEquals(4, record.split("\nresumed ", -1).length - 1, record);
+        assertEquals(3, record.split("\nstopped ", -1).length - 1, record);
+        assertEquals(3, record.split("\\(resuming its interrupted replay\\)", -1).length - 1, record);
         assertTrue(record.contains(" under commit other (look.txt: commit test), no ledger line: "
                 + out.resolve("replay") + " holds the replay of test, kept as it is") && record.contains("into " + own
-                + " (a new replay), items F1@2, hooks export and Step8") && record.contains("\nstopped ")
-                && record.contains("interrupted at ") && record.contains("into " + own + " (resuming its interrupted "
-                + "replay)") && record.contains("\nfinished ") && record.contains(": wrote " + other.exportFull
+                + " (a new replay), items F1@2, hooks Step8, LookFiles and export") && record.contains(": interrupted at ")
+                && record.contains(": the look's own files are not as they were when the first resume under these classes "
+                + "started") && record.contains(": the look's own files changed during this resume")
+                && record.contains("\nfinished ") && record.contains(": wrote " + other.exportFull
                 + " (manifest.sha256's SHA-256 " + KeyEdgesRun.sha256(other.exportFull.resolve("manifest.sha256"))
                 + "), from the replay in " + own + " (run.id, replay.txt, perfect.ser and 1 records); every other file "
-                + "of " + out + " as it was"), record);
+                + "of " + out + " held, as this attempt started and before the bundle was written, to "
+                + own.resolve(PageLook.LOOK_FILES) + ", " + held.size() + " files by size and time"), record);
 
         // The full-play export passes. This fixture's F1 full play ranks deals two ways (INTEGRATION.md
         // open item 1): its split hands were valued under the walked play's ranking where the dealt
         // hand plays the refit's, so its files carry split lines (SHOE_SPEC.md B2.4), and lookups.tsv
         // carries B8's 1,000 split lines. The export's round trip played every split the last round
-        // valued again from the files.
+        // valued again from the files. (F1's item was scored by the attempt the touch stopped, so its
+        // log and its refits are that attempt's.)
         assertNull(other.exportFullRefused, other.exportFullRefused);
         assertTrue(Files.isRegularFile(other.exportFull.resolve("manifest.sha256")), "the full-play export passed");
+        assertTrue(log.contains("round trip passed; the bundle is " + other.exportFull), log);
         java.util.regex.Matcher played = java.util.regex.Pattern.compile("export: F1, full play at 80% checked on its "
-                + "values, \\d+ values compared, (\\d+) splits the last round valued played again").matcher(log);
-        assertTrue(played.find() && Integer.parseInt(played.group(1)) > 0, log);
+                + "values, \\d+ values compared, (\\d+) splits the last round valued played again").matcher(replayed);
+        assertTrue(played.find() && Integer.parseInt(played.group(1)) > 0, replayed);
         // Each full file held to the strategies the replay scored, apart from Refit: its first lines
         // the replayed fit's ranking whole, the ranking its split hands read the strategy's walked
         // one as the ranking hook kept it, and a split line wherever the two differ: 31 in fold 0,
@@ -539,13 +725,13 @@ public class PageLookTest {
         }
         assertEquals(2, fullFiles, "F1's full play at 80%, both folds");
         assertArrayEquals(new int[]{31, 1}, differ, "the cells F1's folds rank two ways");
-        assertTrue(log.contains("export: F1 at 80%, fold 0: 31 split lines, the first group 0, deal 8 8 1: S H D P by the "
-                + "refit (its first line), P S H D by the walked play (its split line)\n"), log);
-        assertTrue(log.contains("export: F1 at 80%, fold 1: 1 split line, the first group 0, deal 10 10 10: S P H D by "
-                + "the refit (its first line), S H D P by the walked play (its split line)\n"), log);
-        assertTrue(log.contains("  F1 80% fold 0: 6 passes, stopped at the pass cap of 6, pass 0's play kept, 1 clean-ups "
-                + "(1 later cells flipped); refitDiffers 29\n"), log);
-        assertTrue(log.contains("  F1 80% fold 1: 4 passes, converged; refitDiffers 0\n"), log);
+        assertTrue(replayed.contains("export: F1 at 80%, fold 0: 31 split lines, the first group 0, deal 8 8 1: S H D P by "
+                + "the refit (its first line), P S H D by the walked play (its split line)\n"), replayed);
+        assertTrue(replayed.contains("export: F1 at 80%, fold 1: 1 split line, the first group 0, deal 10 10 10: S P H D by "
+                + "the refit (its first line), S H D P by the walked play (its split line)\n"), replayed);
+        assertTrue(replayed.contains("  F1 80% fold 0: 6 passes, stopped at the pass cap of 6, pass 0's play kept, 1 "
+                + "clean-ups (1 later cells flipped); refitDiffers 29\n"), replayed);
+        assertTrue(replayed.contains("  F1 80% fold 1: 4 passes, converged; refitDiffers 0\n"), replayed);
         long splitLines = ExportBundle.readLookups(other.exportFull.resolve("lookups.tsv"), true).lines.stream()
                 .filter(l -> l.split).count();
         assertEquals(1000, splitLines);
@@ -561,6 +747,22 @@ public class PageLookTest {
         IllegalStateException x = assertThrows(IllegalStateException.class, () -> checked(refits, one));
         assertTrue(x.getMessage().contains("F1, full play at 80%, fold 0: a split of ") && x.getMessage().contains(
                 "and were valued playing"), x.getMessage());
+
+        // Step8 holds the replayed item to step 8's results.ser to the bit: as it is, it passes; with
+        // F1's full-play estimate at 80% moved one ulp there, it refuses the item.
+        CeilingReport.Published p8 = CeilingReport.read(k.step8.resolve("results.ser"));
+        PageLook.Step8 s8 = new PageLook.Step8(p8);
+        FullIndexReplay.Record rec0 = other.full.record(0);
+        assertNull(s8.after(rec0.item, null, rec0.result, null));
+        for (SystemScorer.Result y : p8.results) {
+            if (y.count.name.equals("F1")) {
+                SystemScorer.Entry e8 = PageLook.entry(y, "F1, full play");
+                e8.estimate[2][0] = Math.nextUp(e8.estimate[2][0]);
+            }
+        }
+        x = assertThrows(IllegalStateException.class, () -> s8.after(rec0.item, null, rec0.result, null));
+        assertTrue(x.getMessage().contains("differs from step 8, so the page look keeps nothing of it: F1, full play at "
+                + SystemScorer.PENETRATIONS[2] + ": its estimate is not step 8's results.ser's to the bit"), x.getMessage());
 
         // The look done, its new replay's records are let go, there and not in replay.
         PageLook.letGo(other, r.nowhere);
@@ -579,11 +781,48 @@ public class PageLookTest {
         assertTrue(m.contains("export-full is written already"), m);
         assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
 
+        // export-full set aside (standing for any loss of it): it is written once all the same. Under
+        // those classes, their record says it was written; under others, replay-other is another
+        // resume's replay. Both refused, nothing written; put back.
+        Path setAside = dir.resolve("runs").resolve("export-full-aside");
+        Files.move(other.exportFull, setAside);
+        m = refusal(options(k, k.saved, out, true), r, "other");
+        assertTrue(m.contains("; but " + out.resolve("resume-other.txt") + " says a resume wrote export-full already, "
+                + "and it is written once: finished "), m);
+        m = refusal(options(k, k.saved, out, true), r, "other2");
+        assertTrue(m.contains("; but " + own + " holds another resume's replay, and export-full is written once, by one "
+                + "resume"), m);
+        assertFalse(Files.exists(out.resolve("replay-other2")) || Files.exists(out.resolve("resume-other2.txt")));
+        Files.move(setAside, other.exportFull);
+        assertEquals(held, FullIndexReplayTest.snapshot(out), "nothing written");
+
         // The ledger holds the page look: a second one is refused, before any line.
         Path again = dir.resolve("runs").resolve("again");
         m = refusal(options(k, k.saved, again, false), r, "other");
         assertTrue(m.contains("holds the page look already"), m);
         assertFalse(Files.exists(again));
+    }
+
+    /**
+     * The items a resume under other classes replays: a full-play row maps to its count's item, a
+     * betting variant's row (F52's, F2 with its betting vector) to the count's own, each item once;
+     * a row of no count is refused.
+     */
+    @Test
+    public void aFullPlayRowIsItsCountsItemTheBettingVariantsToo() {
+        // Tags by rank, 1 (ace) to 10; place 0 unused.
+        int[] tags = {0, -1, 1, 1, 1, 1, 1, 0, 0, 0, -1};
+        CountKeys.Count f1 = CountKeys.whole("F1", tags, null, 1, true);
+        CountKeys.Count f2 = CountKeys.whole("F2", tags, new int[]{0, -2, 1, 1, 2, 2, 1, 0, 0, 0, -1}, 1, true);
+        List<CountKeys.Count> counts = List.of(f1, f2);
+        String variant = CountKeys.bettingVariant(f2).name;
+        assertEquals("F2 + betting vector", variant);
+        assertNull(CountKeys.bettingVariant(f1));
+        assertEquals(List.of("F1@2", "F2@2", "F2@1"), PageLook.itemsFor(List.of("F1, full play@80", variant
+                + ", full play@80", "F2, full play@80", "F2, full play@75"), counts));
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> PageLook.itemsFor(List.of("F3, full play@80"), counts));
+        assertTrue(e.getMessage().contains("the full-play row F3, full play@80 is no row of step 8's counts"), e.getMessage());
     }
 
     /**
