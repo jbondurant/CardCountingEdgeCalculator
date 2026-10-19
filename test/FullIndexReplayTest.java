@@ -616,15 +616,16 @@ public class FullIndexReplayTest {
                 expected.add(r.expect);
             }
         }
-        List<CountKeys.Count> catalog = new ArrayList<>();
+        // keys-sample.tsv's counts: the whole catalog, then the run's counts outside it.
+        List<CountKeys.Count> catalog = CountKeys.catalog();
         List<CountKeys.Count> own = new ArrayList<>();
         List<String> catalogNames = new ArrayList<>();
-        for (CountKeys.Count k : CountKeys.catalog()) {
+        for (CountKeys.Count k : catalog) {
             catalogNames.add(k.name);
         }
         for (CountKeys.Count k : h.counts) {
-            if (!k.name.equals(CountKeys.nullCount().name)) {
-                (catalogNames.contains(k.name) ? catalog : own).add(k);
+            if (!k.name.equals(CountKeys.nullCount().name) && !catalogNames.contains(k.name)) {
+                own.add(k);
             }
         }
         List<CountKeys.Count> keyCounts = StrategyExport.keyCounts(catalog, own);

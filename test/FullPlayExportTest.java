@@ -234,7 +234,8 @@ public class FullPlayExportTest {
                 own.add(c);
             }
         }
-        keyCounts = StrategyExport.keyCounts(new ArrayList<>(), own);
+        // The whole catalog and the replay's own counts, as the replay's export samples their keys.
+        keyCounts = StrategyExport.keyCounts(CountKeys.catalog(), own);
         direct = root.resolve("direct");
         directReport = StrategyExport.export(direct, scorer, StateStore.header(states), rows, null, LABELS, keyCounts,
                 StrategyExport.SAMPLE_SEED, quiet);
@@ -392,6 +393,15 @@ public class FullPlayExportTest {
         assertTrue(later > 100, later + " later lines");
         assertTrue(stand > 0 && hit > 0, stand + " contested cells stand, " + hit + " hit");
         assertEquals(1000, split, "B8's split lines");
+        // keys-sample.tsv has the whole catalog's columns, though the replay scored two counts of its
+        // own: the simulator's D2 fails a bundle without them (SimReadsSplitLinesTest).
+        List<String> sampled = Arrays.asList(ExportBundle.readKeysSample(bundle.resolve("keys-sample.tsv")).counts);
+        for (CountKeys.Count c : CountKeys.catalog()) {
+            assertTrue(sampled.contains(c.name), c.name + " in " + sampled);
+            CountKeys.Count v = CountKeys.bettingVariant(c);
+            assertTrue(v == null || sampled.contains(v.name), c.name + "'s variant in " + sampled);
+        }
+        assertTrue(sampled.containsAll(List.of(CountKeys.nullCount().name, "F1 start", "F2 start")), sampled.toString());
     }
 
     /**

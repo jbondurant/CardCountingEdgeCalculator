@@ -2821,9 +2821,9 @@ final class StrategyExport {
      * strategies hold their last round's values, it builds the item's full-play rows (every
      * full-play entry not bet on its own value, or those named), checks each against the values
      * (checkFull) and keeps what the bundle needs; once every item is kept, it writes the bundle
-     * from the records alone, chart.tsv, states.bin, keys-sample.tsv for the run's counts and
-     * their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds each full
-     * section to the one checked on the values.
+     * from the records alone, chart.tsv, states.bin, keys-sample.tsv for the catalog and the run's
+     * counts with their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds
+     * each full section to the one checked on the values.
      */
     static class ReplayExport implements FullIndexReplay.Hook {
         final Path out;
@@ -3160,15 +3160,19 @@ final class StrategyExport {
                 expected.add(x.expect);
                 full.verified.put(FullSource.key(x.expect.row, x.expect.pen), x.section);
             }
-            List<CountKeys.Count> catalog = new ArrayList<>();
+            // The whole catalog, whichever counts the run scored: D2 holds the simulator's keys to all
+            // 31 counts and 8 variants and fails a bundle without them (SIM_CHECK.md section 5), so a
+            // replay of the registered counts alone, the page look's of step 8, carries them too, as
+            // its first-decision export does. The run's own counts follow.
+            List<CountKeys.Count> catalog = CountKeys.catalog();
             List<CountKeys.Count> own = new ArrayList<>();
             List<String> catalogNames = new ArrayList<>();
-            for (CountKeys.Count c : CountKeys.catalog()) {
+            for (CountKeys.Count c : catalog) {
                 catalogNames.add(c.name);
             }
             for (CountKeys.Count c : all.counts) {
-                if (!c.name.equals(CountKeys.nullCount().name)) {
-                    (catalogNames.contains(c.name) ? catalog : own).add(c);
+                if (!c.name.equals(CountKeys.nullCount().name) && !catalogNames.contains(c.name)) {
+                    own.add(c);
                 }
             }
             finishBundle(out, partial, st, StateStore.header(states), strategies, sections, expected, columns,
