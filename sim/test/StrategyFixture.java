@@ -5,8 +5,9 @@ import java.util.List;
 
 /**
  * Writes strategy files in SHOE_SPEC.md B2's format for the tests: Hi-Lo tags, true count, the
- * groups, moves, insurance, later plays and plans the test sets. What it writes is read back by
- * {@link Strategy#parse}, so a fixture and the reader can only agree if both follow B2.1.
+ * groups, moves, split lines, insurance, later plays and plans the test sets. What it writes is
+ * read back by {@link Strategy#parse}, so a fixture and the reader can only agree if both follow
+ * B2.1.
  */
 final class StrategyFixture {
 
@@ -21,6 +22,8 @@ final class StrategyFixture {
     int[] groupHi = {0, 99};
     int[] laterHi = {0, 99};
     Moves first = (g, p1, p2, up) -> "S\tH";
+    /** A split line's moves for a group and deal, or null for none (the default: no split line). */
+    Moves split = (g, p1, p2, up) -> null;
     /** Insured deals, as "g p1 p2". */
     List<String> insured = new ArrayList<>();
     /** later stand or hit, by later group and spot. */
@@ -60,6 +63,16 @@ final class StrategyFixture {
                 for (int i = 0; i < 540; i++) {
                     int[] d = Strategy.dealAt(i);
                     out.add("first\t" + g + "\t" + d[0] + "\t" + d[1] + "\t" + d[2] + "\t" + first.moves(g, d[0], d[1], d[2]));
+                }
+            }
+        }
+        // split lines in first-line order, written in any scope so that a test can show them refused
+        for (int g = 0; g < groupHi.length; g++) {
+            for (int i = 0; i < 540; i++) {
+                int[] d = Strategy.dealAt(i);
+                String m = split.moves(g, d[0], d[1], d[2]);
+                if (m != null) {
+                    out.add("split\t" + g + "\t" + d[0] + "\t" + d[1] + "\t" + d[2] + "\t" + m);
                 }
             }
         }

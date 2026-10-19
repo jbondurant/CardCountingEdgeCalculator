@@ -300,6 +300,11 @@ public final class Sim {
             Lookups.Result d5 = Lookups.check(lookups, bundle, states);
             checks.add("D5\t" + (d5.cells() - d5.mismatches()) + " of " + d5.cells() + " lookups equal to lookups.tsv's on "
                     + d5.lines() + " lines; " + d5.mismatches() + " mismatches");
+            // The split cells, counted apart (SHOE_SPEC.md B8), on a line of their own so that the line
+            // above reads as it did before split lines existed.
+            checks.add("D5\tsplit cells: " + (d5.splitCells() - d5.splitMismatches()) + " of " + d5.splitCells()
+                    + " equal to lookups.tsv's; " + d5.splitMismatches() + " mismatches; the bundle holds "
+                    + (d5.fullPlay() ? "a" : "no") + " file of scope full");
             checks.addAll(d5.first());
             status.put("D5", d5.passes() ? "passed" : "failed");
         } else {

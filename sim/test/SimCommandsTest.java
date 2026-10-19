@@ -105,6 +105,39 @@ class SimCommandsTest {
         }
     }
 
+    /**
+     * D5's line in checks.txt reads as it did before split lines existed, and a second line counts
+     * the split cells apart: none on a bundle with no full-play file, which is what SIM_CHECK.md
+     * deviation 1's check on part 1's bundle looks for. Planted on 19 October 2026 in a scratch copy
+     * of sim/ outside the worktree: the second line left out of checks.txt failed this test.
+     */
+    @Test
+    void checksTxtCountsTheSplitCellsApart() throws Exception {
+        Path dir = BundleFixture.write(tmp.resolve("b"));
+        Bundle b = new Bundle(dir, Plants.NONE);
+        States s = b.states();
+        List<String> text = new java.util.ArrayList<>(List.of("# lookups.tsv: SHOE_SPEC.md B8, format 1",
+                "# sample seed 20261009", Lookups.HEADER + "\t" + String.join("\t", b.strategyPaths())));
+        for (int i = 0; i < s.n; i += 5) {
+            StringBuilder line = new StringBuilder("first\t" + i + "\t9\t9\t6\t-");
+            for (String p : b.strategyPaths()) {
+                line.append('\t').append(Lookups.text(Lookups.first(b.strategyAt(p), b.chart, Lookups.dealt(s, i),
+                        s.depth[i], 9, 9, 6)));
+            }
+            text.add(line.toString());
+        }
+        BundleFixture.write(dir.resolve("lookups.tsv"), text);
+        BundleFixture.reseal(dir, "lookups.tsv\t-\t-\t-\t-");
+        Path out = tmp.resolve("run");
+        Sim.p2(new String[]{"--bundle", dir.toString(), "--out", out.toString(), "--sim-commit", "test", "--k", "2",
+                "--plant", "s17"});
+        int lines = text.size() - 3;
+        assertEquals(List.of("D5\t" + 2 * lines + " of " + 2 * lines + " lookups equal to lookups.tsv's on " + lines
+                        + " lines; 0 mismatches",
+                "D5\tsplit cells: 0 of 0 equal to lookups.tsv's; 0 mismatches; the bundle holds no file of scope full"),
+                Files.readAllLines(out.resolve("checks.txt")).stream().filter(l -> l.startsWith("D5\t")).toList());
+    }
+
     static String[] concat(String[] a, String... b) {
         String[] c = java.util.Arrays.copyOf(a, a.length + b.length);
         System.arraycopy(b, 0, c, a.length, b.length);
