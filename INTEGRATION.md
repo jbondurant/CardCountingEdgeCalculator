@@ -363,8 +363,8 @@ without it. The open ones follow, in the order they block the 7.2 runs.
 Open:
 
 1. **A full-play row whose strategies rank a deal two ways: refused on the real runs; the
-   exporter writes `split` lines since 134da21; the simulator's reader and the exports again
-   remain.** (SHOE_SPEC.md B2.1, B2.4, B6 item 12, B7, B8 and "Changes to Part B";
+   exporter writes `split` lines (134da21) and the simulator reads them (ae283e4); the exports
+   again and Justin's yes to deviation 1 remain.** (SHOE_SPEC.md B2.1, B2.4, B6 item 12, B7, B8 and "Changes to Part B";
    SIM_CHECK.md deviation 1, sections 5 and 14; drafted and checked 18 October 2026 in the
    split-ranking worktree, the engine's side built there on 19 October.) The engine plays the dealt hand by the scorer's refit of the
    strategy's last-round values (src/SystemScorer.java:2624-2628) and values split hands by the
@@ -373,6 +373,25 @@ Open:
    (src/FullIndexFit.java:1004-1012, 710-722, 872-881). A strategy file held one ranking, so
    until 134da21 ReplayExport refused a fold where the two differ, and `finish` then wrote no
    bundle at all, the good rows' included.
+   - **Status, 19 October 2026 (integration, split-ranking).** The simulator's side was written
+     in a fourth clean-room session (285f0fb, after its review ae283e4; sim/QUESTIONS.md), in a
+     worktree that held only the specs and sim/, and merged as e2cc9e4. SimReadsSplitLinesTest
+     (b6a4b71): the page look's full-play export on PageLookTest's fixture, 31 `split` lines in
+     fold 0's file and 1 in fold 1's, played by the compiled simulator: D1, D2, D4 and D5 with 0
+     mismatches, D5's split cells compared, then P2; a copy with one split line taken out is
+     caught. Found there: the replay's export sampled keys only for the counts it scored, so the
+     page look's bundle would have failed D2; it samples the whole catalog now (b6a4b71).
+     Deviation 1's check passed: ae283e4 on part 1's bundle gives part 1's D1, D2, D4 and D5 with
+     no split cell, all 61 P2 chunks equal and P3's first chunk equal in every result line
+     (runs/sim/deviation1-check-ae283e4/compare.txt; P3's `extras` line differs only in the
+     records bound, 1,000,000 for one chunk against part 1's 2,000,000, with no figure keeping
+     records). The identity table records 3b2f104 and ae283e4. Left: (1) Justin's yes to
+     deviation 1; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
+     (the wide plans F43-F48 are attached only with `--wide`), and row 7's F50 and F52, for
+     which PageLook must first replay into a directory of its own under new classes (its resume
+     under another commit is refused today); (3) SHOE_SPEC.md's three passages in "How this file
+     is held to the engine" that still describe the split lines as to come (7dca9f5), to be
+     corrected in a commit the identity table records again.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
