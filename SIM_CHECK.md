@@ -16,12 +16,13 @@ SEs the rule implies; no exact figure is copied into it.
 `java SimCheckPlan fill` from that part's pilot files, one a bundle: its measured speeds, the SD
 of every figure, P2's weight dispersion, and the sizes and SEs the rule then gives. And the
 bundles' identities in the table below, which are facts to record, not choices (its three commits
-were recorded on 14 October 2026, before any pilot).
+were recorded on 14 October 2026, before any pilot), with the two commits deviation 1 adds for
+part 2: SHOE_SPEC.md's and the simulator's.
 
 | Identity | Recorded when | Value |
 |---|---|---|
-| SHOE_SPEC.md's commit (branch site-shoe-spec) | before the first pilot | c8d9b5a (c8d9b5ab990a3d2278c109ead692b175b170b4bc), its last commit, made on site-int-spec, which continued site-shoe-spec; merged into site-integration as 2c99a56 |
-| The simulator's commit (`sim/`) | before each part's pilot | fe9a91e (fe9a91ea88f49b73c86278eec075d2b17e4bd4bd), the last commit touching sim/, made on site-fix-sim; merged into site-integration with sim/ unchanged on 14 October 2026; for part 1, and for part 2 unless sim/ changes |
+| SHOE_SPEC.md's commit (branch site-shoe-spec) | before the first pilot; for part 2's `split` lines, before part 2's pilot | c8d9b5a (c8d9b5ab990a3d2278c109ead692b175b170b4bc), its last commit, made on site-int-spec, which continued site-shoe-spec; merged into site-integration as 2c99a56; the words part 1 was exported and played to. For part 2, also the commit that adds Part B's `split` lines (SHOE_SPEC.md, "Changes to Part B"), recorded here once it is made and before part 2's pilot (deviation 1 below) |
+| The simulator's commit (`sim/`) | before each part's pilot | fe9a91e (fe9a91ea88f49b73c86278eec075d2b17e4bd4bd), the last commit touching sim/, made on site-fix-sim; merged into site-integration with sim/ unchanged on 14 October 2026; for part 1, and for part 2 unless sim/ changes. sim/ is to change for part 2: its reader refuses B2.1's new `split` lines as an unknown keyword and lookups.tsv's `split` lines as an unknown line, so the commit that reads them is recorded here before part 2's pilot (deviation 1). Which plays what: fe9a91e made part 1's pilot and main run; the new commit makes part 2's pilot and main run, and both halves of every planted run and of the clean control (section 10), its halves on part 1's bundle included, once it has played part 1's bundle as fe9a91e did (deviation 1) |
 | `test/SimVsExactSmallShoeTest.java`'s commit (D3) | before the first pilot | 283c62c (283c62c5a133f518608f27d10249230bd0735126), made on site-fix-engine; merged into site-integration as 32422c1 |
 | Part 1's bundle, `runs/sim/export-<sha>/manifest.sha256`, its SHA-256 | before part 1's pilot | 4a424be6640fe3ce3d380eb232fe7659a378c4beb57538597e71d0e5d4826b3a, of runs/sim/export-part1-0e0920d/manifest.sha256, exported on 16 October 2026 by StrategyExport at 0e0920d (round trip passed: 270,026,867 values, largest relative difference 1.1e-14) |
 | Part 2's bundle(s), the same | before part 2's pilot | not yet exported |
@@ -36,6 +37,39 @@ no result.
 **Changes.** Until the first pilot starts, by commits to this file, each saying why. After it,
 only section 8 and the identities above. Any other change is a deviation: committed with its
 reason before the run it affects, and listed on the page with that commit. Seeds never change.
+
+**Deviations**, after part 1's pilot (16 October 2026):
+
+1. **Split hands' own ranking** (18 October 2026, before part 2's pilot; part 2 only; written while
+   Justin slept, awaiting his yes, and nothing runs under it until he gives it). A
+   full-play strategy plays the dealt hand by the play fitted from its last round's values, and
+   values its splits under the ranking of the play it kept, the one that round played: the last
+   pass's play when the fit settled, the best-scoring pass's when it stopped at its last allowed
+   pass (SHOE_SPEC.md B2.4, "the kept play"). The two can rank a deal differently. A strategy
+   file held one ranking, so the export refused 9 of the 15 full-play rows of c06c061's replay and
+   the page look's F50 and F52 (INTEGRATION.md open item 1). SHOE_SPEC.md Part B now gives split
+   hands their own ranking where it differs (`split` lines, B2.1 and B2.4), the same in the
+   moving-count variant of section 9 at its moving key's group, and lookups.tsv every split
+   hand's first decision in every group (B8), and D5 (section 5) holds the simulator's answers to
+   those cells. What changes: Part B's words, D5's list of cells, the simulator (sim/ reads the
+   new lines), and the two commits the identity table records for part 2. What does not: every
+   figure, test, seed, size rule and threshold of this file; the engine's figures, which were
+   always computed with these split hands; and all of part 1. Part 1's bundle holds no file of
+   scope `full`, so it has no `split` line and its lookups.tsv none; every byte of it and its
+   recorded SHA-256 stand, and part 1's pilot, section 8 block and run stand as made with
+   fe9a91e.
+
+   **Which simulator plays what.** The planted runs and the clean control come after part 2's
+   main run, and their halves on part 1's bundle are part 2's fixed extras (section 10), so the
+   simulator commit that reads the new lines makes them all, both halves; a planted half on part
+   1's bundle is held to part 2's commit, not to fe9a91e. That bundle has none of the new lines,
+   so the new commit must play it exactly as fe9a91e did, and this is checked before part 2's
+   pilot, on part 1's bundle with no switch on, against part 1's main run
+   (runs/sim/part1-0e0920d): D1, D2, D4 and D5 give the same counts with 0 mismatches and no
+   `split` cell; and P3's first chunk and P2's first chunk, at part 1's sizes, equal that run's
+   p3/p3-00000.txt and p2/p2-00000.txt in every line but the `sim` line (D6 makes the sums
+   exact). A difference stops
+   part 2 there until it is explained and fixed, in a commit that says what it fixed.
 
 ## 1. Words used here
 
@@ -346,6 +380,11 @@ They run before each part's pilot, and a failure stops the part there.
   penetration holds the state: the insurance decision and the first move equal the engine's.
   For the full-play instances, also at the first deal of the first 200 sampled states: after one
   hit card of each rank left in the state, the later key, the cell it falls in and the move.
+  And for the full-play instances, every split hand's first decision in every group of the file:
+  each split rank, second card and up-card, and, where a split 2 to 10 draws its own rank, with a
+  resplit allowed and not, under Montreal's legal moves whatever switch is on (lookups.tsv's
+  `split` lines, SHOE_SPEC.md B8; deviation 1, part 2 only). Those cells are counted apart, and
+  D5 fails if a bundle with a full-play file has none.
   The engine's answers are written by the exporter into the bundle as `lookups.tsv`, so the
   check reruns from the bundle alone.
 - **D6, determinism.** A test in `sim/` runs three small chunks on 1 and on 6 threads, and once
@@ -718,6 +757,9 @@ shows the failed run beside it. There is no rerun without a fix: a fail is never
 11. Each planted run is made on both parts' bundles, so it scores all seven planted figures the
     totals list; the plan names no bundle for them (section 10; 14 October 2026, before any
     pilot).
+12. A full-play strategy file ranks a deal for split hands apart from the dealt hand where the
+    two differ (`split` lines), and D5 holds every split hand's first decision; the plan's file
+    has one ranking a deal (deviation 1; 18 October 2026, after part 1's pilot, part 2 only).
 
 ## 15. The code
 

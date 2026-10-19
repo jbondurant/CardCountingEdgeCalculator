@@ -531,7 +531,7 @@ commit, abbreviated to 7 hexadecimal digits:
 | `states.bin` | every valued state of the main file, and the engine's bet key, round value and bets per row and penetration (B3) |
 | `keys-sample.tsv` | the engine's bet and play keys for a sample of states and deals (B4) |
 | `exact.tsv` | the test folds' sums and per-shoe moments of every exported figure (B5) |
-| `lookups.tsv` | the engine's own answers at the sample's states and deals: each strategy file's group, first move and insurance, and for full play the later play after one hit card (B8) |
+| `lookups.tsv` | the engine's own answers at the sample's states and deals: each strategy file's group, first move and insurance, and for full play the later play after one hit card and every split hand's first decision in every group (B8) |
 
 **Conventions for every text file.** UTF-8, lines ending in a single `\n`, the last line too;
 fields separated by one tab (in this file's examples and in the keyword table of B2.1, the gap
@@ -620,7 +620,8 @@ appears exactly once.
 | `ace	M` | once | the ace side count's weight for betting, 0 for none |
 | `groups	G` | once | the number of first-decision groups |
 | `group	g	lo	hi` | G lines, g = 0 to G − 1 | the lowest and highest training play key in group g |
-| `first	g	p1	p2	up	M…` | scope `first` and `full`: for every group and every deal but the player's naturals | the deal's legal first moves, best first |
+| `first	g	p1	p2	up	M…` | scope `first` and `full`: for every group and every deal but the player's naturals | the deal's legal first moves, best first: the dealt hand's ranking |
+| `split	g	p1	p2	up	M…` | scope `full` only: any number, at most one for each `first` line | the ranking split hands read for the deal in group g, given only where it is not the `first` line's (B2.4) |
 | `insure	g	p1	p2` | any number | the ace-up deal (p1, p2, ace) is insured in group g; a deal not listed is not insured |
 | `lgroups	L` | scope `full` only, once | the number of later-play groups |
 | `lgroup	l	lo	hi` | L lines | as `group`, for the later-play keys |
@@ -630,13 +631,21 @@ appears exactly once.
 | `unseen	nearest	lower` | once | the rule for a key with no `bet` line (B2.5) |
 | `end` | last line | the file is whole |
 
-Lines appear in the order of the table. Within a keyword: `group` and `lgroup` lines by g (or l);
+Lines appear in the order of the table, and a reader refuses a line whose keyword is not in the
+table or comes out of its order. Within a keyword: `group` and `lgroup` lines by g (or l);
 `first` lines by g, then up-card, then p1, then p2 (so within a group in the engine's deal order,
-`Deals`); `insure` lines by g, then p1, then p2; `later` lines by l, then up-card, then hard before
-soft, then total; `plan` lines in the order the plans are scored; `bet` lines by plan in `plan`
-order, then by key, increasing. A deal is `p1 ≤ p2` and `up`, ranks 1 to 10: the player's two
-cards as an unordered pair and the dealer's up-card. The player's naturals (1, 10, any up) have no first decision and no line; so
+`Deals`); `split` lines in the same order, after every `first` line; `insure` lines by g, then
+p1, then p2; `later` lines by l, then up-card, then hard before soft, then total; `plan` lines in
+the order the plans are scored; `bet` lines by plan in `plan` order, then by key, increasing. A
+deal is `p1 ≤ p2` and `up`, ranks 1 to 10: the player's two cards as an unordered pair and the
+dealer's up-card. The player's naturals (1, 10, any up) have no first decision and no line; so
 each group has 540 `first` lines, one for each of the 550 deals less the 10 naturals.
+A `split` line names a group and deal that have a `first` line, and lists that line's moves, each
+as many times, in another order. The exporter writes no other list, and a reader refuses one: a
+`split` line in a file whose scope is not `full`, for a deal with no `first` line (a natural, or a
+group past the last), out of order, with moves other than its `first` line's, or repeating that
+line's order. So a file of scope `full` whose two rankings agree everywhere has no `split` line at
+all.
 
 **B2.2 Keys.** All three keys are whole numbers, computed from integers; where a ratio is
 rounded it is rounded once, from the double nearest to the exact ratio, to the nearest whole
@@ -688,15 +697,23 @@ cards and rules are A4's.
   count is frozen at the deal's play key (A6), which gives one first-decision group g and one
   later group l for every split hand of the round:
   - a split hand's first decision on (r, x), r the split rank: if r and x are an ace and a
-    ten-valued card, stand; otherwise the moves of `first g min(r,x) max(r,x) up`, in order, and
-    play the first that is legal on this split hand (A4's step 5). A resplit is this rule on
-    (r, r), whose list may start with `P`. If none is legal, stand.
+    ten-valued card, stand; otherwise take the moves of `split g min(r,x) max(r,x) up` if the file
+    has that line, and of `first g min(r,x) max(r,x) up` if it does not, in order, and play the
+    first that is legal on this split hand (A4's step 5). A resplit is this rule on (r, r), whose
+    list may start with `P`. If none is legal, stand.
   - a split hand's later decision: at a contested spot, `later l total soft up`, and hit only if
     Hit is legal; elsewhere the chart.
-  A file of scope `full` lists in `first` every legal move of the deal, best first by its fitted
-  value, so this always finds the best legal move by the same fit. A (group, deal) that no
-  training state reached lists the chart's order instead: the chart's move with every move
-  offered, its move with Split taken away, then Stand (so a move may appear twice).
+  The dealt hand never reads a `split` line. A file of scope `full` lists in `first`, and in each
+  `split` line, every legal move of the deal, best first by a fitted value, so a split hand always
+  finds its best legal move by the ranking its split was valued under (below). A (group, deal)
+  that no training state reached lists the chart's order instead: the chart's move with every
+  move offered, its move with Split taken away, then Stand (so a move may appear twice).
+  In the simulator's variant whose count keeps moving through split hands (A6; SIM_CHECK.md
+  section 9), a split hand's groups at each decision are those of its moving key instead of the
+  deal's play key, and the rules above are otherwise the same: its first decision takes that
+  group's `split` line if the file has one for (min(r,x), max(r,x), up), else its `first` line,
+  and its later decisions the `later` lines of that key's later group. So the variant changes the
+  key a split hand reads, never which of the two rankings it reads.
 - **The payoff.** A dealer natural loses the bet, or pushes against a player's natural; a
   player's natural against no dealer natural is paid 3 to 2; every other round is settled hand
   by hand as ROUND_CONTRACT.md settles it (which values a round given no dealer natural; the
@@ -706,6 +723,27 @@ cards and rules are A4's.
 `first` lines for scope `first` are read the same way, but only their first move is used.
 `later` cells that no training state reached, or whose fitted sum was exactly zero, are already
 written as the chart plays them.
+
+**Why split hands can have their own ranking.** A full-play strategy is fitted in passes over
+its training states. Each pass plays a play, values every move under it (a split is valued with
+its split hands played by that play's ranking and its later lines), and fits a new play from
+those values. The fit stops when the new play gives every answer a hand reads as the old one
+did, or after its last allowed pass. The play it then keeps, here **the kept play**, is the last
+pass's play when it stopped for the first reason, and the best-scoring pass's play when it
+stopped at its last allowed pass (with any later cells that lose under it flipped). A last round
+plays the kept play once more and values every move under it. The `first` lines are the play
+fitted from those values, and the dealt hand plays them. The split hands of every figure were
+valued in that last round, so they play the kept play's ranking, best first by the fit the kept
+play was made from. The two rankings are the same list almost everywhere. They can differ where
+the fit stopped at its last allowed pass (the kept play is then one that its own values would
+have changed), where two moves' fitted values are so close that the order they were summed in
+decides between them, and in the order of moves no hand reads. A `split` line is the kept play's
+ranking, given wherever it is not the `first` line's list move for move, so a simulator playing
+split hands by B2.4 plays them exactly as the engine valued them. The later lines need nothing of
+the kind: they are the kept play's, and the dealt hand's later decisions and the split hands' read
+the same `later` lines. For example, `first	9	10	10	6	P	S	H	D` and `split	9	10	10	6	S	P	H	D`:
+in group 9 the dealt pair of tens against a 6 is split, and a split ten that draws a ten stands
+rather than resplitting, the play the split's value was worked out under.
 
 **B2.5 Plans and bets.** A plan is a rule that turns a key into a bet in units:
 
@@ -888,6 +926,47 @@ StrategyExport follows them unless this file is changed first:
     since the simulator plays the chart's walk itself.
 11. lookups.tsv (B8), which SIM_CHECK.md section 5 named without a format: one column a strategy
     file, the cells as text, the later lines on four cards seen.
+12. Split hands of a full-play file read their own ranking where it is not the dealt hand's
+    (`split` lines, B2.1 and B2.4; added 18 October 2026). The plan gives a deal one ranking, but
+    the engine's figures play the dealt hand by one ranking and value its splits under another,
+    the kept play's (B2.4), and the two differ in a few places. Where they differ on c06c061's
+    replay is probably most often where the fit stopped at its last allowed pass, but that is an
+    inference from the run's counts of passes: the run records no strategy's reason for stopping
+    (INTEGRATION.md open item 1). A file with one ranking could not hold 9 of the 15 full-play
+    rows of c06c061's replay, nor F1's and F2's full play in the page look. The choices:
+    - **Sparse, not dense.** A `split` line is written only where the two lists differ. A dense
+      second table would repeat all 540 `first` lines of every group in every full-play file,
+      where the replay named one or two that differ in each fold it reported. Sparse, a
+      full-play file whose rankings agree is exactly what B2 said before this line existed, and
+      each `split` line is checked by reading it beside the `first` line of the same group and
+      deal.
+    - **Whole lists, not the moves a split hand can reach.** A `split` line is written wherever
+      the kept play's list differs at any place, even where Montreal's rules let no split hand
+      read the difference (on c06c061's replay, a pair of threes against an ace whose two lists
+      both start with `H`). So the file holds the kept play's ranking itself, the exporter's round
+      trip compares lists (B7), and neither the reader nor the check depends on an argument about
+      which moves a split hand can reach.
+    - **The moving count reads the same lines.** In the variant whose count keeps moving through
+      split hands, a split hand reads the `split` line, else the `first` line, of the group its
+      moving key falls in (B2.4). The variant is there to show what moving the key changes
+      (A6), so it changes only the key, never which ranking a split hand reads.
+    - **The format number stays 1.** Every file written to B2 before this change reads the same
+      and means the same: without `split` lines a split hand reads `first`, as before. A reader
+      made before the change refuses a `split` line as an unknown keyword (B2.1), so a file that
+      has one is never played by the older rule, and one with none it plays correctly. A new
+      number for every strategy file would change the first line of every first-decision and
+      betting file, none of which means anything new; a number for full-play files alone would
+      say again what the `split` keyword says. lookups.tsv keeps its number too: one written
+      before the change for a bundle with a full-play file lacks the `split` lines, and a reader
+      of the new words refuses it rather than reading it another way ("Changes to Part B", at the
+      end of this file).
+    - lookups.tsv gains `split` lines (B8) when, and only when, the bundle holds a file of scope
+      `full`, as its `later` lines do, so D5 holds every split hand's first decision in every
+      group. They are all 1,000 or none, and a reader refuses anything else: a strategy file
+      cannot show a `split` line dropped, since no line means the two rankings agree, so these
+      cells are the simulator's one exact check of the new lines, and a check that may be silently
+      missing is no check. Their legal moves are Montreal's whatever the simulator's own rules are
+      set to, so each cell depends only on the file.
 
 ### B7. Where each line comes from, for the exporter's author
 
@@ -899,7 +978,28 @@ clean-ups):
 
 - `group`: the play's `Groups.lo` and `hi`; `lgroup`: `Strategy.later`'s.
 - `first`: `FullIndexFit.rankings(st, rules, fit)[g][deal]`, which is `fit.move[g][deal]`
-  followed by the other legal moves by `fit.sum`, or `chartRanking` where `fit.reach` is 0.
+  followed by the other legal moves by `fit.sum`, or `chartRanking` where `fit.reach` is 0. For
+  full play `fit` is the refit of the strategy's values (`Refit`, src/StrategyExport.java:282 and
+  286), the fit SystemScorer.score plays the dealt hand by (src/SystemScorer.java:2624-2627).
+- `split` (full play only): `t.now.ranking[g][deal]`, the ranking of the play in force when the
+  Strategy finishes (B2.4's kept play). It is the ranking the last round handed to every split it
+  valued: `record` (src/FullIndexFit.java:872-881) builds, for each part of a pair deal that may
+  split, `split(pol, i, g1, g2, …)` (710-722), a `SplitPlay` over `pol.ranking[g1]` and
+  `pol.stands` at `g2`, and the score takes those Split values (`SystemScorer.value`,
+  src/SystemScorer.java:661-671) without playing the split again. A line is written for each
+  non-natural (g, deal) whose `t.now.ranking[g][deal]` is not `Arrays.equals` to the `first`
+  line's ranking, the comparison `Refit` makes today (src/StrategyExport.java:292-303), and for
+  no other. Both lists index one set of groups, but only because two calls agree: the Strategy
+  forms its groups with `scorer.groups(parts, p, use, w, null)` (src/FullIndexFit.java:605) on
+  `use = SystemScorer.drawn(p.train[fold], w)` (582), and `foldPlay` with
+  `groups(parts, pen, pen.train[f], pen.weight, null)` (src/SystemScorer.java:1045). `drawn`
+  drops only the states of weight 0 (SystemScorer.java:1058-1071), every estimate weight is
+  1/q > 0 (src/ScoringStates.java:117), and the fold Strategies are built with `w = p.weight`
+  and `units = null` (src/FullIndexFit.java:1576), so the states, their order, the valued count
+  and the threshold are the same, and so are the groups. `Refit` is to check this, not assume
+  it (below). The reach does not depend on the play (src/FullIndexFit.java:930-932; a sum of
+  positive weights is 0 in any order exactly when nothing reached), so a cell no training state
+  reached is `chartRanking` in both and gets no line.
 - `insure`: the (g, ace-up deal) cells whose `insuranceSums(ip, play.insuranceGroup, groups,
   pen.train[f], pen.weight)` entry is positive, as `insuranceValues` insures them.
 - `later`: `Policy.stands[l × CELLS + cell]`, `S` when true, the spot from
@@ -933,26 +1033,76 @@ What `StrategyExport` does beyond the lines above (9 October 2026):
 - Full-play rows come from the replay (PLAN_COMPUTE.md 6.1), which holds each fold's strategy
   after its last round; `StrategyExport.ReplayExport` is the replay hook that exports them, and
   the replay's `--export` option is to construct it. For each fold the play is fitted again from
-  the strategy's Hit and Split values as SystemScorer.score fits the full-play entries
-  (`foldPlay` with those values), the moves ranked from that fit, the later groups and stands
-  from the play the last round walked (`now`). A fold whose refit ranks any deal otherwise than
-  that play is not exported, since a split hand reads the same ranked moves (B2.4). `rvPlay` is
-  that play's round value, Hit and Split valued from the strategy, the other moves from the
-  stored values. Each item's rows are checked while its values are held: the files read back and
-  every state replayed from them on those values, every later line held to the play walked, and
-  the figures against the entry's. A row that fails is kept with its reason rather than stopping
-  the replay; at the end the bundle is refused, naming it. Otherwise the bundle is written from
-  the replay's records, and its round trip holds each full-play section to the one checked, to
-  the bit. `test/FullPlayExportTest.java` does both on a fixture run and requires the two bundles
-  equal byte for byte, and equal again after a replay killed and resumed.
+  the strategy's Hit and Split values as SystemScorer.score fits the full-play entries (`foldPlay`
+  with those values), the moves ranked from that fit, the later groups and stands from the play
+  the last round walked (`now`). Where the refit ranks a deal otherwise than that play, the play's
+  own ranking is to be written as a `split` line (above, B2.4, and the notes below); until it is,
+  such a fold is refused. `rvPlay` is the refit play's round value, Hit and Split valued from the
+  strategy (so its split hands are the kept play's), the other moves from the stored values. Each item's rows are checked while its values
+  are held: the files read back and every state replayed from them on those values, every later
+  line held to the play walked (and, once the `split` lines are written, the ranking every split
+  hand reads from the file), and the figures against the entry's. A row that fails is kept with
+  its reason rather than stopping the replay; at the end the bundle is refused, naming it.
+  Otherwise the bundle is written from the replay's records, and its round trip holds each
+  full-play section to the one checked, to the bit. `test/FullPlayExportTest.java` does both on a
+  fixture run and requires the two bundles equal byte for byte, and equal again after a replay
+  killed and resumed.
+
+**The `split` lines, specified 18 October 2026 and not yet written** (INTEGRATION.md open item 1).
+Until they are, `build` refuses a fold whose two rankings differ anywhere
+(src/StrategyExport.java:336-342), and `ReplayExport.finish` then writes no bundle (2764-2771).
+The exporter is to do this:
+
+- `Refit` keeps `walked[f] = t.now.ranking` beside `ranking[f]`. It refuses a fold whose
+  Strategy groups are not the refit's: `Arrays.equals(t.groups.lo, plays[f].groups.lo)`, the
+  same for `hi`, and `Arrays.equals(t.table, plays[f].table)` (`Strategy.groups` and `table`
+  are package-private fields, src/FullIndexFit.java:475-476), and a walked ranking with another
+  number of groups. The walked `SplitPlay` took its group from the Strategy's table
+  (src/FullIndexFit.java:874-875) while the file's `group` lines and the check below index by
+  the refit's, so without this a same-count, other-bounds pair of groups would pass every other
+  check. It counts the differing cells it counts today; `build` no longer refuses them but hands
+  them to the model (`ExportBundle.Strategy` gains the table, null where there is no line), and
+  `format` writes them after the `first` lines. The log names each fold's count of `split` lines
+  and the first of them, as the refusal names its first cell now.
+- `ExportBundle` reads `split` lines in B2.1's order and refuses every line B2.1 refuses: one in
+  a file whose scope is not `full`, out of order, for a natural or a group past the last, with
+  moves that are not its `first` line's in another order, or repeating that order. It gives the
+  ranking split hands read by B2.4: the `split` line, else the `first` line; the dealt hand's
+  first move stays `first[g][i][0]`. Its `readLookups` reads B8's `split` lines and refuses a
+  lookups.tsv whose bundle holds a full-play file and lacks any of the 1,000, or holds none and
+  has one.
+- `checkFull`'s replay (src/StrategyExport.java:1521-1538, beside the later lines) holds, for each
+  fold and every non-natural (g, deal), the ranking `ExportBundle` gives split hands to
+  `walked[f][g][deal]` by `Arrays.equals`, and the `first` line to `ranking[f][g][deal]` the same
+  way (today only its first move is replayed, 1603-1611, so a `first` line's tail where a `split`
+  line stands, which no hand reads, would otherwise go unchecked). With the groups held equal in
+  `Refit`, the group B2.3 gives a part's key from the file's `group` lines is the one `record`
+  took from the Strategy's table; with the later lines already held to `now.stands` cell by cell,
+  the `SplitPlay` the file describes for any part is then the one `record` built, so its
+  `SplitValues.fingerprint` (src/SplitValues.java:266-295) and its Split value are the walked
+  play's, and the figures' split hands are the file's. No split is valued again.
+- `Lookup` takes the walked ranking too, for B8's `split` cells, and writes all 1,000 lines
+  whenever the bundle holds a full-play file: for group g, split rank r, second card x and
+  up-card u, the letter is the answer of `SplitPlay(r, u, any later play, d -> walked[g][d])` to
+  the split hand's first decision on (r, x), Split offered or not. These are the `FIRST` slots of
+  `SplitValues.fingerprint(rules, Deals.index(r, r, u), play)` (src/SplitValues.java:281-289),
+  the answers the last round's fingerprints held, under Montreal's rules, which give B8's fixed
+  legal sets. The round trip's `lookups` (src/StrategyExport.java:2224-2288) works out the
+  `split` lines from B8's words, refuses lookups.tsv if any is missing or out of place, and holds
+  every cell to the answer `ExportBundle`'s file gives by B2.4.
+- The replay's rows have to be exported again: `RowExport` keeps a row's text, section and
+  lookups (src/StrategyExport.java:2463-2472), and a refused row kept none, so the full-play
+  items are replayed with `--export` once the lines are written.
 
 ### B8. lookups.tsv
 
 The engine's own answers, for check D5 (SIM_CHECK.md section 5): at the states and deals of
-keys-sample.tsv, what each strategy file's fit decides, worked out by the engine's scoring code
-(`CountKeys`, `Groups.of`, the fit's moves, the insurance sums, the later play kept), never read
-from the file. The exporter's round trip holds every cell to what the file it names says by B2.2
-to B2.4, so a simulator that answers each cell from the file alone agrees with the engine there.
+keys-sample.tsv, what each strategy file's fit decides, and for full play every split hand's
+first decision in every group, worked out by the engine's scoring code (`CountKeys`,
+`Groups.of`, the fit's moves, the insurance sums, the later play kept, the kept play's split
+hands, B2.4), never read from the file. The exporter's round trip holds every cell to what the
+file it names says by B2.2 to B2.4, so a simulator that answers each cell from the file alone
+agrees with the engine there.
 
 ```
 # lookups.tsv: SHOE_SPEC.md B8, format 1
@@ -960,6 +1110,7 @@ to B2.4, so a simulator that answers each cell from the file alone agrees with t
 line	state	p1	p2	up	hit	<strategy file 1>	<strategy file 2>	…
 first	0	1	1	1	-	-1:2:P:0	…
 later	0	1	1	1	5	0:1:-:H	…
+split	-	10	10	6	-	SSSSSSSSSS:SSSSSSSSPS	…
 ```
 
 - Line 1 is the comment above; line 2 is `# sample seed ` and keys-sample.tsv's seed. Line 3 is the
@@ -993,9 +1144,33 @@ later	0	1	1	1	5	0:1:-:H	…
   - `M` the move: at a contested spot, `later L total soft up`'s `S` or `H`; at another spot with a
     total under 21, chart.tsv's answer to (up, total, soft, pair 0, fromSplit 0, first 0, legal 1:
     Hit only); `S` at 21; `-` over 21 (the hand has busted). C and M are `-` together only then.
-- About 31,000 `first` lines; the `later` lines are at most 2,000.
+- **`split` lines**, after every `later` line, when and only when the bundle holds a file of
+  scope `full`: exactly one for each split rank r from 1 to 10, second card x from 1 to 10 and
+  up-card from 1 to 10, by up-card, then r, then x, 1,000 lines in all. A reader refuses
+  lookups.tsv if its bundle holds a file of scope `full` and any of the 1,000 is missing, or if
+  its bundle holds none and it has a `split` line. `state` and `hit` are `-`; the `p1` column
+  holds r and the `p2` column x, in that order and not sorted: the hand is a split r that has
+  drawn x, after a split of (r, r) against `up`, at its first decision (A4's step 5). Every
+  column of a file whose scope is not `full` is `-`. Otherwise the cell is the hand's move by
+  B2.4 in each of the file's groups, g = 0 to G − 1 in order, one letter of B1 each, written with
+  nothing between them (a file of 3 groups: `SSH`), with Split not legal. When x = r and r is 2
+  to 10, the cell goes on with `:` and the G letters with Split legal (the round holding fewer
+  than 4 hands). The legal moves are Montreal's, A4's step 5, whatever the simulator's own rules
+  are set to (a planted bug among them), so that a cell depends only on the file, as the `first`
+  and `later` cells do: for r = 1, Stand only, so a split ace's letters are all `S`; for r from 2
+  to 10, Stand, Hit and Double, and in the part after `:` Split too. In the example, a file of 10
+  groups that holds B2.4's two example lines: a split ten that draws a ten against a 6 stands in
+  every group when it cannot split again; when it can, it splits again in group 8, whose `first`
+  line for (10, 10, 6) starts with `P` and which has no `split` line for it, and stands in group
+  9, whose `split` line starts with `S` though its `first` line starts with `P`. No key is
+  needed: the split hand's group is the deal's (A6), and `first` lines hold the keys and groups of
+  deals.
+- About 31,000 `first` lines; the `later` lines are at most 2,000, the `split` lines 1,000. A line
+  of any other kind, or out of this order, is refused.
 
-D5 holds the simulator's own answer from the files to every cell, as text.
+D5 holds the simulator's own answer from the files to every cell, as text. It counts the `split`
+cells apart from the others, and fails if the bundle holds a file of scope `full` and no `split`
+cell was compared.
 
 ### B9. counting-systems.json, for check D2
 
@@ -1223,7 +1398,10 @@ ShoeSpecTest`, from the repository's root, 17 tests in about 30 seconds):
   `Groups.of`; B5's figure numbers against `SystemScorer`'s metric indices; B2.1's 540 deals and
   110 contested cells in their order; B2.4's order for an unreached cell against
   `FullIndexFit.chartRanking`; and B2.4's play of split hands against `SplitPlay` on random
-  tables.
+  tables. Since 18 October 2026 B2.4 reads a `split` line before the `first` line; the
+  transcription is to take that rule too (random `first` tables with random `split` lines on some
+  deals, `SplitPlay` built over the ranking the lines give), a change not yet made (INTEGRATION.md
+  open item 1).
 - B9's reading of counting-systems.json, transcribed with a JSON parser, against
   `CountKeys.catalog`, `nullCount` and `bettingVariant`, and its block of side-counted systems
   against `CountKeys.SIDE_COUNTED`.
@@ -1260,4 +1438,38 @@ Part B's files themselves are not tested here. `src/StrategyExport.java` writes 
 in a temporary directory, never the run's, and requires the round trip to give back
 SystemScorer's figures for 16 rows of six counts (a true count, one with an ace side count, a
 running count, a colour count, the null count, and a count of our own with a divisor and a
-betting vector), and to refuse a bundle with any of twelve bugs written into it.
+betting vector), and to refuse a bundle with any of twelve bugs written into it. Once the
+`split` lines are written (B7), it is also to refuse a bundle with any of these written into it:
+a full-play file with a `split` line dropped; one with a `split` line that repeats its `first`
+line, or whose moves are not its `first` line's; one whose `first` and `split` lines are swapped
+where they differ (the dealt pair then stands and takes the stored value of Stand, not the held
+value of Split, and split hands read the dealt hand's ranking); lookups.tsv with its `split`
+lines dropped; and lookups.tsv with a `split` cell that answers by the `first` line where a
+`split` line exists. That the dealt hand never reads a `split` line is a rule of the reader, not
+of a file, so it is tested on `ExportBundle`'s own B2.4 answers (the dealt hand's first move and
+the ranking split hands read), outside that list of planted bundles.
+
+**Changes to Part B, and its format numbers.** Every text file's format number is in its first
+line (`format strategy 1`, `# chart.tsv: SHOE_SPEC.md B1, format 1`, and so on), and states.bin's
+is its header's `version`. A number changes only when a file written to the old words could be
+read to mean something else under the new ones. A change that only adds lines keeps the number
+when a file without them either means what it meant or is refused, and the commit that makes it
+is recorded for the part it first affects in SIM_CHECK.md's identity table. Readers refuse what
+they do not know (B2.1, B8), so an older reader refuses a newer file's added lines rather than
+playing them by the older rule. The changes so far:
+
+| Date | What | Files it can change | Format |
+|---|---|---|---|
+| 18 October 2026 | `split` lines (B2.1, B2.4, B6 item 12, B7) and lookups.tsv's `split` lines (B8) | strategy files of scope `full`, where the two rankings differ; lookups.tsv, when the bundle holds a file of scope `full` | unchanged, 1 |
+
+Three bundles had been written in runs/ by then. Part 1's (runs/sim/export-part1-0e0920d, 16
+first and 2 betting files) and the page look's first-decision bundle
+(runs/page-look-0e0920d/export-first, 4 first files) hold no file of scope `full`, and their
+lookups.tsv no `later` line, so under the changed words every byte of them, and part 1's
+recorded SHA-256, stands as written and means what it meant. The third is the replay's gate
+(INTEGRATION.md row 4, runs/replay/gate0-304901c-export: Hi-Lo's full play at 70%, both folds).
+Its strategy files have no `split` line and need none, since the exporter then refused any fold
+whose two rankings differed, so they mean what they meant. Its lookups.tsv (30,990 `first` lines
+and 1,999 `later` lines, no `split` line) is refused by a reader of the changed words, never read
+another way. No part plays that bundle: part 2's bundles are exported anew (SIM_CHECK.md's
+identity table).
