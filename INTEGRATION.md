@@ -389,7 +389,11 @@ Open:
      no split cell, all 61 P2 chunks equal and P3's first chunk equal in every result line
      (runs/sim/deviation1-check-ae283e4/compare.txt; P3's `extras` line differs only in the
      records bound, 1,000,000 for one chunk against part 1's 2,000,000, with no figure keeping
-     records). The identity table records 3b2f104 and ae283e4. Left: (1) Justin's yes to
+     records). The identity table records 3b2f104 and ae283e4. Merged into site-integration as
+     f3cade3. Row 6's export again, started 19 October 2026 at 05:45 from classes-f3cade3: the 15
+     full-play items alone (row 6's wide.ser and sink for all 93 items stand from
+     c06c061-0e0920d), with `--wide`, into runs/sim/export-part2-replay-f3cade3
+     (runs/site-runs/export15-f3cade3.sh; log runs/replay/c06c061-export15-f3cade3.log). Left: (1) Justin's yes to
      deviation 1; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
      (the wide plans F43-F48 are attached only with `--wide`), and row 7's F50 and F52, for
      which PageLook must first replay into a directory of its own under new classes (its resume
