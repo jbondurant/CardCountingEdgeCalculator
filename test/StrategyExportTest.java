@@ -1046,4 +1046,50 @@ public class StrategyExportTest {
         assertThrows(IllegalArgumentException.class,
                 () -> StrategyExport.ReplayExport.named(Arrays.asList("S, full play@70"), new int[]{1, 2}));
     }
+
+    /**
+     * The replay's export gives the rows SIM_CHECK.md registers wide plans for (F43 to F48: Hi-Lo's and
+     * Victor APC + ace's full play at 80%) those plans with --wide, whether the rows are the
+     * registered default or named with --export-row, and a row with none only every row's plans
+     * (FullIndexReplay.hooks). Without --wide no row gets them. Until 19 October 2026 a named row
+     * got none, so row 6's export again, made with --only and --export-row, wrote no F43 to F48 and
+     * part 2's fill refused its pilot files. Planted the same day in a scratch copy of
+     * FullIndexReplay, failing this test: the wide plans attached only when no row is named, as
+     * before.
+     */
+    @Test
+    public void theRegisteredWidePlansFollowTheirRowsNamedOrNot() throws Exception {
+        Map<String, List<String>> wide = StrategyExport.ReplayExport.registeredPlans(new int[]{2});
+        assertEquals(2, wide.size(), wide.toString());
+        for (List<String> rows : Arrays.asList(new ArrayList<>(wide.keySet()), null)) {
+            for (boolean on : new boolean[]{true, false}) {
+                FullIndexReplay.Options o = new FullIndexReplay.Options();
+                o.export = Files.createTempDirectory("wide-named").resolve("bundle");
+                o.pens = new int[]{2};
+                o.wide = on;
+                if (rows != null) {
+                    o.only = List.of("Hi-Lo = Hi-Lo Lite@2", "Zen Count@2");
+                    o.exportRows = new ArrayList<>(rows);
+                    o.exportRows.add("Zen Count, full play@80");
+                }
+                StrategyExport.ReplayExport export = null;
+                for (FullIndexReplay.Hook h : FullIndexReplay.hooks(o, new PrintStream(new ByteArrayOutputStream(), true,
+                        "UTF-8"))) {
+                    if (h instanceof StrategyExport.ReplayExport) {
+                        export = (StrategyExport.ReplayExport) h;
+                    }
+                }
+                assertNotNull(export);
+                for (Map.Entry<String, List<String>> e : wide.entrySet()) {
+                    String row = e.getKey().substring(0, e.getKey().lastIndexOf('@'));
+                    List<String> labels = Arrays.asList(export.labelsFor(row, 2));
+                    for (String l : e.getValue()) {
+                        assertEquals(on, labels.contains(l), row + (rows == null ? ", default rows" : ", named") + ", --wide "
+                                + on + ": " + labels);
+                    }
+                }
+                assertEquals(Arrays.asList(o.exportPlans), Arrays.asList(export.labelsFor("Zen Count, full play", 2)));
+            }
+        }
+    }
 }
