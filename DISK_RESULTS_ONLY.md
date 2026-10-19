@@ -1,5 +1,14 @@
 # Results only, under 2 GB, nothing on Drive (18 October 2026)
 
+**Decided 18 October 2026.** Justin, after the 2 GB reviews: "ok, no need to make it small then.
+But we will want to delete it once we wrap up this project". So nothing is rewritten to run small.
+runs/ keeps what it holds, the tree store among it, until the project is wrapped up. Then it goes
+down to its results: the kept list and the deletion batches of DISK_RESULTS_ONLY.md, each batch
+confirmed with Justin when the time comes. DiskBudget's default is 27 GB until then.
+
+At wrap-up, the order matters: everything item 1 and the simulator's part 2 read must have
+been used first (the batches' When column), and the manifest and figures digests committed first.
+
 Justin: "i don't want to have to rely on drive for state, I just want like results, and produce
 files that are required to create those results". This replaces the Drive plan of DISK_2GB.md.
 A workflow traced every result back to the seeds that produce it, read-only. It used two mappers,

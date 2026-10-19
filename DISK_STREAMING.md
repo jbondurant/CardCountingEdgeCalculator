@@ -1,5 +1,12 @@
 # Does the program need more than 2 GB of disk? (18 October 2026)
 
+**Decided 18 October 2026.** Justin, after the 2 GB reviews: "ok, no need to make it small then.
+But we will want to delete it once we wrap up this project". So nothing is rewritten to run small.
+runs/ keeps what it holds, the tree store among it, until the project is wrapped up. Then it goes
+down to its results: the kept list and the deletion batches of DISK_RESULTS_ONLY.md, each batch
+confirmed with Justin when the time comes. DiskBudget's default is 27 GB until then.
+The design below is kept for reference; it is not being built.
+
 Justin asked whether the algorithm could be rewritten to stay under 2 GB at every moment, as a
 sliding window over the data, or whether it truly needs more than 2 GB to be efficient. A
 read-only workflow looked into it: four investigators, a designer and two adversarial judges,

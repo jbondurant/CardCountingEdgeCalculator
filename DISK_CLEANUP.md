@@ -1,11 +1,18 @@
 # What runs/ can let go of (proposed 18 October 2026, awaiting Justin's yes)
 
+**Decided 18 October 2026.** Justin, after the 2 GB reviews: "ok, no need to make it small then.
+But we will want to delete it once we wrap up this project". So nothing is rewritten to run small.
+runs/ keeps what it holds, the tree store among it, until the project is wrapped up. Then it goes
+down to its results: the kept list and the deletion batches of DISK_RESULTS_ONLY.md, each batch
+confirmed with Justin when the time comes. DiskBudget's default is 27 GB until then.
+Batches A to C below stay until then too; at wrap-up they are part of DISK_RESULTS_ONLY.md's batches.
+
 On 18 October runs/ held 23.28 GB. Justin asked for the code to stop making that much ("perhaps
 like 5gb max of content at any time"). The code side is `DiskBudget` (commit 03b116f): every run
-that writes much checks a 9 GB budget for runs/ before writing anything, and is refused if it
-would go past it. The tree store keeps only the trees that fit. A finished replay deletes its own
-records. Why 9 GB and not 5: what the page is built and reproduced from holds 6.38 GB, 2.68 GB of
-it the two state files. A replay of the whole main run then writes 1.88 GB while it runs.
+that writes much checks a budget for runs/ before writing anything, and is refused if it would go
+past it. The tree store keeps only the trees that fit. A finished replay deletes its own records.
+The budget was 9 GB at first; since Justin decided not to make the project small (DISK_RESULTS_ONLY.md),
+it is 27 GB, so the pending runs fit beside what is kept until wrap-up.
 
 The files already there are a separate decision. Nothing below is deleted without Justin's yes,
 batch by batch. Each list names every file with its size in bytes, paths relative to runs/:

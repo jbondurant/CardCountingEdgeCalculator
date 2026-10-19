@@ -23,15 +23,15 @@ import java.util.stream.Stream;
  * not counted: a test's temporary directory, or a path given on purpose.
  *
  * The budget is BUDGET_GB unless a run is given --disk-budget GB, or the environment variable
- * CCEC_DISK_BUDGET_GB is set. BUDGET_GB is 9, not the 5 asked for. What the page's figures are
- * reproduced from holds 6.38 GB on its own, the two state files 2.68 GB of it (main --without, 18
- * October 2026, with the tree store, the replays' records and the superseded files left out); the
- * page itself is built from runs/site's 0.003 GB. And the largest run made, a replay of every item
- * of the main run with its three hooks, writes 1.88 GB while it runs (estimated 2.33 GB below).
- * With the room 9 GB leaves, a rerun of the main run keeps few trees and builds the others in
- * every round: about half an hour more a round on six threads (TreeStore), and 48 of a full run's
- * 49 rounds read trees. Holding runs/ to 2 GB needs finished files kept on Drive and fetched when
- * a run reads them (DISK_2GB.md).
+ * CCEC_DISK_BUDGET_GB is set. BUDGET_GB is 27. Justin decided on 18 October 2026, after the 2 GB
+ * reviews, not to make the project small: "ok, no need to make it small then. But we will want to
+ * delete it once we wrap up this project". So runs/ keeps what it holds, 23.29 GB that day, the
+ * tree store among it, until the project is wrapped up, and then goes down to its results
+ * (DISK_RESULTS_ONLY.md). 27 GB leaves room for what the pending runs are estimated to write, about
+ * 2 GB: item 1's two exports, the simulator's part 2 and RiskReport. It still refuses a second tree
+ * store, which the disk, 11 GiB free that day, could not hold. What the page's figures are
+ * reproduced from holds 6.38 GB, and the page itself is built from runs/site's 0.003 GB (main
+ * --without). A version under 2 GB is possible but costs hours a run (DISK_STREAMING.md).
  *
  * Planted on 18 October 2026 in a scratch copy, one at a time, each failed the test named, which
  * passes without it: the store writing every tree, and not cutting a store opened with a smaller
@@ -52,7 +52,7 @@ final class DiskBudget {
     private DiskBudget() {
     }
 
-    static final double BUDGET_GB = 9;
+    static final double BUDGET_GB = 27;
     static final String ENV = "CCEC_DISK_BUDGET_GB";
     /** What a full-index run writes for each scoring item (a count at a penetration, its folds or its halves). */
     static final long ITEM = 10_000_000L;
