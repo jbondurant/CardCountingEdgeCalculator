@@ -455,6 +455,16 @@ Open:
      bundle is exported again from classes-b388df5 into runs/sim/export-part2-replay-b388df5
      (runs/site-runs/export15-b388df5.sh, started 13:30), its identity row to replace
      export-part2-replay-f3cade3's before the pilot reruns.
+   - **Part 2 under way** (19 October 2026). export-part2-replay-b388df5 finished at 16:42 (every
+     item c06c061's to the bit, F43 to F48's wide plans in Hi-Lo's and Victor APC + ace's 80% files,
+     round trip passed on 9,604,369 values); its identity row replaced f3cade3's (81156e9). The
+     pilot on all four bundles (runs/sim/pilot-part2-0f087c4-b388df5) and `SimCheckPlan fill` gave
+     section 8's part 2 block, committed with the four files (99de46e): P3 34 chunks, P2 K =
+     110,000, predicted 4.46 h, no stop. SimCheckPlanTest's fixture then had to fill between the
+     markers, as SiteSimTest's does. The main run started at 16:49
+     (runs/site-runs/sim-part2-main-0f087c4.sh 34 110000, into runs/sim/part2-0f087c4 and
+     part2-look-first-0f087c4, part2-look-full-0f087c4), the planted runs after it
+     (runs/site-runs/sim-part2-planted-0f087c4.sh).
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
