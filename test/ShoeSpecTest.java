@@ -995,11 +995,24 @@ public class ShoeSpecTest {
      * B2.4's play of a full-play file's split hands, transcribed, is SplitPlay's on every decision
      * a split hand can face, with random later tables and random ranked lists, so that the rule
      * "the first move of the list that is legal, an ace and a ten standing" is tested as a rule.
+     * The engine's split hands play the walked play's ranking (B2.4's kept play), random here; the
+     * file's first lines are that ranking with some lists put in another order, as a refit ranks
+     * them, and its split lines are the walked lists wherever the first line is not, as B7 writes
+     * them. The transcription reads a deal's split line if the file has one and its first line if
+     * not, and must give SplitPlay's answer over the walked ranking at every decision. Of these
+     * tables' split-hand first decisions, 1,407 read a split line and 711 of those play otherwise
+     * than their first line would. Planted on 19 October 2026 in scratch copies of this test, each
+     * failed it: the words read as B2.4 read them before 18 October, the first line only (a split
+     * hand of two cards, hard 6, against a 2: Hit by SplitPlay, Double by the words); and SplitPlay
+     * given the first lines for the walked ranking, as if splits were valued under the refit's
+     * (the same decision: Double by SplitPlay, Hit by the words).
      */
     @Test
     public void theSplitHandsOfB24AreSplitPlays() {
         SplittableRandom rnd = new SplittableRandom(29);
         PlayerMove[] moves = {PlayerMove.Stand, PlayerMove.Hit, PlayerMove.Double, PlayerMove.Split};
+        int readSplit = 0;
+        int differs = 0;
         for (int t = 0; t < 300; t++) {
             int r = 1 + rnd.nextInt(10);
             int up = 1 + rnd.nextInt(10);
@@ -1007,18 +1020,32 @@ public class ShoeSpecTest {
             for (int c = 0; c < stands.length; c++) {
                 stands[c] = rnd.nextBoolean();
             }
-            PlayerMove[][] ranked = new PlayerMove[Deals.COUNT][];
+            PlayerMove[][] walked = new PlayerMove[Deals.COUNT][];
+            PlayerMove[][] first = new PlayerMove[Deals.COUNT][];
+            PlayerMove[][] split = new PlayerMove[Deals.COUNT][];
             for (int i = 0; i < Deals.COUNT; i++) {
                 PlayerMove[] list = new PlayerMove[1 + rnd.nextInt(4)];
                 for (int k = 0; k < list.length; k++) {
                     list[k] = moves[rnd.nextInt(moves.length)];
                 }
-                ranked[i] = list;
+                walked[i] = list;
+                first[i] = list.clone();
+                if (rnd.nextInt(3) == 0) {
+                    for (int k = first[i].length - 1; k > 0; k--) {
+                        int j = rnd.nextInt(k + 1);
+                        PlayerMove m = first[i][k];
+                        first[i][k] = first[i][j];
+                        first[i][j] = m;
+                    }
+                }
+                if (!Arrays.equals(first[i], walked[i])) {
+                    split[i] = walked[i].clone();
+                }
             }
             SplitPlay engine = new SplitPlay(r, up, (total, soft) -> {
                 int c = FullIndexFit.cellOf(PlayerTree.spot(total, soft, up));
                 return c < 0 ? PlayerTree.CHART.stands(total, soft, up, 0) : stands[c];
-            }, deal -> ranked[deal]);
+            }, deal -> walked[deal]);
             for (int x = 1; x <= 10; x++) {
                 List<Integer> hand = Arrays.asList(r, x);
                 int total = ConcreteRound.total(hand);
@@ -1031,12 +1058,23 @@ public class ShoeSpecTest {
                             canHit, canDouble, canSplit, false);
                     PlayerMove spec = PlayerMove.Stand;
                     if (!((r == 1 && x == 10) || (r == 10 && x == 1))) {
-                        for (PlayerMove m : ranked[Deals.index(Math.min(r, x), Math.max(r, x), up)]) {
+                        int deal = Deals.index(Math.min(r, x), Math.max(r, x), up);
+                        PlayerMove[] list = split[deal] != null ? split[deal] : first[deal];
+                        for (PlayerMove m : list) {
                             if (d.isLegal(m)) {
                                 spec = m;
                                 break;
                             }
                         }
+                        readSplit += split[deal] != null ? 1 : 0;
+                        PlayerMove byFirst = PlayerMove.Stand;
+                        for (PlayerMove m : first[deal]) {
+                            if (d.isLegal(m)) {
+                                byFirst = m;
+                                break;
+                            }
+                        }
+                        differs += byFirst != spec ? 1 : 0;
                     }
                     assertEquals(engine.choose(d), spec, d.toString());
                 }
@@ -1055,6 +1093,10 @@ public class ShoeSpecTest {
                 }
             }
         }
+        // The split lines are read, and where they are, reading the first line instead plays otherwise:
+        // the counts the class comment gives, from seed 29.
+        assertEquals(1407, readSplit, "first decisions that read a split line");
+        assertEquals(711, differs, "first decisions a split line plays otherwise than its first line");
     }
 
     // ------------------------------------------------------------------ B9: the catalog as the simulator reads it

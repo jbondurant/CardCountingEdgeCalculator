@@ -363,19 +363,194 @@ without it. The open ones follow, in the order they block the 7.2 runs.
 
 Open:
 
-1. **A full-play row whose strategies rank a deal two ways is refused, and real rows may have
-   some.** (src/StrategyExport.java, Refit and build; SHOE_SPEC.md B2.4.) The engine plays the
-   dealt hand by the scorer's refit and values split hands by the play the last round walked; a
-   strategy file holds one ranking, so ReplayExport refuses a fold where the two differ, at the
-   end of the replay. On the replay's fixture they never differ; on PageLookTest's 12-shoe
-   fixture F1's full play does, and PageLook keeps its other outputs and exits 1. On c06c061 the
-   replay lane expects some wherever the fit stopped at its cap (FullIndexFit's refitDiffers).
-   Row 4 runs the export on one real item to find out in minutes. If that row is refused, B2
-   needs a split-hand ranking (SHOE_SPEC.md, StrategyExport, ExportBundle, sim/Strategy.java)
-   before row 6, or row 6 runs without `--export` and the full-play rows wait for a second
-   replay. A refusal at the end of row 6 costs only the bundle: the export hook finishes last,
-   after wide.ser and run-b.ser are written, and it names each refused row in the log as its
-   item is replayed. The page look's F50 and F52 (row 7's export-full) meet the same refusal.
+1. **A full-play row whose strategies rank a deal two ways: refused on the real runs; the
+   exporter writes `split` lines (134da21) and the simulator reads them (ae283e4); the exports
+   again and Justin's yes to deviation 1 remain.** (SHOE_SPEC.md B2.1, B2.4, B6 item 12, B7, B8 and "Changes to Part B";
+   SIM_CHECK.md deviation 1, sections 5 and 14; drafted and checked 18 October 2026 in the
+   split-ranking worktree, the engine's side built there on 19 October.) The engine plays the dealt hand by the scorer's refit of the
+   strategy's last-round values (src/SystemScorer.java:2624-2628) and values split hands by the
+   play the last round walked, `now`, the "kept play" of SHOE_SPEC.md B2.4: at convergence the
+   last pass's play, at the pass cap the best pass's after its clean-ups
+   (src/FullIndexFit.java:1004-1012, 710-722, 872-881). A strategy file held one ranking, so
+   until 134da21 ReplayExport refused a fold where the two differ, and `finish` then wrote no
+   bundle at all, the good rows' included.
+   - **Status, 19 October 2026 (integration, split-ranking).** The simulator's side was written
+     in a fourth clean-room session (285f0fb, after its review ae283e4; sim/QUESTIONS.md), in a
+     worktree that held only the specs and sim/, and merged as e2cc9e4. A scan of the three
+     clean-room agents' 173 tool calls (builder, reviewer, fixer) found none that read src/, test/,
+     another worktree, INTEGRATION.md or a run's output; the reviewer's own audit of the builder's
+     calls is the one that names those paths. SimReadsSplitLinesTest
+     (b6a4b71): the page look's full-play export on PageLookTest's fixture, 31 `split` lines in
+     fold 0's file and 1 in fold 1's, played by the compiled simulator: D1, D2, D4 and D5 with 0
+     mismatches, D5's split cells compared, then P2; a copy with one split line taken out is
+     caught. Found there: the replay's export sampled keys only for the counts it scored, so the
+     page look's bundle would have failed D2; it samples the whole catalog now (b6a4b71).
+     Deviation 1's check passed: ae283e4 on part 1's bundle gives part 1's D1, D2, D4 and D5 with
+     no split cell, all 61 P2 chunks equal and P3's first chunk equal in every result line
+     (runs/sim/deviation1-check-ae283e4/compare.txt; P3's `extras` line differs only in the
+     records bound, 1,000,000 for one chunk against part 1's 2,000,000, with no figure keeping
+     records). The identity table records 3b2f104 and ae283e4. Left: (1) Justin's yes to
+     deviation 1; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
+     (the wide plans F43-F48 are attached only with `--wide`), and row 7's F50 and F52, for
+     which PageLook must first replay into a directory of its own under new classes (its resume
+     under another commit is refused today); (3) SHOE_SPEC.md's three passages in "How this file
+     is held to the engine" that still describe the split lines as to come (7dca9f5), to be
+     corrected in a commit the identity table records again.
+   - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
+     (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
+     6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
+     page look refused F50 and F52 too (runs/page-look-0e0920d.log:48, 64). Each refused fold
+     named one cell, F2's two. Ten of the eleven named are a pair of tens against 4, 5 or 6, or
+     F2's nines against 5, ranked P S H D by the refit and S P H D by the walked play: the dealt
+     pair splits, and a split hand that draws the pair card stands. The eleventh (Victor APC + ace
+     at 75%, fold 1, a pair of threes against an ace: H P S D against H S P D) differs only where
+     no hand reads. `build` stops at the first fold that fails, so fold 1 is unknown for 8 of the
+     main rows and for F2. That these fits stopped at their pass cap is an inference: 85 of 372
+     strategies were still fitting in round 5 and none went on after it, with no new split
+     valued in rounds 4 and 5 (runs/full-index/full-c06c061.log:59, 70), and the run printed no
+     per-strategy capped flag or refitDiffers (the replay does since 134da21, so the exports
+     again test it); a near-tie between the lean pass sums and the scorer's would be refused the
+     same way.
+   - **What is specified.** A full-play file gains `split g p1 p2 up M…` lines, the kept play's
+     ranking, only where it is not the `first` line's list; each is its `first` line's moves in
+     another order; split hands read the `split` line, else the `first` line, at the deal's group,
+     or at the moving key's in the moving-count variant (B2.1, B2.4). lookups.tsv gains exactly
+     1,000 `split` lines when, and only when, the bundle holds a full-play file, every split
+     hand's first decision in every group under Montreal's fixed legal moves; a reader refuses
+     them missing or out of place, and D5 counts them apart (B8). Format numbers stay 1. Part 1's
+     bundle and the page look's export-first hold no full-play file, so they, part 1's recorded
+     SHA-256 and part 1's run are unchanged; the gate's bundle (runs/replay/gate0-304901c-export)
+     keeps its meaning in its strategy files but its lookups.tsv is now refused, and no part plays
+     it. No figure and no byte of states.bin changes: the engine always valued split hands this
+     way.
+   - **Decided here, for Justin to overrule.** (a) Dense or sparse: sparse, whole lists, written
+     wherever the two lists differ at all (B6 item 12). (b) Commits: SHOE_SPEC.md's commit and the
+     SIM_CHECK.md commit recording it go in back to back, as ebc7761 did for c8d9b5a, and the same
+     for the simulator's; test/SiteSimTest.java:296-325 fails between the two, and again if either
+     file changes after its record. (c) SiteSim.Plan keeps one list of simulator commits for both
+     parts (src/SiteSim.java:132-133): SIM_CHECK.md's words say which commit made what, and
+     deviation 1's check proves the new commit plays part 1's bundle as fe9a91e did; a per-part
+     check in SiteSim is optional. (d) lookups.tsv's 1,000 `split` lines stay whole, the split
+     aces' all-`S` cells included, so the cells need no rule about which ranks they cover; they
+     add 1,000 cells of G or 2G + 1 letters to each full-play column, beside its 30,990 `first`
+     cells, and item 16's measured total is to include them. (e) Before the exports again, the
+     replay's log prints each strategy's capped flag and refitDiffers, so each `split` line's
+     cause is on record and the inference above is tested: done in 134da21
+     (`FullIndexReplay.howFitted`, a line a strategy after its item's comparison).
+   - **For Justin.** Deviation 1 changes D5 after part 1's pilot, and SIM_CHECK.md:37-39 lists it
+     on the page with its commit; it needs his yes before that commit.
+   - **The engine's side, built in 134da21** (19 October 2026; SHOE_SPEC.md B7 says what each
+     part does, corrected there to match):
+     - **The exporter.** Refit keeps `t.now.ranking` beside the refit's ranking and refuses a fold
+       whose Strategy groups or table are not the refit's (each row of its item kept as failed,
+       the replay going on); `build` writes `split` lines where the two differ; the round trip,
+       on each row's values as `checkFull` runs it, holds every `first` line whole to the refit's
+       ranking and every ranking split hands read to the walked one, after the states' values so
+       that a first move written wrong is still refused by them; `Lookup` writes B8's 1,000 split
+       cells from the walked play's SplitPlay (SplitValues.fingerprint's first-decision slots),
+       and the round trip's `lookups` works them out from B8's words through ExportBundle and
+       holds every cell. The export's log names each fold's `split` lines and the first.
+     - **ExportBundle**: `Strategy.split`, the parser and every refusal of B2.1, the B2.4
+       accessors (`dealtFirst`, `splitRanking`), and `readLookups(file, full)`, told by the round
+       trip whether the bundle holds a full-play file, with B8's presence rule.
+     - **Tests**, each with its plants recorded in its class comment (22 planted in scratch copies
+       outside the worktree, each failing the test named): ShoeSpecTest's split hands of B2.4
+       (1,407 decisions of its random tables read a `split` line, 711 of them otherwise than their
+       `first` line); StrategyExportTest's hand-made full file with two `split` lines, every
+       refusal of B2.1, the B2.4 accessors and a `split` line in a lookups.tsv with no full-play
+       file; FullPlayExportTest, whose fixture has 0 `split` lines and keeps its byte equality
+       and kill and resume, with a hand-made difference for the bundles that need one (first and
+       `split` swapped, a `split` line dropped, a split cell read from the `first` line; made on
+       the walked table until 3b2f104, below) and planted bundles on its own (a `split` line
+       where the rankings agree, a `first` line's tail reordered, a split cell flipped,
+       lookups.tsv without its split lines or with two out of order); PageLookTest, whose F1
+       full-play export now passes with no refusal branch: fold 0 stopped at the pass cap of 6
+       with pass 0's play kept, refitDiffers 29, 31 `split` lines; fold 1 converged, refitDiffers
+       0, one `split` line, a pair of tens against a 10 ranked S P H D and S H D P, which no split
+       hand reads differently; FullIndexReplayTest, the hook path's files held to each strategy's
+       walked ranking and the log's lines.
+     - **Two tests fail at 134da21, neither from the exporter.** SimReadsWidePlansTest's two D4
+       tests: the committed simulator (fe9a91e) refuses lookups.tsv's `split` lines ("lookups.tsv
+       line 12024: not a first line (hit -) or a later line (hit 1 to 10), first lines first"),
+       as SIM_CHECK.md's identity row says it will until sim/ reads them; they pass again with the
+       clean-room session's simulator. SiteSimTest.theIdentityTableNamesTheLastCommitOfEachFileItRecords
+       has failed since 46d76a5 changed SHOE_SPEC.md, and now names 3b2f104, its last commit
+       (B7 again, below); it passes once SIM_CHECK.md's identity row records that commit, by (b),
+       after Justin's yes.
+     - **The review of 134da21, answered in 3b2f104** (19 October 2026). Every check above held a
+       file's `split` lines to `Refit.walked`, which Refit takes from `t.now.ranking`, and `Lookup`
+       built B8's split cells from the same table, so a wrong walked table passed them all: the
+       reviewer's plant, `walked(f, ranking[f])`, the one ranking of before the split lines,
+       passed F1's 80% export in PageLookTest with no `split` line where 32 are due (the review's
+       run). Now Refit
+       also keeps, from the strategy itself, every split its last round valued with its
+       fingerprint (`FullIndexFit.valuedSplits`), and the check on the values plays each again from
+       the file alone (`StrategyExport.playedAsValued`): the file's split hands must answer every
+       decision as the valued play did. With that plant F1's export is refused (fold 0, a split of
+       8s against an ace in group 0, Split offered: S by the file, P as valued). FullPlayExportTest's
+       hand-made difference changed the walked table and not the values, so its `split` line was
+       not the play its split was valued under and it passed; it now reorders a `first` line's
+       tail at a valued split instead, and the old hand-made walked table is a test that must be
+       refused. PageLookTest holds F1's files to the replayed strategies apart from Refit (31 and 1
+       `split` lines). The full-play files of every 12-shoe fixture have one group, so a check that
+       skipped groups past the first passed every test; FullPlayExportTest now also uses
+       FullIndexFitTest's capped run (Hi-Lo at 80%, stopped after pass 0, groups formed with mPlay
+       1: 2 and 3 groups, 109 and 22 `split` lines across every group, 500 splits played again)
+       and plants files wrong in fold 1's last group. Only `Refit.Refused` (groups or table, a
+       walked ranking's group count) is kept as a row's failure; anything else Refit throws stops
+       the replay at its item, and a row whose exception has no message is kept by its class, so
+       `finish` refuses it rather than writing it. ShoeSpecTest asserts its two counts (1,407 and
+       711). 17 bugs planted in scratch copies outside the worktree (9 new, and the 8 of 134da21's
+       in FullPlayExportTest planted again on this code), each failing the test named and recorded
+       in its class comment. SHOE_SPEC.md B7 says what was built; no figure
+       changes.
+   - **What remains on the engine side**, in order:
+     - **SHOE_SPEC.md's "How this file is held to the engine"** is stale in three places, left
+       alone while the clean-room session reads that section: it gives ShoeSpecTest 17 tests
+       twice (it has 19, as at 46d76a5), calls the transcription of the `split` lines "a change not
+       yet made" (made in 134da21), and says StrategyExportTest is to refuse planted full-play
+       bundles "once the split lines are written" (they are, and those plants are in
+       FullPlayExportTest). To be corrected when that session ends.
+     - **The exports again.** RowExport kept nothing of a refused row
+       (src/StrategyExport.java:2463-2472), so row 6's 15 full-play rows and row 7's F1 and F2
+       full play are replayed with `--export`, after (e) above.
+     - **The identity table**: SHOE_SPEC.md's new commit and the simulator's go into
+       SIM_CHECK.md's rows before part 2's pilot, by (b). Before that pilot too, deviation 1's
+       check of the new simulator commit on part 1's bundle against part 1's main run
+       (runs/sim/part1-0e0920d): run by an integration session, the simulator as a black box,
+       not by the clean-room session.
+   - **The simulator: the task of its clean-room session.** The session reads this bullet, not the
+     rest of this item or of INTEGRATION.md, whose other bullets name engine code. Its reading:
+     SHOE_SPEC.md except B7 (for this change B2.1, B2.4, B6 item 12, B8 and "Changes to Part B"),
+     SIM_CHECK.md (deviation 1, sections 5, 9, 10 and 12, the identity table), ROUND_CONTRACT.md,
+     sim/QUESTIONS.md, sim/ and sim/test; nothing under src/ or test/ and no run's output. It
+     records itself as a fourth session in sim/QUESTIONS.md, with any question it cannot settle
+     from those words. What it is to do, in the words of those files:
+     - sim/Strategy.java: `split` in ORDER between `first` and `insure` (lines 25-27); a split
+       table by group and deal, empty where no line; a reader of `split` lines refusing each
+       thing B2.1 refuses (a file not of scope `full`, a group outside 0 to G − 1, p1 > p2 or a
+       rank outside 1 to 10, the natural (1, 10), a line not after the last one in `first`
+       order, moves other than its `first` line's in another order, a repeat of that order); the
+       split hand's first decision in Play.choose (lines 250-263) reading the `split` line, else
+       the `first` line, through one method that sim/Lookups.java calls too, frozen at the deal's
+       key or, in the variant, at the moving key; the dealt hand's paths (lines 220-222 and 239,
+       and sim/Table.java:106) unchanged; the class comment (lines 11-21) saying so.
+     - sim/Lookups.java: B8's `split` lines after the `later` lines, `state` and `hit` `-`, r and
+       x unsorted (the parse at lines 151-163 takes `state` as a number and needs p1 ≤ p2 today);
+       exactly 1,000 when a full-play file is in the bundle and none otherwise, else refused;
+       cells `-` for a file not of scope `full`, else the G letters by B2.4 under Montreal's fixed
+       legal sets, and `:` and G more for a split 2 to 10 that draws its own rank; split cells
+       counted apart, D5 failing when a full-play file is present and none was compared.
+     - Tests: sim/test/StrategyFixture.java gains `split` lines; StrategyTest gains the refusals
+       above and play cases: `first 9 10 10 6 P S H D` with `split 9 10 10 6 S P H D`, where the
+       dealt pair splits and a split ten that draws a ten stands, and resplits without the line;
+       one non-pair `split` line read by both hands that reach it (a split 3 drawing an 8 and a
+       split 8 drawing a 3); ace and ten, and split aces, still standing; the moving variant
+       reading its moving group's `split` line. sim/test/LookupsTest.java's text (lines 45-54,
+       125-139) gains the full-play file's 1,000 `split` lines (1,025 lines and 5,125 cells), split
+       cells worked by hand, a planted split cell, the refusals (missing, out of order, present
+       with no full-play file), and a case where split hands read `first` and D5 catches it.
+
 21. **What item 12 left, and what it found** (site-last-b; src/SiteBuild.java, site/template.html,
     site/page.css). Decided there, for Justin to overrule: the every-count table keeps 80% and 1-8
     and says so, since the chart above it switches; the controls are cut card, spread and wonging,

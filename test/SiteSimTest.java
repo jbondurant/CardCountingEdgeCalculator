@@ -324,6 +324,35 @@ public class SiteSimTest {
         }
     }
 
+    /**
+     * D5's line for the split cells, which the simulator writes since ae283e4 (sim/QUESTIONS.md item
+     * 28): with none compared it passes on a bundle with no full-play file, as part 1's and the page
+     * look's first-decision bundle are, and fails on one with a full-play file (SIM_CHECK.md section
+     * 5); a split cell or another file's cell there that differs fails it. Before 19 October 2026
+     * the reader took its first "0 of 0" for a count short of its total, so every run of the new
+     * simulator on a bundle without a full-play file was refused, SimReadsExportTest's among them.
+     */
+    @Test
+    public void theSplitCellsLineOfD5PassesWithNoneOnlyWhereNoFileIsFull() throws Exception {
+        String none = "D5\tsplit cells, the full-play files' columns of 0 split lines: 0 of 0 equal to lookups.tsv's; "
+                + "0 mismatches; the other files' columns there, each -: 0 of 0 equal; the bundle holds no file of scope full\n";
+        String some = "D5\tsplit cells, the full-play files' columns of 1000 split lines: 2000 of 2000 equal to lookups.tsv's; "
+                + "0 mismatches; the other files' columns there, each -: 5000 of 5000 equal; the bundle holds a file of scope full\n";
+        String[][] cases = {
+                {none, ""},
+                {some, ""},
+                {none.replace("no file", "a file"), "D5"},
+                {some.replace("2000 of 2000 equal to lookups.tsv's; 0 mismatches", "1999 of 2000 equal to lookups.tsv's; "
+                        + "1 mismatches"), "D5"},
+                {some.replace("5000 of 5000", "4999 of 5000"), "D5"},
+                {some.replace("a file", "no file"), "D5"}};
+        for (String[] c : cases) {
+            Path checks = Files.write(dir.resolve("checks.txt"), (CHECKS + c[0]).getBytes(StandardCharsets.UTF_8));
+            List<String> failed = SiteSim.failedChecks(checks);
+            assertEquals(c[1].isEmpty() ? List.of() : List.of(c[1]), SiteSim.checkNames(failed), c[0] + failed);
+        }
+    }
+
     /** Two parts, three runs: part 2's tests split over two bundles' runs (the replay's and the page look's), the rule over their union. */
     @Test
     public void thePartsAndBundlesAreTakenTogether() throws Exception {

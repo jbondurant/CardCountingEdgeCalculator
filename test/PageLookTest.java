@@ -4,10 +4,12 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectOutputStream;
 import java.io.PrintStream;
+import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,6 +29,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * run C's collector, the registered rows' wide figures, the first-decision and full-play exports
  * (their round trips passed), the replay's wide.ser and run D's collector. A further look without
  * --resume is refused, the ledger holding the page look already.
+ *
+ * The full-play export ranks deals two ways here (INTEGRATION.md open item 1): F1's fold 0 fit
+ * stops at its pass cap, so the play its splits were valued under ranks deals otherwise than its
+ * refit, and the files carry split lines (SHOE_SPEC.md B2.4), 31 in fold 0 and 1 in fold 1. They
+ * are held to the replayed strategies apart from Refit: each file's first lines to the replay's
+ * fit ranked, the ranking its split hands read to the strategy's walked one as a hook kept it.
+ * On the values, kept by another hook, the row checks as the export checks it, and with fold 0's
+ * split hands given the refit's ranking, as before the split lines, it is refused by the splits
+ * the last round valued, played again from the file. Planted on 19 October 2026 in scratch
+ * copies of the code, each failing the look's test: build refusing a fold whose two rankings
+ * differ, as it did before the split lines (the full-play export writes no bundle); and after the
+ * review of 134da21, Refit's walked ranking the refit's, the one ranking of before the split lines
+ * (the export refused, fold 0: a split of 8s against an ace in group 0, Split offered, S by the
+ * file and P as valued), the splits the last round valued not played again (0 played), and the
+ * fingerprints played against worked out from Refit.walked (fold 0's split hands given the
+ * refit's ranking, nothing refused).
  */
 public class PageLookTest {
 
@@ -37,8 +55,49 @@ public class PageLookTest {
             + "\"searchCommit\": \"abc\", ";
     static final String CELLS = "\"cells\": {\"flat\": [\"F1\"], \"same\": [\"F1\"], \"own\": [\"F1\"]}, ";
 
-    /** The fixture's shoes: enough that the full-play fit ranks every deal one way (open item 1), as FullPlayExportTest's does. */
+    /**
+     * The fixture's shoes. On these 12 F1's full play ranks a deal two ways (INTEGRATION.md open
+     * item 1), so its export has split lines (SHOE_SPEC.md B2.4); FullPlayExportTest's 12 shoes of
+     * another seed rank every deal one way.
+     */
     static final int SHOES = 12;
+
+    /**
+     * Keeps, from the 80% fold item, F1's full-play row and two refits of its strategies made
+     * while they hold their last round's values: for the checks of a file planted where the two
+     * rankings differ, which need the values.
+     */
+    static final class Refits implements FullIndexReplay.Hook {
+        SystemScorer scorer;
+        SystemScorer.Entry row;
+        final StrategyExport.Refit[] refit = new StrategyExport.Refit[2];
+
+        @Override
+        public String name() {
+            return "refits";
+        }
+
+        @Override
+        public Serializable after(FullIndexReplay.Item item, SystemScorer s, SystemScorer.Result scored,
+                                  List<FullIndexFit.Strategy> two) {
+            for (SystemScorer.Entry e : scored.fullEntries) {
+                if (!item.halves && item.pen == 2 && e.name.equals("F1, full play")) {
+                    scorer = s;
+                    row = e;
+                    for (int k = 0; k < refit.length; k++) {
+                        refit[k] = new StrategyExport.Refit(s, 2, two.toArray(new FullIndexFit.Strategy[0]));
+                    }
+                }
+            }
+            return null;
+        }
+    }
+
+    /** F1's full-play row at 80% built from a refit and checked on its values, as the replay's export checks it. */
+    static StrategyExport.Report checked(Refits k, StrategyExport.Refit rf) {
+        StrategyExport.Built b = StrategyExport.build(k.scorer, rf, k.row, new String[]{"same-8"});
+        return StrategyExport.checkFull(k.scorer.st, StrategyExport.chartArray(), b, rf, StrategyExport.Expect.of(k.row, 2));
+    }
 
     /** MainFileLookTest's repository, on a main-seed synthetic file of the shoes given. */
     static MainFileLookTest.Repo repo(Path dir, String registration, int shoes) throws Exception {
@@ -154,10 +213,14 @@ public class PageLookTest {
         }
         r.commit("the page look");
 
-        // Resumed with the true save: no second line, and every output made.
+        // Resumed with the true save: no second line, and every output made. The ranking hook keeps
+        // each replayed strategy's walked ranking (t.now.ranking), as the strategy holds it.
         ByteArrayOutputStream text = new ByteArrayOutputStream();
-        PageLook.Made made = PageLook.run(options(r, saved, step8, out, true), "test",
-                new PrintStream(text, true, "UTF-8"));
+        PageLook.Options resumed = options(r, saved, step8, out, true);
+        resumed.hooks.add(new FullIndexReplayTest.RankingHook());
+        Refits refits = new Refits();
+        resumed.hooks.add(refits);
+        PageLook.Made made = PageLook.run(resumed, "test", new PrintStream(text, true, "UTF-8"));
         assertEquals(lines + 1, r.ledgerLines(), "a resumed look writes no line");
         String log = text.toString("UTF-8");
         assertTrue(log.contains("every figure step 7's to the bit"), log);
@@ -167,15 +230,78 @@ public class PageLookTest {
         assertEquals(List.of(), WideReport.check(w));
         assertTrue(w.rows.stream().anyMatch(x -> x.name.equals("F1")), "the registered rows' wide figures");
         assertTrue(Files.isRegularFile(made.exportFirst.resolve("manifest.sha256")), "the first-decision export passed");
-        // The full-play export passes, or is refused for a row that ranks a deal two ways (open item 1,
-        // which this fixture's F1 meets), and then only the bundle is missing.
-        if (made.exportFullRefused == null) {
-            assertTrue(Files.isRegularFile(made.exportFull.resolve("manifest.sha256")), "the full-play export passed");
-        } else {
-            assertTrue(made.exportFullRefused.contains("a file has one ranking (B2.4)"), made.exportFullRefused);
-            assertFalse(Files.exists(made.exportFull));
-            assertTrue(log.contains("open item 1"), log);
+        // The full-play export passes. This fixture's F1 full play ranks deals two ways (INTEGRATION.md
+        // open item 1): its split hands were valued under the walked play's ranking where the dealt
+        // hand plays the refit's, so its files carry split lines (SHOE_SPEC.md B2.4), and lookups.tsv
+        // carries B8's 1,000 split lines. The export's round trip played every split the last round
+        // valued again from the files.
+        assertNull(made.exportFullRefused, made.exportFullRefused);
+        assertTrue(Files.isRegularFile(made.exportFull.resolve("manifest.sha256")), "the full-play export passed");
+        java.util.regex.Matcher played = java.util.regex.Pattern.compile("export: F1, full play at 80% checked on its "
+                + "values, \\d+ values compared, (\\d+) splits the last round valued played again").matcher(log);
+        assertTrue(played.find() && Integer.parseInt(played.group(1)) > 0, log);
+        // Each full file held to the strategies the replay scored, apart from Refit: its first lines
+        // the replayed fit's ranking whole, the ranking its split hands read the strategy's walked
+        // one as the ranking hook kept it, and a split line wherever the two differ: 31 in fold 0,
+        // whose fit stopped at its pass cap, and 1 in fold 1, which converged.
+        ScoringStates st = FullIndexPilot.load(r.main, SHOES);
+        int[] differ = new int[2];
+        int fullFiles = 0;
+        for (int k = 0; k < made.full.items.size(); k++) {
+            FullIndexReplay.Record rec = made.full.record(k);
+            @SuppressWarnings("unchecked")
+            List<PlayerMove[][][]> walked = (List<PlayerMove[][][]>) rec.kept.get("ranking");
+            for (SystemScorer.Entry row : rec.result.fullEntries) {
+                if (!row.name.equals("F1, full play")) {
+                    continue;
+                }
+                assertEquals(2, rec.item.pen);
+                for (int f = 0; f < 2; f++) {
+                    ExportBundle.Strategy s = ExportBundle.readStrategy(made.exportFull.resolve(
+                            ExportBundle.Strategy.fileName(row.name, 80, f)));
+                    PlayerMove[][][] ranked = FullIndexFit.rankings(st, StateRun.montreal(), rec.result.fullFirst[2][f]);
+                    assertEquals(ranked.length, s.lo.length);
+                    for (int g = 0; g < s.lo.length; g++) {
+                        for (int i = 0; i < Deals.COUNT; i++) {
+                            if (Deals.playerNatural(i)) {
+                                continue;
+                            }
+                            assertArrayEquals(ranked[g][i], s.first[g][i], "fold " + f + ", first " + g + " " + i);
+                            assertArrayEquals(walked.get(f)[g][i], s.splitRanking(g, i), "fold " + f + ", split hands' "
+                                    + g + " " + i);
+                            differ[f] += Arrays.equals(ranked[g][i], walked.get(f)[g][i]) ? 0 : 1;
+                        }
+                    }
+                    assertEquals(differ[f], s.splitLines(), "fold " + f);
+                    fullFiles++;
+                }
+            }
         }
+        assertEquals(2, fullFiles, "F1's full play at 80%, both folds");
+        assertArrayEquals(new int[]{31, 1}, differ, "the cells F1's folds rank two ways");
+        assertTrue(log.contains("export: F1 at 80%, fold 0: 31 split lines, the first group 0, deal 8 8 1: S H D P by the "
+                + "refit (its first line), P S H D by the walked play (its split line)\n"), log);
+        assertTrue(log.contains("export: F1 at 80%, fold 1: 1 split line, the first group 0, deal 10 10 10: S P H D by "
+                + "the refit (its first line), S H D P by the walked play (its split line)\n"), log);
+        assertTrue(log.contains("  F1 80% fold 0: 6 passes, stopped at the pass cap of 6, pass 0's play kept, 1 clean-ups "
+                + "(1 later cells flipped); refitDiffers 29\n"), log);
+        assertTrue(log.contains("  F1 80% fold 1: 4 passes, converged; refitDiffers 0\n"), log);
+        long splitLines = ExportBundle.readLookups(made.exportFull.resolve("lookups.tsv"), true).lines.stream()
+                .filter(l -> l.split).count();
+        assertEquals(1000, splitLines);
+
+        // On these values, as the export checks a row: as written it passes. With fold 0's split
+        // hands given the refit's ranking, as before the split lines (its walked ranking set to the
+        // refit's, so no split line is written and every check that reads Refit.walked agrees), it
+        // is refused, by the splits the last round valued, played again from the file.
+        assertTrue(checked(refits, refits.refit[0]).splits > 0);
+        StrategyExport.Refit one = refits.refit[1];
+        one.walked(0, one.ranking[0]);
+        assertEquals(0, one.rankingDiffers[0]);
+        IllegalStateException x = assertThrows(IllegalStateException.class, () -> checked(refits, one));
+        assertTrue(x.getMessage().contains("F1, full play at 80%, fold 0: a split of ") && x.getMessage().contains(
+                "and were valued playing"), x.getMessage());
+
         assertTrue(Files.isRegularFile(made.replay.resolve("wide.ser")));
         KeyEdges.Collector d = KeyEdges.Collector.read(made.runD.resolve(ReplayHooks.Sink.FILE));
         assertTrue(d.has("F1, full play", 2), "run D holds F1's full-play values");

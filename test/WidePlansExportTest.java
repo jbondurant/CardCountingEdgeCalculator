@@ -244,7 +244,7 @@ public class WidePlansExportTest {
                 own.add(c);
             }
         }
-        List<CountKeys.Count> keyCounts = StrategyExport.keyCounts(new ArrayList<>(), own);
+        List<CountKeys.Count> keyCounts = StrategyExport.keyCounts(CountKeys.catalog(), own);
         assertNotNull(StrategyExport.roundTrip(bundle, st, StateStore.header(states), expected, keyCounts, full),
                 "the bundle as written passes");
         RuntimeException e = assertThrows(RuntimeException.class, () -> StrategyExport.roundTrip(dir, st,

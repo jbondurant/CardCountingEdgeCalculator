@@ -168,11 +168,18 @@ final class SiteSim {
         return out;
     }
 
+    /** checks.txt's second D5 line, as sim.Sim p2 writes it since ae283e4. */
+    static final Pattern SPLIT_CELLS = Pattern.compile("split cells, the full-play files' columns of (\\d+) split lines: "
+            + "(\\d+) of (\\d+) equal to lookups\\.tsv's; (\\d+) mismatches; the other files' columns there, each -: "
+            + "(\\d+) of (\\d+) equal; the bundle holds (a|no) file of scope full");
+
     /**
      * checks.txt as sim.Sim p2 writes it: the D checks that failed, each with its line (nothing when
      * all of D1, D2, D4 and D5 passed); a check missing, not run, with a mismatch or a count short
      * of its total, D1's round starts other than A8's, D2's catalog counts missing, or no line for
-     * D3 is a failure.
+     * D3 is a failure. D5's line for the split cells (SHOE_SPEC.md B8, counted apart as sim/QUESTIONS.md
+     * item 28 words them) passes with none compared on a bundle with no full-play file, and fails
+     * with none on a bundle with one (SIM_CHECK.md section 5).
      */
     static List<String> failedChecks(Path checks) throws IOException {
         if (!Files.isRegularFile(checks)) {
@@ -197,8 +204,13 @@ final class SiteSim {
             Matcher x = mismatches.matcher(f[1]);
             Matcher y = a8.matcher(f[1]);
             boolean ok;
+            Matcher s = SPLIT_CELLS.matcher(f[1]);
             if (f[1].startsWith("not run")) {
                 ok = false;
+            } else if (f[0].equals("D5") && s.matches()) {
+                long compared = Long.parseLong(s.group(3));
+                ok = s.group(2).equals(s.group(3)) && s.group(4).equals("0") && s.group(5).equals(s.group(6))
+                        && (s.group(7).equals("a") ? compared > 0 : compared == 0);
             } else if (y.find()) {
                 ok = y.group(1).equals(y.group(2));
             } else if (m.find() && x.find()) {

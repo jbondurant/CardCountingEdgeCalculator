@@ -67,7 +67,7 @@ tree store, every round builds every tree again.
 ## What is given up for good once the intermediates are deleted
 
 - **The page look cannot be made again.** PageLook refuses a second look on the main file, by
-  design (PageLook.java:202). Its outputs (run C, run D, its wide-plan files) would be gone. The
+  design (PageLook.java:204). Its outputs (run C, run D, its wide-plan files) would be gone. The
   key-edge tables made from them stay, as results, but could never be rebuilt.
 - **The hashes the page cites for deleted files can never be checked again.** Each `.ser` file
   records how long its own steps took, so even a perfect rerun writes different bytes. The

@@ -18,13 +18,27 @@ import java.util.List;
  * appear once, the {@code first} and {@code later} lines must be exactly the deals and spots B2.1
  * lists in its order, and the file must end with {@code end}. A file that is not whole, or that
  * was written to another reading of the format, is refused rather than half used.
+ *
+ * <p>A file of scope {@code full} may also hold {@code split} lines (B2.1, B2.4, B6 item 12; added
+ * to SHOE_SPEC.md on 18 October 2026): the ranking its split hands read for a group and deal, given
+ * only where it is not the {@code first} line's. A split hand's first decision reads the group's
+ * {@code split} line for its deal if the file has one, else the {@code first} line, through
+ * {@link #splitFirstMove}, which check D5 ({@link Lookups}) calls too; the group is the deal's play
+ * key's, or in the variant whose count moves, the moving key's. The dealt hand never reads a
+ * {@code split} line: its first move is the {@code first} line's in {@link Play#choose}, in
+ * {@link Play#firstMoveAt} and so in {@link Table}'s playouts shared by first move. A file with no
+ * {@code split} line reads and plays exactly as it did before the lines existed. The reader
+ * refuses a {@code split} line that B2.1 refuses: in a file not of scope {@code full}, for a group
+ * outside 0 to G − 1, a deal with p1 above p2 or a rank outside 1 to 10, the natural (1, 10), a
+ * line not after the last one in {@code first} order, moves other than its {@code first} line's
+ * each as many times, or that line's own order.
  */
 public final class Strategy {
 
     /** The keywords of B2.1, in the order their lines appear. */
     static final List<String> ORDER = List.of("format", "row", "scope", "pen", "fold", "playcount", "tags",
             "scale", "mode", "divisor", "decksum", "betcount", "bettags", "betdecksum", "ace", "groups", "group",
-            "first", "insure", "lgroups", "lgroup", "later", "plan", "bet", "unseen", "end");
+            "first", "split", "insure", "lgroups", "lgroup", "later", "plan", "bet", "unseen", "end");
     static final int DEALS = 550;
     static final int SPOTS = 110;
 
@@ -41,6 +55,8 @@ public final class Strategy {
     final int[] groupHi;
     /** firstMoves[g][deal]: the deal's legal first moves, best first; null for the naturals. */
     final byte[][][] firstMoves;
+    /** splitMoves[g][deal]: the ranking split hands read where the file has a split line, else null (B2.4). */
+    final byte[][][] splitMoves;
     /** insure[g][deal] for the ace-up deals listed. */
     final boolean[][] insure;
     final int[] laterHi;
@@ -113,6 +129,7 @@ public final class Strategy {
                 plants.on(Plants.TRUNCATE));
         this.groupHi = b.groupHi;
         this.firstMoves = b.firstMoves;
+        this.splitMoves = b.splitMoves;
         this.insure = b.insure;
         this.laterHi = b.laterHi;
         this.laterStand = b.laterStand;
@@ -146,6 +163,28 @@ public final class Strategy {
             }
         }
         return hi.length - 1;
+    }
+
+    /**
+     * B2.4: a split hand's first decision on (r, x), r the split rank and x the card it drew, in
+     * first-decision group g, scope full. An ace and a ten stand. Otherwise the moves of the group's
+     * {@code split} line for the deal (min(r, x), max(r, x), up) if the file has one, else of its
+     * {@code first} line, in order, and the first that is legal here; Stand if none is. legal is
+     * the hand's legal moves besides Stand, as Round's L_ bits. A round's split hands
+     * ({@link Play#choose}) and check D5's split cells ({@link Lookups}) both answer through this.
+     */
+    int splitFirstMove(int g, int r, int x, int up, int legal) {
+        if (r == 1 && x == 10 || r == 10 && x == 1) {
+            return Round.STAND;
+        }
+        int deal = deal(Math.min(r, x), Math.max(r, x), up);
+        byte[] ranking = splitMoves[g][deal] != null ? splitMoves[g][deal] : firstMoves[g][deal];
+        for (byte m : ranking) {
+            if (m == Round.STAND || (legal & (1 << (m - 1))) != 0) {
+                return m;
+            }
+        }
+        return Round.STAND;
     }
 
     /** The plan's bet line at a bet key, the planted bug bet-key-plus-one applied. */
@@ -250,17 +289,8 @@ public final class Strategy {
             // A split hand: the count frozen at the deal's play key, or moving in the variant.
             int key = moving ? keys.playKey(rc, depth, d.seen, d.seenAll) : dealKey(d);
             if (d.first) {
-                int r = d.c1;
-                int x = d.c2;
-                if (r == 1 && x == 10 || r == 10 && x == 1) {
-                    return Round.STAND;
-                }
-                for (byte m : firstMoves[group(groupHi, key)][deal(Math.min(r, x), Math.max(r, x), d.up)]) {
-                    if (m == Round.STAND || (d.legal & (1 << (m - 1))) != 0) {
-                        return m;
-                    }
-                }
-                return Round.STAND;
+                // c1 is the split rank, c2 the card this hand drew: its split line, else its first line.
+                return splitFirstMove(group(groupHi, key), d.c1, d.c2, d.up, d.legal);
             }
             if (contested(d.total, d.soft)) {
                 boolean stand = laterStand[group(laterHi, key)][spot(d.total, d.soft, d.up)];
@@ -293,6 +323,7 @@ public final class Strategy {
         int ace;
         int[] groupHi;
         byte[][][] firstMoves;
+        byte[][][] splitMoves;
         boolean[][] insure;
         int[] laterHi;
         boolean[][] laterStand;
@@ -308,6 +339,7 @@ public final class Strategy {
         int laterGroupsRead = 0;
         int laterRead = 0;
         int lastInsure = -1;
+        int lastSplit = -1;
         List<String[]> pendingPlans = new ArrayList<>();
         List<List<double[]>> bets = new ArrayList<>();
         boolean ended = false;
@@ -374,6 +406,7 @@ public final class Strategy {
                         need(f, 2, g >= 1, "groups at least 1");
                         b.groupHi = new int[g];
                         b.firstMoves = new byte[g][DEALS][];
+                        b.splitMoves = new byte[g][DEALS][];
                         b.insure = new boolean[g][DEALS];
                     }
                     case "group" -> {
@@ -385,6 +418,7 @@ public final class Strategy {
                         b.groupHi[groupsRead++] = v[2];
                     }
                     case "first" -> readFirst(b, f, firstRead++);
+                    case "split" -> lastSplit = readSplit(b, f, lastSplit);
                     case "insure" -> lastInsure = readInsure(b, f, lastInsure);
                     case "lgroups" -> {
                         int l = ints(f, 1)[0];
@@ -523,6 +557,16 @@ public final class Strategy {
                 || Integer.parseInt(f[3]) != deal[1] || Integer.parseInt(f[4]) != deal[2]) {
             throw new IllegalArgumentException("first " + g + " " + deal[0] + " " + deal[1] + " " + deal[2] + " and moves");
         }
+        byte[] moves = moves(f);
+        // The dealt hand's first move must be legal there: Stand, Hit and Double always, Split on a pair.
+        if (moves[0] == Round.SURRENDER || moves[0] == Round.SPLIT && deal[0] != deal[1]) {
+            throw new IllegalArgumentException("a first move legal on the dealt hand");
+        }
+        b.firstMoves[g][deal(deal[0], deal[1], deal[2])] = moves;
+    }
+
+    /** The moves of a first or split line, its fields from the sixth on. */
+    private static byte[] moves(String[] f) {
         byte[] moves = new byte[f.length - 5];
         for (int i = 0; i < moves.length; i++) {
             int m = f[i + 5].length() == 1 ? Round.MOVES.indexOf(f[i + 5].charAt(0)) : -1;
@@ -531,11 +575,55 @@ public final class Strategy {
             }
             moves[i] = (byte) m;
         }
-        // The dealt hand's first move must be legal there: Stand, Hit and Double always, Split on a pair.
-        if (moves[0] == Round.SURRENDER || moves[0] == Round.SPLIT && deal[0] != deal[1]) {
-            throw new IllegalArgumentException("a first move legal on the dealt hand");
+        return moves;
+    }
+
+    /**
+     * A split line (B2.1): scope full only; a group and deal that have a first line; after the last
+     * split line in first-line order (by g, then up-card, then p1, then p2), so at most one a deal;
+     * that first line's moves, each as many times, in another order. Returns the line's place.
+     */
+    private static int readSplit(Builder b, String[] f, int last) {
+        if (!"full".equals(b.scope)) {
+            throw new IllegalArgumentException("split lines only in scope full");
         }
-        b.firstMoves[g][deal(deal[0], deal[1], deal[2])] = moves;
+        if (f.length < 6 || b.groupHi == null) {
+            throw new IllegalArgumentException("split g p1 p2 up and moves, after groups");
+        }
+        int g = Integer.parseInt(f[1]);
+        int p1 = Integer.parseInt(f[2]);
+        int p2 = Integer.parseInt(f[3]);
+        int up = Integer.parseInt(f[4]);
+        if (g < 0 || g >= b.groupHi.length) {
+            throw new IllegalArgumentException("a split line's group, 0 to G - 1");
+        }
+        if (p1 < 1 || p1 > p2 || p2 > 10 || up < 1 || up > 10) {
+            throw new IllegalArgumentException("a split line's deal, p1 <= p2 and up, ranks 1 to 10");
+        }
+        if (p1 == 1 && p2 == 10) {
+            throw new IllegalArgumentException("no split line for the natural (1, 10), which has no first line");
+        }
+        int place = g * DEALS + deal(p1, p2, up);
+        if (place <= last) {
+            throw new IllegalArgumentException("split lines in first-line order, by g, then up-card, then p1, then p2, each deal once");
+        }
+        byte[] first = b.firstMoves[g][deal(p1, p2, up)];
+        if (first == null) {
+            throw new IllegalArgumentException("a split line for a deal whose first line was read");
+        }
+        byte[] moves = moves(f);
+        byte[] sortedFirst = first.clone();
+        byte[] sortedMoves = moves.clone();
+        Arrays.sort(sortedFirst);
+        Arrays.sort(sortedMoves);
+        if (!Arrays.equals(sortedFirst, sortedMoves)) {
+            throw new IllegalArgumentException("a split line listing its first line's moves, each as many times");
+        }
+        if (Arrays.equals(first, moves)) {
+            throw new IllegalArgumentException("a split line in an order other than its first line's");
+        }
+        b.splitMoves[g][deal(p1, p2, up)] = moves;
+        return place;
     }
 
     private static int readInsure(Builder b, String[] f, int last) {

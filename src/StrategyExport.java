@@ -46,7 +46,10 @@ import java.util.TreeMap;
  * held (checkFull), and the bundle is written from the replay's records, its round trip holding
  * each full-play section to the one checked. Given the strategies themselves (Wanted with a full
  * play), export() round-trips every state on the values. A full-play entry given without its
- * strategies is refused rather than exported with first-decision play under its name.
+ * strategies is refused rather than exported with first-decision play under its name. Where a
+ * fold's refit ranks a deal otherwise than the play its last round walked, whose ranking its
+ * splits were valued under, the file gives split hands that ranking in a split line (SHOE_SPEC.md
+ * B2.1, B2.4), and the round trip holds both rankings to the engine's.
  *
  * Usage, from the repository's root (one thread; about the memory ComparisonReport needs to hold
  * the state file):
@@ -224,7 +227,21 @@ final class StrategyExport {
         final SystemScorer.PlayValues[] values;
         final SystemScorer.Groups[] later;
         final boolean[][] stands;
-        /** Full play: per fold, the (group, deal) cells the scored fit ranks otherwise than the play the last round walked, and the first. */
+        /**
+         * Full play only: per fold, [g][deal], the ranking of the play the strategy's last round
+         * walked (now, SHOE_SPEC.md B2.4's kept play), which every split it valued was played by.
+         */
+        final PlayerMove[][][][] walked = new PlayerMove[2][][][];
+        /**
+         * Full play only: per fold, every split the strategy's last round valued, with its
+         * fingerprint (FullIndexFit.valuedSplits), taken from the strategy as it is, not
+         * from walked: what the files' split hands must play, wherever a Split value was worked out.
+         */
+        final List<List<FullIndexFit.ValuedSplit>> valued = new ArrayList<>();
+        /**
+         * Full play: per fold, the (group, deal) cells the refit ranks otherwise than the walked
+         * play, each a split line of the file (B2.1), and the first of them in words.
+         */
         final int[] rankingDiffers = new int[2];
         final String[] firstDifference = new String[2];
 
@@ -252,11 +269,19 @@ final class StrategyExport {
          * (FullIndexFit.Strategy, as the replay of PLAN_COMPUTE.md 6.1 holds them): each fold's
          * play fitted again from the strategy's Hit and Split values, as SystemScorer.score does
          * for the full-play entries, with the insurance in the same groups, the moves ranked from
-         * that fit, and the strategy's later groups and the later play its last round walked
-         * (now). A split hand reads the ranked moves too, and the values were worked out with the
-         * ranking of the play the last round walked; the cells the refit ranks otherwise are
-         * counted (rankingDiffers), and build refuses a fold with any, since one file has one
-         * ranking (B2.4).
+         * that fit, and the strategy's later groups, the later play its last round walked (now)
+         * and that play's ranking (walked). The dealt hand plays the refit's ranking; the Split
+         * values were worked out with split hands playing the walked one (B2.4), and the cells
+         * where the two differ are the file's split lines (rankingDiffers).
+         *
+         * The walked SplitPlay of a part took its group from the Strategy's own groups and table
+         * (FullIndexFit's record), while the file's group lines are the refit's and the round trip
+         * reads both rankings at the group the file gives; so a fold whose Strategy groups or table
+         * are not the refit's is refused here (Refused), as a same-count pair of groups with other
+         * bounds would pass every other check (SHOE_SPEC.md B7). Each split the last round valued
+         * is kept with its fingerprint (valued), for the round trip to play again from the files.
+         * Anything else wrong with the strategies given is a mistake of the caller's and throws as
+         * such.
          */
         Refit(SystemScorer scorer, int p, FullIndexFit.Strategy[] two) {
             if (two.length != 2 || two[0] == null || two[1] == null) {
@@ -289,24 +314,94 @@ final class StrategyExport {
                 if (stands[f].length != later[f].count() * FullIndexFit.CELLS) {
                     throw new IllegalStateException(t + ": " + stands[f].length + " later cells for " + later[f].count() + " groups");
                 }
-                PlayerMove[][][] walked = t.now.ranking;
-                for (int g = 0; g < ranking[f].length; g++) {
-                    for (int i = 0; i < Deals.COUNT; i++) {
-                        if (!Deals.playerNatural(i) && !Arrays.equals(ranking[f][g][i], walked[g][i])) {
-                            if (rankingDiffers[f]++ == 0) {
-                                firstDifference[f] = t + ": group " + g + ", deal " + i + " is ranked "
-                                        + Arrays.toString(ranking[f][g][i]) + " by the scored fit and "
-                                        + Arrays.toString(walked[g][i]) + " by the play its last round walked";
-                            }
+                if (!Arrays.equals(t.groups.lo, plays[f].groups.lo) || !Arrays.equals(t.groups.hi, plays[f].groups.hi)
+                        || !Arrays.equals(t.table, plays[f].table)) {
+                    throw new Refused(t + ": the strategy's groups " + Arrays.toString(t.groups.hi)
+                            + " or their table are not the refit's " + Arrays.toString(plays[f].groups.hi)
+                            + ", so its split hands were not played in the groups the file gives (B7)");
+                }
+                walked(f, t.now.ranking);
+                valued.add(FullIndexFit.valuedSplits(t));
+            }
+        }
+
+        /**
+         * A fold B7 refuses to export, its strategy being as it should: groups or a table not the
+         * refit's, or a walked ranking of another number of groups. The replay's export keeps it
+         * as the failure of each row of the item and goes on (ReplayExport.after).
+         */
+        static final class Refused extends IllegalStateException {
+            private static final long serialVersionUID = 1L;
+
+            Refused(String message) {
+                super(message);
+            }
+        }
+
+        /**
+         * Fold f's walked ranking, [g][deal], and the cells where the refit ranks otherwise counted
+         * again; refused with another number of groups than the refit's. The constructor gives the
+         * strategy's own; a test gives one made by hand, to export a fold whose rankings differ.
+         */
+        void walked(int f, PlayerMove[][][] table) {
+            if (table.length != ranking[f].length) {
+                throw new Refused(count.name + " at " + SystemScorer.PENETRATIONS[p] + ", fold " + f
+                        + ": the walked play ranks " + table.length + " groups, the refit " + ranking[f].length);
+            }
+            walked[f] = table;
+            rankingDiffers[f] = 0;
+            firstDifference[f] = null;
+            for (int g = 0; g < table.length; g++) {
+                for (int i = 0; i < Deals.COUNT; i++) {
+                    if (!Deals.playerNatural(i) && !Arrays.equals(ranking[f][g][i], table[g][i])) {
+                        if (rankingDiffers[f]++ == 0) {
+                            firstDifference[f] = cell(g, i) + ": " + words(ranking[f][g][i]) + " by the refit (its "
+                                    + "first line), " + words(table[g][i]) + " by the walked play (its split line)";
                         }
                     }
                 }
             }
         }
 
+        /**
+         * Fold f's split lines (B2.1), [g][deal]: the walked ranking where it is not the refit's,
+         * null elsewhere (B7).
+         */
+        PlayerMove[][][] splitLines(int f) {
+            PlayerMove[][][] out = new PlayerMove[ranking[f].length][Deals.COUNT][];
+            for (int g = 0; g < out.length; g++) {
+                for (int i = 0; i < Deals.COUNT; i++) {
+                    if (!Deals.playerNatural(i) && !Arrays.equals(ranking[f][g][i], walked[f][g][i])) {
+                        out[g][i] = walked[f][g][i].clone();
+                    }
+                }
+            }
+            return out;
+        }
+
+        /** The log's line of fold f's split lines: how many, and the first of them. */
+        String splitWords(int f) {
+            return "fold " + f + ": " + rankingDiffers[f] + " split line" + (rankingDiffers[f] == 1 ? "" : "s")
+                    + (rankingDiffers[f] == 0 ? "" : ", the first " + firstDifference[f]);
+        }
+
         boolean full() {
             return values != null;
         }
+    }
+
+    /** A (group, deal) cell in words. */
+    static String cell(int g, int deal) {
+        return "group " + g + ", deal " + Deals.P1[deal] + " " + Deals.P2[deal] + " " + Deals.UP[deal];
+    }
+
+    /** A ranked list of moves as a file writes them: B1's letters, a space between. */
+    static String words(PlayerMove[] moves) {
+        StringBuilder b = new StringBuilder();
+        for (PlayerMove m : moves) {
+            b.append(b.length() > 0 ? " " : "").append(ExportBundle.letter(m));
+        }
+        return b.toString();
     }
 
     /** One exported row at one penetration: its two fold files, its states.bin section and the figures it must give. */
@@ -332,13 +427,6 @@ final class StrategyExport {
         if (e.fullPlay != rf.full()) {
             throw new IllegalArgumentException(e.name + (e.fullPlay ? " plays full: it is exported from its fold "
                     + "strategies' values (the replay's export hook)" : " plays first decisions, not the full play given"));
-        }
-        for (int f = 0; e.fullPlay && f < 2; f++) {
-            if (rf.rankingDiffers[f] > 0) {
-                throw new IllegalStateException(e.name + ", fold " + f + ": " + rf.rankingDiffers[f] + " (group, deal) cells "
-                        + "are ranked by the scored fit otherwise than the split hands were valued with, the first "
-                        + rf.firstDifference[f] + "; a file has one ranking (B2.4)");
-            }
         }
         CountKeys.Count play = rf.count;
         CountKeys.Count bet = e.count;
@@ -398,6 +486,9 @@ final class StrategyExport {
             s.hi = fp.groups.hi.clone();
             s.first = e.bettingOnly ? null : rf.ranking[f];
             if (e.fullPlay) {
+                // Split hands were valued under the walked play's ranking: its own lines where the
+                // refit's, which the dealt hand plays, ranks a deal otherwise (B2.1, B2.4).
+                s.split = rf.splitLines(f);
                 s.laterLo = rf.later[f].lo.clone();
                 s.laterHi = rf.later[f].hi.clone();
                 s.stands = new boolean[s.laterLo.length][ExportBundle.CELLS];
@@ -455,7 +546,8 @@ final class StrategyExport {
             }
             out.fold[f] = s;
             out.lookup[f] = new Lookup(s.fileName(), play, pen.cut, fp.groups, e.bettingOnly ? null : fp.fit.move,
-                    rf.insuranceSum[f], e.fullPlay ? rf.later[f] : null, e.fullPlay ? rf.stands[f] : null);
+                    rf.insuranceSum[f], e.fullPlay ? rf.later[f] : null, e.fullPlay ? rf.stands[f] : null,
+                    e.fullPlay ? rf.walked[f] : null, scorer.rules());
         }
         out.section = section(st, pen, rf, e, bk, units, labels, out.exit, lowest);
         return out;
@@ -682,15 +774,19 @@ final class StrategyExport {
         for (int g = 0; g < s.lo.length; g++) {
             line(b, "group", g, s.lo[g], s.hi[g]);
         }
-        if (s.scope != ExportBundle.Scope.BETTING) {
+        for (String word : new String[]{"first", "split"}) {
+            PlayerMove[][][] table = word.equals("first") ? s.first : s.split;
+            if (s.scope == ExportBundle.Scope.BETTING || table == null) {
+                continue;
+            }
             for (int g = 0; g < s.lo.length; g++) {
                 for (int i = 0; i < Deals.COUNT; i++) {
-                    if (Deals.playerNatural(i)) {
+                    PlayerMove[] moves = table[g][i];
+                    if (Deals.playerNatural(i) || moves == null && word.equals("split")) {
                         continue;
                     }
-                    PlayerMove[] moves = s.first[g][i];
                     Object[] f = new Object[5 + moves.length];
-                    f[0] = "first";
+                    f[0] = word;
                     f[1] = g;
                     f[2] = Deals.P1[i];
                     f[3] = Deals.P2[i];
@@ -997,7 +1093,9 @@ final class StrategyExport {
      * with, never from the file: the play key's parts from CountKeys, the group from Groups.of, the
      * dealt hand's first move from the fit's moves (the chart's for a betting row), insurance from
      * the insurance sums, and for full play the later group and the stand-or-hit of the later
-     * play kept. lookups.tsv holds these, and the round trip holds them to what the file says.
+     * play kept, and each split hand's first decision in every group as the walked play's
+     * SplitPlay answers it. lookups.tsv holds these, and the round trip holds them to what the
+     * file says.
      */
     static final class Lookup {
         final String file;
@@ -1011,9 +1109,13 @@ final class StrategyExport {
         /** Full play only: the later groups, and stands[l x CELLS + cell]; null otherwise. */
         final SystemScorer.Groups later;
         final boolean[] stands;
+        /** Full play only: the walked play's ranking, [g][deal], which split hands were valued under; null otherwise. */
+        final PlayerMove[][][] walked;
+        /** The rules the engine valued splits under, Montreal's (B8's legal moves). */
+        final RoundRules rules;
 
         Lookup(String file, CountKeys.Count play, int cut, SystemScorer.Groups groups, int[][] move, double[] insuranceSum,
-               SystemScorer.Groups later, boolean[] stands) {
+               SystemScorer.Groups later, boolean[] stands, PlayerMove[][][] walked, RoundRules rules) {
             this.file = file;
             this.play = play;
             this.cut = cut;
@@ -1022,6 +1124,54 @@ final class StrategyExport {
             this.insuranceSum = insuranceSum;
             this.later = later;
             this.stands = stands;
+            this.walked = walked;
+            this.rules = rules;
+        }
+
+        /**
+         * B8's split cells of full play, in B8's order (ExportBundle.splitLine), '-' for every one
+         * otherwise: in each group, the answer of the walked play's SplitPlay (FullIndexFit's
+         * record builds it over walked[g]; the later play does not reach a first decision) to the
+         * split hand's first decision on (r, x), read from the FIRST slots of
+         * SplitValues.fingerprint, the answers the last round's fingerprints held; then, where a
+         * resplit is allowed (x = r, r 2 to 10), ':' and the same with Split offered.
+         */
+        String[] split() {
+            String[] out = new String[ExportBundle.SPLIT_LINES];
+            if (walked == null) {
+                Arrays.fill(out, "-");
+                return out;
+            }
+            byte[][] prints = new byte[walked.length][];
+            for (int n = 0; n < out.length; n++) {
+                int[] l = ExportBundle.splitLine(n);
+                int r = l[0];
+                int x = l[1];
+                int up = l[2];
+                int deal = Deals.index(r, r, up);
+                if (x == 1) {
+                    for (int g = 0; g < walked.length; g++) {
+                        PlayerMove[][] rank = walked[g];
+                        prints[g] = SplitValues.fingerprint(rules, deal, new SplitPlay(r, up, (total, soft) -> true,
+                                d -> rank[d]));
+                    }
+                }
+                StringBuilder b = new StringBuilder();
+                boolean resplit = x == r && rules.maxHandsFor(r) >= 3;
+                for (int offered = 0; offered <= (resplit ? 1 : 0); offered++) {
+                    b.append(offered == 1 ? ":" : "");
+                    for (byte[] print : prints) {
+                        int m = print[SplitValues.firstSlot(x, offered == 1)];
+                        if (m == 0) {
+                            throw new IllegalStateException(file + ": a split " + r + " drawing a " + x + " against "
+                                    + up + " has no first decision in the engine's fingerprint");
+                        }
+                        b.append(ExportBundle.MOVE_LETTERS.charAt(m - 1));
+                    }
+                }
+                out[n] = b.toString();
+            }
+            return out;
         }
 
         /** B8's first cell at state s and a deal: KEY:G:M:I for every part of the play key, '-' where none. */
@@ -1114,11 +1264,14 @@ final class StrategyExport {
         final String[] first;
         /** Null for a file with no later play: every later cell '-'. */
         final String[] later;
+        /** B8's 1,000 split cells in their order; null for a file with no later play, every split cell '-'. */
+        final String[] split;
 
-        LookupColumn(String file, String[] first, String[] later) {
+        LookupColumn(String file, String[] first, String[] later, String[] split) {
             this.file = file;
             this.first = first;
             this.later = later;
+            this.split = split;
         }
 
         static LookupColumn of(Lookup l, ScoringStates st, List<int[]> sample, List<int[]> later) {
@@ -1136,11 +1289,14 @@ final class StrategyExport {
                     lt[k] = l.later(st, x[0], x[1], x[2]);
                 }
             }
-            return new LookupColumn(l.file, first.toArray(new String[0]), lt);
+            return new LookupColumn(l.file, first.toArray(new String[0]), lt, l.walked == null ? null : l.split());
         }
     }
 
-    /** lookups.tsv (B8): a first line for each play line of keys-sample.tsv, then the later lines if any file plays full. */
+    /**
+     * lookups.tsv (B8): a first line for each play line of keys-sample.tsv, then, if any file
+     * plays full, the later lines and the 1,000 split lines.
+     */
     static void writeLookups(Path file, ScoringStates st, long seed, List<int[]> sample, List<int[]> later,
                              List<LookupColumn> columns) throws IOException {
         List<LookupColumn> cols = new ArrayList<>(columns);
@@ -1172,6 +1328,23 @@ final class StrategyExport {
             fixed(f, "later", x[0], x[1], x[2]);
             for (int c = 0; c < cols.size(); c++) {
                 f[6 + c] = cols.get(c).later == null ? "-" : cols.get(c).later[k];
+            }
+            line(b, f);
+        }
+        for (int k = 0; full && k < ExportBundle.SPLIT_LINES; k++) {
+            int[] x = ExportBundle.splitLine(k);
+            f[0] = "split";
+            f[1] = "-";
+            f[2] = x[0];
+            f[3] = x[1];
+            f[4] = x[2];
+            f[5] = "-";
+            for (int c = 0; c < cols.size(); c++) {
+                LookupColumn col = cols.get(c);
+                if ((col.later == null) != (col.split == null)) {
+                    throw new IllegalStateException(col.file + " has later cells and no split cells, or split and no later");
+                }
+                f[6 + c] = col.split == null ? "-" : col.split[k];
             }
             line(b, f);
         }
@@ -1377,6 +1550,8 @@ final class StrategyExport {
         final List<String> lines = new ArrayList<>();
         double worst;
         long compared;
+        /** The splits a strategy's last round valued, each played again from the files (playedAsValued). */
+        long splits;
 
         /** a and b equal within RELATIVE of the larger, or refused, naming what. */
         void same(double a, double b, String what) {
@@ -1489,9 +1664,11 @@ final class StrategyExport {
 
     /**
      * The same for any scope: a full-play file's first moves are valued from its fold's Hit and
-     * Split values when rf holds them (each part's key held to the engine's part key), and
+     * Split values when rf holds them (each part's key held to the engine's part key), its later
+     * lines, groups, first lines and the rankings its split hands read held to rf's, and every
+     * split the strategy's last round valued played again from the file (playedAsValued);
      * otherwise its round values are taken from verified, which states.bin's section must equal
-     * to the bit; its insurance and bets are worked out from the file either way.
+     * to the bit. Its insurance and bets are worked out from the file either way.
      */
     static ExportBundle.Section replay(ScoringStates st, PlayerMove[] chart, ExportBundle.Strategy[] files,
                                        ExportBundle.Section bin, Report r, Refit rf, ExportBundle.Section verified,
@@ -1531,6 +1708,14 @@ final class StrategyExport {
                                 + ": later cell " + l + " " + c + " is not the play the strategy's last round walked");
                     }
                 }
+            }
+            // The Split values were worked out with split hands playing the walked play's ranking in
+            // the Strategy's groups, which Refit holds to the refit's; so the file's groups must be
+            // the refit's too (and its rankings, below the states, held to both).
+            for (int f = 0; f < 2; f++) {
+                r.require(Arrays.equals(files[f].lo, rf.plays[f].groups.lo)
+                        && Arrays.equals(files[f].hi, rf.plays[f].groups.hi), where + ", fold " + f
+                        + ": its groups are not the refit's");
             }
         }
         int[][][] classes = new int[2][][];
@@ -1602,7 +1787,8 @@ final class StrategyExport {
                     double[] part = parts[y];
                     int g = ExportBundle.groupOf(file.hi, (int) part[0]);
                     if (firstMove && (!full || valued)) {
-                        int move = file.first[g][i][0].ordinal();
+                        // The dealt hand's first move (B2.4), never a split line's.
+                        int move = file.dealtFirst(g, i).ordinal();
                         double v = mv[i * MOVES + move];
                         if (valued) {
                             r.equal(rf.parts.key[x0 + y], (long) part[0], where + ": state " + s + " deal " + i + " part "
@@ -1610,7 +1796,7 @@ final class StrategyExport {
                             v = SystemScorer.value(rf.values[f], mv, i, x0 + y, move);
                         }
                         r.require(!Double.isNaN(v), where + ": state " + s + " deal " + i + " is played "
-                                + file.first[g][i][0] + ", which the deal does not allow");
+                                + file.dealtFirst(g, i) + ", which the deal does not allow");
                         play += part[1] * v;
                     }
                     if (i < ACE_UP && file.insure[g][i]) {
@@ -1635,6 +1821,34 @@ final class StrategyExport {
                 r.same(bin.bet[e][l], out.bet[e][l], where + ": state " + s + "'s bet under " + bin.labels[l]);
             }
         }
+        if (full && rf != null) {
+            // The rankings no state's round value reads: every first line, whole, against the
+            // refit's, whose tail no hand reads where a split line stands; and every ranking split
+            // hands read (B2.4, the split line, else the first line) against the walked play's.
+            // Then every split the last round valued, played again from the files alone and held
+            // to the fingerprint the strategy kept (playedAsValued): that holds the split hands to
+            // what the Split values were worked out under, not to walked, which is Refit's own.
+            for (int f = 0; f < 2; f++) {
+                ExportBundle.Strategy s = files[f];
+                for (int g = 0; g < s.lo.length; g++) {
+                    for (int i = 0; i < Deals.COUNT; i++) {
+                        if (Deals.playerNatural(i)) {
+                            continue;
+                        }
+                        boolean same = Arrays.equals(s.first[g][i], rf.ranking[f][g][i]);
+                        r.require(same, same ? null : where + ", fold " + f + ": " + cell(g, i) + "'s first line is "
+                                + words(s.first[g][i]) + ", the refit ranks it " + words(rf.ranking[f][g][i]));
+                        same = Arrays.equals(s.splitRanking(g, i), rf.walked[f][g][i]);
+                        r.require(same, same ? null : where + ", fold " + f + ": " + cell(g, i) + "'s split hands read "
+                                + words(s.splitRanking(g, i)) + ", and were valued under the walked play's "
+                                + words(rf.walked[f][g][i]));
+                    }
+                }
+            }
+            for (int f = 0; f < 2; f++) {
+                playedAsValued(st.rules, files[f], rf.valued.get(f), where + ", fold " + f, r);
+            }
+        }
         for (int f = 0; f < 2; f++) {
             r.same(files[f].trained, trained[f], where + ": fold " + f + "'s training weight");
             for (ExportBundle.Plan plan : files[f].plans) {
@@ -1645,6 +1859,68 @@ final class StrategyExport {
                 r.require(listed.equals(testKeys.get(f)), where + ": " + plan.label + " of fold " + f
                         + " lists bets at keys " + listed + ", its test states hold " + testKeys.get(f));
             }
+        }
+        return out;
+    }
+
+    /**
+     * Each split a strategy's last round valued (FullIndexFit.valuedSplits) played again
+     * from its full-play file alone: the SplitPlay B2.4 describes for the pair deal in group g and
+     * later group l (filePlay), whose SplitValues fingerprint must be the one the strategy kept,
+     * answer for answer. A Split value is worked out from its play's fingerprint (equal prints,
+     * equal values), so the file's split hands then play every split as it was valued. Neither
+     * Refit.walked nor the refit is read. Refused where the strategy valued no split, which would
+     * leave nothing to hold.
+     */
+    static void playedAsValued(RoundRules rules, ExportBundle.Strategy file, List<FullIndexFit.ValuedSplit> valued,
+                               String where, Report r) {
+        r.require(valued != null && !valued.isEmpty(), where + ": the strategy's last round valued no split");
+        for (FullIndexFit.ValuedSplit v : valued) {
+            String split = where + ": a split of " + Deals.P1[v.deal] + "s against " + Deals.UP[v.deal] + " in group "
+                    + v.group + ", later group " + v.later;
+            r.require(v.group < file.lo.length && v.later >= 0 && v.later < file.laterLo.length, split
+                    + ", which the file's groups do not have");
+            byte[] print = SplitValues.fingerprint(rules, v.deal, filePlay(file, v.deal, v.group, v.later));
+            int at = Arrays.mismatch(print, v.print);
+            r.require(at < 0, at < 0 ? null : split + ": its split hands play " + answer(print, at) + " by the file at "
+                    + SplitValues.slotWords(at) + ", and were valued playing " + answer(v.print, at));
+            r.splits++;
+        }
+    }
+
+    /** A fingerprint's answer in a refusal: the move's letter, or none where the decision is not reached. */
+    private static String answer(byte[] print, int at) {
+        return print[at] == 0 ? "nothing" : String.valueOf(ExportBundle.letter(PlayerMove.values()[print[at] - 1]));
+    }
+
+    /**
+     * B2.4's split hands of a full-play file for pair deal i, the deal's key in group g and later
+     * group l, read from the file alone: each two-card decision from splitRanking(g, ·), each
+     * later decision from `later l` at a contested spot and the chart elsewhere, as the engine's
+     * later play falls back on it (FullIndexFit.Strategy.stands).
+     */
+    static SplitPlay filePlay(ExportBundle.Strategy file, int i, int g, int l) {
+        int up = Deals.UP[i];
+        boolean[] stands = file.stands[l];
+        return new SplitPlay(Deals.P1[i], up, (total, soft) -> {
+            int c = total >= 0 && total < 22 ? LATER_CELL[up - 1][soft ? 1 : 0][total] : -1;
+            return c < 0 ? PlayerTree.CHART.stands(total, soft, up, 0) : stands[c];
+        }, d -> file.splitRanking(g, d));
+    }
+
+    /** ExportBundle.cells()'s place of a contested spot, [up - 1][soft][total]; -1 at every other spot. */
+    private static final int[][][] LATER_CELL = laterCells();
+
+    private static int[][][] laterCells() {
+        int[][][] out = new int[10][2][22];
+        for (int[][] u : out) {
+            for (int[] s : u) {
+                Arrays.fill(s, -1);
+            }
+        }
+        int[][] cells = ExportBundle.cells();
+        for (int c = 0; c < cells.length; c++) {
+            out[cells[c][0] - 1][cells[c][2]][cells[c][1]] = c;
         }
         return out;
     }
@@ -1782,7 +2058,9 @@ final class StrategyExport {
             keys(dir.resolve("keys-sample.tsv"), st, keyCounts, r);
         }
         lookups(dir.resolve("lookups.tsv"), st, chart, byFile, r);
-        r.lines.add("the round trip compared " + r.compared + " values; largest relative difference " + r.worst);
+        r.lines.add("the round trip compared " + r.compared + " values" + (r.splits == 0 ? ""
+                : " and played again from the files " + r.splits + " splits the last round valued")
+                + "; largest relative difference " + r.worst);
         return r;
     }
 
@@ -2183,7 +2461,7 @@ final class StrategyExport {
             int key = (int) part[0];
             int g = f.group(key);
             char m = Deals.playerNatural(deal) ? '-' : f.scope == ExportBundle.Scope.BETTING
-                    ? ExportBundle.MOVE_LETTERS.charAt(chartFirst(chart, deal)) : ExportBundle.letter(f.first[g][deal][0]);
+                    ? ExportBundle.MOVE_LETTERS.charAt(chartFirst(chart, deal)) : ExportBundle.letter(f.dealtFirst(g, deal));
             String ins = deal < ACE_UP ? (f.insure[g][deal] ? "1" : "0") : "-";
             b.append(b.length() > 0 ? ";" : "").append(key).append(':').append(g).append(':').append(m).append(':').append(ins);
         }
@@ -2215,17 +2493,49 @@ final class StrategyExport {
     }
 
     /**
+     * B8's split cell as a strategy file answers it by B2.4, worked out from B8's words: '-' for a
+     * file not of scope full; otherwise, in each group in order, the split r that has drawn x
+     * against up stands on an ace and a ten, and else plays the first move of the ranking split
+     * hands read (ExportBundle's splitRanking: the split line, else the first line) that B8's
+     * legal moves allow, Stand if none: for a split ace Stand only, for r from 2 to 10 Stand, Hit
+     * and Double, with Split too in the part after ':', which only x = r, r from 2 to 10, has.
+     */
+    static String fileSplit(ExportBundle.Strategy f, int r, int x, int up) {
+        if (f.scope != ExportBundle.Scope.FULL) {
+            return "-";
+        }
+        boolean aceTen = r == 1 && x == 10 || r == 10 && x == 1;
+        int deal = Deals.index(Math.min(r, x), Math.max(r, x), up);
+        StringBuilder b = new StringBuilder();
+        for (int offered = 0; offered <= (x == r && r >= 2 ? 1 : 0); offered++) {
+            b.append(offered == 1 ? ":" : "");
+            for (int g = 0; g < f.lo.length; g++) {
+                PlayerMove play = PlayerMove.Stand;
+                for (PlayerMove m : aceTen ? new PlayerMove[0] : f.splitRanking(g, deal)) {
+                    boolean legal = m == PlayerMove.Stand || r >= 2 && (m == PlayerMove.Hit || m == PlayerMove.Double
+                            || m == PlayerMove.Split && offered == 1);
+                    if (legal) {
+                        play = m;
+                        break;
+                    }
+                }
+                b.append(ExportBundle.letter(play));
+            }
+        }
+        return b.toString();
+    }
+
+    /**
      * lookups.tsv against the strategy files (B8): its columns every strategy file in path order,
      * its first lines keys-sample.tsv's play lines in order, its later lines the first states'
-     * first deals and hit ranks worked out here from B8's words, and every cell what the file it
-     * names answers there. lookups.tsv is written from the engine's own fit (Lookup), so this ties
-     * the files the simulator plays to the answers the engine scored with, decision by decision.
+     * first deals and hit ranks worked out here from B8's words, its split lines B8's 1,000 when
+     * a file plays full (readLookups refuses one missing, out of place or not due), and every
+     * cell what the file it names answers there. lookups.tsv is written from the engine's own fit
+     * (Lookup), so this ties the files the simulator plays to the answers the engine scored with,
+     * decision by decision.
      */
     static void lookups(Path file, ScoringStates st, PlayerMove[] chart, Map<String, ExportBundle.Strategy> byFile,
                         Report r) throws IOException {
-        ExportBundle.Lookups lk = ExportBundle.readLookups(file);
-        r.require(Arrays.asList(lk.files).equals(new ArrayList<>(byFile.keySet())), "lookups.tsv's columns are "
-                + Arrays.toString(lk.files) + ", the strategy files " + byFile.keySet());
         ExportBundle.Strategy[] f = byFile.values().toArray(new ExportBundle.Strategy[0]);
         int[][][] classes = new int[f.length][][];
         boolean[] aware = new boolean[f.length];
@@ -2235,11 +2545,15 @@ final class StrategyExport {
             aware[c] = ExportBundle.kindAware(f[c].tags);
             full |= f[c].scope == ExportBundle.Scope.FULL;
         }
+        ExportBundle.Lookups lk = ExportBundle.readLookups(file, full);
+        r.require(Arrays.asList(lk.files).equals(new ArrayList<>(byFile.keySet())), "lookups.tsv's columns are "
+                + Arrays.toString(lk.files) + ", the strategy files " + byFile.keySet());
         Map<String, Integer> cellAt = new java.util.HashMap<>();
         int[][] cells = ExportBundle.cells();
         for (int c = 0; c < cells.length; c++) {
             cellAt.put(cells[c][0] + " " + cells[c][1] + " " + cells[c][2], c);
         }
+        // Each line due, {state, deal, hit} for a first (hit 0) or later line, {-1, r, x, up} for a split line.
         List<int[]> want = new ArrayList<>();
         List<int[]> sample = sample(st.size, lk.seed);
         for (int[] l : sample) {
@@ -2263,16 +2577,39 @@ final class StrategyExport {
                 }
             }
         }
+        // And its split lines: by up-card, then split rank, then second card.
+        for (int up = 1; full && up <= 10; up++) {
+            for (int rank = 1; rank <= 10; rank++) {
+                for (int x = 1; x <= 10; x++) {
+                    want.add(new int[]{-1, rank, x, up});
+                }
+            }
+        }
         r.equal(lk.lines.size(), want.size(), "lookups.tsv's lines");
         long compared = 0;
+        long splitCells = 0;
         int laterLines = 0;
+        int splitLines = 0;
         for (int n = 0; n < want.size(); n++) {
             ExportBundle.LookupLine l = lk.lines.get(n);
             int[] w = want.get(n);
+            if (w[0] < 0) {
+                String where = "lookups.tsv line " + (n + 4) + " (split " + w[1] + " " + w[2] + " " + w[3] + ")";
+                r.require(l.split && l.p1 == w[1] && l.p2 == w[2] && l.up == w[3], where + " is due");
+                splitLines++;
+                for (int c = 0; c < f.length; c++) {
+                    String expect = fileSplit(f[c], w[1], w[2], w[3]);
+                    r.require(expect.equals(l.cells[c]), where + ", " + lk.files[c] + ": the engine's answer is "
+                            + l.cells[c] + ", the file's " + expect);
+                    compared++;
+                    splitCells += f[c].scope == ExportBundle.Scope.FULL ? 1 : 0;
+                }
+                continue;
+            }
             int i = w[1];
             String where = "lookups.tsv line " + (n + 4) + " (state " + w[0] + ", deal " + Deals.P1[i] + " " + Deals.P2[i]
                     + " " + Deals.UP[i] + (w[2] > 0 ? ", hit " + w[2] : "") + ")";
-            r.require(l.state == w[0] && l.p1 == Deals.P1[i] && l.p2 == Deals.P2[i] && l.up == Deals.UP[i]
+            r.require(!l.split && l.state == w[0] && l.p1 == Deals.P1[i] && l.p2 == Deals.P2[i] && l.up == Deals.UP[i]
                     && l.later == (w[2] > 0) && l.hit == w[2], where + " is due");
             laterLines += w[2] > 0 ? 1 : 0;
             for (int c = 0; c < f.length; c++) {
@@ -2283,8 +2620,10 @@ final class StrategyExport {
                 compared++;
             }
         }
-        r.lines.add("lookups.tsv: " + (want.size() - laterLines) + " first lines and " + laterLines + " later lines, "
-                + compared + " cells, each the engine's answer equal to its strategy file's");
+        r.require(!full || splitCells > 0, "lookups.tsv: a file plays full and no split cell was compared");
+        r.lines.add("lookups.tsv: " + (want.size() - laterLines - splitLines) + " first lines, " + laterLines
+                + " later lines and " + splitLines + " split lines, " + compared + " cells (" + splitCells
+                + " of full-play files' split hands), each the engine's answer equal to its strategy file's");
     }
 
     // ------------------------------------------------------------------ the export
@@ -2361,6 +2700,9 @@ final class StrategyExport {
                 Refit rf = w.full != null ? w.full[p] : byPen[p];
                 if (w.full != null) {
                     full.values.put(FullSource.key(w.entry.name, ExportBundle.PENS[p]), rf);
+                    for (int f = 0; f < 2; f++) {
+                        log.printf("%s at %s, %s%n", w.entry.name, SystemScorer.PENETRATIONS[p], rf.splitWords(f));
+                    }
                 }
                 Built b = build(scorer, rf, w.entry, labels);
                 for (ExportBundle.Strategy s : b.fold) {
@@ -2434,8 +2776,11 @@ final class StrategyExport {
     /**
      * One full-play row at one penetration, checked while its strategies' values are at hand:
      * both files written and read back, every state replayed from them on those values against
-     * the section (B2.4, PlayValues for Hit and Split), the later lines against the play the last
-     * round walked, and the row's figures summed in the engine's order against its estimate.
+     * the section (B2.4, PlayValues for Hit and Split, the dealt hand's first move from the first
+     * lines), the later lines against the play the last round walked, every first line whole
+     * against the refit's ranking and every ranking split hands read (the split line, else the
+     * first) against the walked play's, and the row's figures summed in the engine's order
+     * against its estimate.
      */
     static Report checkFull(ScoringStates st, PlayerMove[] chart, Built b, Refit rf, Expect x) {
         return checkFull(st, chart, b, rf, x, null);
@@ -2476,9 +2821,9 @@ final class StrategyExport {
      * strategies hold their last round's values, it builds the item's full-play rows (every
      * full-play entry not bet on its own value, or those named), checks each against the values
      * (checkFull) and keeps what the bundle needs; once every item is kept, it writes the bundle
-     * from the records alone, chart.tsv, states.bin, keys-sample.tsv for the run's counts and
-     * their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds each full
-     * section to the one checked on the values.
+     * from the records alone, chart.tsv, states.bin, keys-sample.tsv for the catalog and the run's
+     * counts with their variants, lookups.tsv and exact.tsv, and runs the round trip, which holds
+     * each full section to the one checked on the values.
      */
     static class ReplayExport implements FullIndexReplay.Hook {
         final Path out;
@@ -2707,18 +3052,33 @@ final class StrategyExport {
             st = scorer.st;
             ArrayList<RowExport> kept = new ArrayList<>();
             Refit rf = null;
+            Refit.Refused refused = null;
             List<int[]> sample = sample(st.size, seed);
             List<int[]> later = laterLines(st, sample);
             for (SystemScorer.Entry e : scored.fullEntries) {
                 if (e.ownValue || !wanted(e.name, item.pen)) {
                     continue;
                 }
-                if (rf == null) {
-                    rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
+                // One refit serves the item's rows. One B7 refuses (Refit.Refused: groups or a table
+                // not the refit's) refuses each of them, kept so the replay goes on; anything else
+                // Refit throws is a mistake in what the replay hands the hook, and stops it here.
+                if (rf == null && refused == null) {
+                    try {
+                        rf = new Refit(scorer, item.pen, two.toArray(new FullIndexFit.Strategy[0]));
+                    } catch (Refit.Refused ex) {
+                        refused = ex;
+                    }
+                    for (int f = 0; rf != null && f < 2; f++) {
+                        log.printf("export: %s at %s, %s%n", rf.count.name, SystemScorer.PENETRATIONS[item.pen],
+                                rf.splitWords(f));
+                    }
                 }
                 RowExport x = new RowExport();
                 x.expect = Expect.of(e, item.pen);
                 try {
+                    if (refused != null) {
+                        throw refused;
+                    }
                     Built b = build(scorer, rf, e, labelsFor(e.name, item.pen));
                     Report r = checkFull(st, chartArray(), b, rf, x.expect, dealt(scorer));
                     x.section = b.section;
@@ -2726,11 +3086,13 @@ final class StrategyExport {
                         x.text[f] = format(b.fold[f]);
                         x.columns[f] = LookupColumn.of(b.lookup[f], st, sample, later);
                     }
-                    log.printf("export: %s at %s checked on its values, %d values compared, largest relative difference "
-                            + "%s%n", e.name, SystemScorer.PENETRATIONS[item.pen], r.compared, r.worst);
+                    log.printf("export: %s at %s checked on its values, %d values compared, %d splits the last round "
+                                    + "valued played again from its files, largest relative difference %s%n", e.name,
+                            SystemScorer.PENETRATIONS[item.pen], r.compared, r.splits, r.worst);
                 } catch (RuntimeException ex) {
                     // Kept, not thrown: one row that cannot be exported must not stop a replay of hours.
-                    x.failure = ex.getMessage();
+                    // An exception without a message is kept by its class, so finish still refuses the row.
+                    x.failure = ex.getMessage() != null ? ex.getMessage() : String.valueOf(ex);
                     log.printf("export: %s at %s is not exported: %s%n", e.name, SystemScorer.PENETRATIONS[item.pen],
                             x.failure);
                 }
@@ -2798,15 +3160,19 @@ final class StrategyExport {
                 expected.add(x.expect);
                 full.verified.put(FullSource.key(x.expect.row, x.expect.pen), x.section);
             }
-            List<CountKeys.Count> catalog = new ArrayList<>();
+            // The whole catalog, whichever counts the run scored: D2 holds the simulator's keys to all
+            // 31 counts and 8 variants and fails a bundle without them (SIM_CHECK.md section 5), so a
+            // replay of the registered counts alone, the page look's of step 8, carries them too, as
+            // its first-decision export does. The run's own counts follow.
+            List<CountKeys.Count> catalog = CountKeys.catalog();
             List<CountKeys.Count> own = new ArrayList<>();
             List<String> catalogNames = new ArrayList<>();
-            for (CountKeys.Count c : CountKeys.catalog()) {
+            for (CountKeys.Count c : catalog) {
                 catalogNames.add(c.name);
             }
             for (CountKeys.Count c : all.counts) {
-                if (!c.name.equals(CountKeys.nullCount().name)) {
-                    (catalogNames.contains(c.name) ? catalog : own).add(c);
+                if (!c.name.equals(CountKeys.nullCount().name) && !catalogNames.contains(c.name)) {
+                    own.add(c);
                 }
             }
             finishBundle(out, partial, st, StateStore.header(states), strategies, sections, expected, columns,

@@ -49,6 +49,24 @@ import static org.junit.jupiter.api.Assertions.*;
  * A plant the export refuses fails every test here, since the bundle is written once for the
  * class; the line above names the first refusal. The fold plants are the exporter's side of a bug
  * PLAN_COMPUTE.md 1.6 plants in the simulator, "the other fold's strategy scored".
+ *
+ * The split lines of a full-play file (SHOE_SPEC.md B2.1 and B2.4; INTEGRATION.md open item 1), on
+ * a file made by hand, since no fixture here fits full play: it reads back to its own text, every
+ * split line B2.1 refuses is refused, and ExportBundle gives each hand the ranking B2.4 says it
+ * reads. lookups.tsv here has no split line, which reads only for a bundle with no full-play file.
+ * Planted on 19 October 2026 in scratch copies of the code, one at a time, each failed the test
+ * named:
+ *
+ * | Planted in ExportBundle or StrategyExport | What failed |
+ * |---|---|
+ * | the reader's check that split lines go in order, each once | everySplitLineB21RefusesIsRefused: two lines swapped are read |
+ * | its check that a split line lists its first line's moves | the same: a move replaced is read |
+ * | its refusal of a split line that repeats its first line | the same |
+ * | its refusal of a split line in a file not of scope full | the same: a NullPointerException, not a refusal |
+ * | splitRanking giving the first line always | theRankingsOfB24AreReadByWhichHandAsks: a split ten reads Split first |
+ * | dealtFirst giving a full-play file's split line | the same: the dealt pair stands |
+ * | format writing the split lines before the first lines | aFullPlayFileReadsBackToItself: line 19, a first line is due |
+ * | readLookups taking a split line with no full-play file | aSplitLineInLookupsWithoutAFullPlayFileIsCaught: refused by the line count instead (14,881 lines, 14,880 due) |
  */
 public class StrategyExportTest {
 
@@ -600,7 +618,7 @@ public class StrategyExportTest {
      */
     @Test
     public void theLookupsAreTheEnginesAnswers() throws Exception {
-        ExportBundle.Lookups lk = ExportBundle.readLookups(bundle.resolve("lookups.tsv"));
+        ExportBundle.Lookups lk = ExportBundle.readLookups(bundle.resolve("lookups.tsv"), false);
         ExportBundle.KeysSample ks = ExportBundle.readKeysSample(bundle.resolve("keys-sample.tsv"));
         assertEquals(16 * 3 * 2, lk.files.length);
         List<String> sorted = new ArrayList<>(Arrays.asList(lk.files));
@@ -644,6 +662,22 @@ public class StrategyExportTest {
         assertTrue(insured > 0, "no insurance taken");
         assertTrue(spreads > 100, spreads + " Red Seven cells with more than one key");
         assertTrue(outside > 0, "every state of the sample is played at 70%");
+    }
+
+    /**
+     * lookups.tsv's split lines are a full-play bundle's: none here, which reads only as a bundle
+     * with no file of scope full; and one written into it is refused.
+     */
+    @Test
+    public void aSplitLineInLookupsWithoutAFullPlayFileIsCaught() throws Exception {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> ExportBundle.readLookups(bundle.resolve("lookups.tsv"), true));
+        assertTrue(e.getMessage().contains("0 split lines; the bundle holds a file of scope full"), e.getMessage());
+        String msg = refusal(planted("lookup-split", "lookups.tsv", t -> {
+            int columns = t.substring(0, t.indexOf("\nfirst\t")).split("\n")[2].split("\t").length - 6;
+            return t + "split\t-\t1\t1\t1\t-" + "\t-".repeat(columns) + "\n";
+        }));
+        assertTrue(msg.contains("a split line, and the bundle holds no file of scope full"), msg);
     }
 
     /** One cell of lookups.tsv as text, changed by f; the file's column found by name. */
@@ -775,10 +809,17 @@ public class StrategyExportTest {
         assertThrows(IllegalArgumentException.class, () -> StrategyExport.wanted(scored, "Hi-Lo = Hi-Lo Lite, full play",
                 new int[]{2}));
     }
+    /** B2.4's example: the dealt pair of tens against a 6 in group 1 splits, and a split ten stands. */
+    static final int TENS = Deals.index(10, 10, 6);
+    /** And a deal no split hand of Montreal's rules reaches with its own two cards differently: 3 and 8 against a 5. */
+    static final int THREE_EIGHT = Deals.index(3, 8, 5);
+
     /**
      * A full-play file, which no fixture here can fit (that takes the player trees), written from a
      * model made by hand: it reads back to the same model and the same text, its later lines in
-     * B2.1's order, and a later line out of order is refused.
+     * B2.1's order, and a later line out of order is refused. Its two split lines come after
+     * every first line, in the first lines' order, and read back as written; no other deal has
+     * one.
      */
     @Test
     public void aFullPlayFileReadsBackToItself() {
@@ -794,6 +835,129 @@ public class StrategyExportTest {
                 "later\t0\t13\t0\t1\tH\nlater\t0\t12\t0\t1\t");
         assertNotEquals(text, swapped);
         assertThrows(IllegalArgumentException.class, () -> ExportBundle.readStrategyText(swapped));
+
+        assertEquals(2, s.splitLines());
+        assertArrayEquals(new PlayerMove[]{PlayerMove.Hit, PlayerMove.Double, PlayerMove.Stand}, s.split[0][THREE_EIGHT]);
+        assertArrayEquals(new PlayerMove[]{PlayerMove.Stand, PlayerMove.Split, PlayerMove.Hit, PlayerMove.Double},
+                s.split[1][TENS]);
+        assertTrue(text.contains("\nfirst\t1\t10\t10\t10\tS\tS\tS\nsplit\t0\t3\t8\t5\tH\tD\tS\n"
+                + "split\t1\t10\t10\t6\tS\tP\tH\tD\ninsure\t"), text);
+    }
+
+    /**
+     * B2.4's accessors on that file: the dealt hand's first move is its first line's first move,
+     * a split line or none, and the ranking split hands read is the split line where there is one
+     * and the first line elsewhere; a first-decision or betting file's split hands play the chart,
+     * so asking it for their ranking is refused, and a betting file has no first move to give.
+     */
+    @Test
+    public void theRankingsOfB24AreReadByWhichHandAsks() throws Exception {
+        ExportBundle.Strategy s = ExportBundle.readStrategyText(StrategyExport.format(handMadeFull()));
+        assertEquals(PlayerMove.Split, s.dealtFirst(1, TENS), "the dealt pair splits");
+        assertArrayEquals(s.split[1][TENS], s.splitRanking(1, TENS));
+        assertEquals(PlayerMove.Stand, s.splitRanking(1, TENS)[0], "a split ten reads the split line");
+        assertEquals(PlayerMove.Double, s.dealtFirst(0, THREE_EIGHT));
+        assertEquals(PlayerMove.Hit, s.splitRanking(0, THREE_EIGHT)[0]);
+        int other = 0;
+        for (int g = 0; g < 2; g++) {
+            for (int i = 0; i < Deals.COUNT; i++) {
+                if (Deals.playerNatural(i) || g == 1 && i == TENS || g == 0 && i == THREE_EIGHT) {
+                    continue;
+                }
+                assertSame(s.first[g][i], s.splitRanking(g, i), g + " " + i);
+                assertEquals(s.first[g][i][0], s.dealtFirst(g, i));
+                other++;
+            }
+        }
+        assertEquals(2 * 540 - 2, other);
+        assertEquals(s.first[0][TENS], s.splitRanking(0, TENS), "group 0 has no split line for the tens");
+        ExportBundle.Strategy first = ExportBundle.readStrategy(bundle.resolve(hiLoFile(80, 0)));
+        assertEquals(ExportBundle.Scope.FIRST, first.scope);
+        assertNull(first.split);
+        assertEquals(first.first[0][TENS][0], first.dealtFirst(0, TENS));
+        assertThrows(IllegalStateException.class, () -> first.splitRanking(0, TENS));
+        ExportBundle.Strategy betting = ExportBundle.readStrategy(bundle.resolve(
+                ExportBundle.Strategy.fileName(results.get(0).entries.get(1).name, 80, 0)));
+        assertEquals(ExportBundle.Scope.BETTING, betting.scope);
+        assertThrows(IllegalStateException.class, () -> betting.dealtFirst(0, TENS));
+        assertThrows(IllegalStateException.class, () -> betting.splitRanking(0, TENS));
+        assertThrows(IllegalStateException.class, () -> s.dealtFirst(0, Deals.index(1, 10, 4)));
+    }
+
+    /**
+     * The hand-made full file's text with its lines changed by f, which returns a line unchanged
+     * where it does not apply, and null for a line taken out.
+     */
+    static String handMade(UnaryOperator<String> f) {
+        String text = StrategyExport.format(handMadeFull());
+        StringBuilder b = new StringBuilder();
+        boolean any = false;
+        for (String l : text.split("\n", -1)) {
+            String x = f.apply(l);
+            if (x != null) {
+                b.append(any ? "\n" : "").append(x);
+                any = true;
+            }
+        }
+        assertNotEquals(text, b.toString(), "the plant changed nothing");
+        return b.toString();
+    }
+
+    /** The reader's refusal of a strategy file's text, which must say why. */
+    static String refused(String text, String says) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> ExportBundle.readStrategyText(text));
+        assertTrue(e.getMessage().contains(says), e.getMessage());
+        return e.getMessage();
+    }
+
+    /**
+     * Every split line B2.1 refuses, each written into the hand-made full file (or into a
+     * first-decision or betting file made from it), is refused by the reader, naming why: one in
+     * a file of another scope; one naming a group past the last or below 0, a pair out of order, a
+     * rank outside 1 to 10, or the player's natural; one out of order, or twice; one whose moves
+     * are not its first line's (one replaced, one dropped, one added), or that repeats its first
+     * line's order; one with no move or a letter B1 has not; and one among the first lines or
+     * after the insure lines.
+     */
+    @Test
+    public void everySplitLineB21RefusesIsRefused() {
+        String tens = "split\t1\t10\t10\t6\tS\tP\tH\tD";
+        String threeEight = "split\t0\t3\t8\t5\tH\tD\tS";
+        ExportBundle.Strategy firstScope = handMadeFull();
+        firstScope.scope = ExportBundle.Scope.FIRST;
+        firstScope.laterLo = null;
+        String firstText = StrategyExport.format(firstScope);
+        assertTrue(firstText.contains("\n" + tens + "\n"), "format writes what the model holds");
+        refused(firstText, "a split line in a file of scope first");
+        ExportBundle.Strategy betting = handMadeFull();
+        betting.scope = ExportBundle.Scope.BETTING;
+        betting.first = null;
+        betting.split = null;
+        betting.laterLo = null;
+        refused(lines(StrategyExport.format(betting), l -> l.startsWith("group\t1\t") ? l + "\n" + tens : l),
+                "a split line in a file of scope betting");
+        for (String[] bad : new String[][]{{"split\t2\t10\t10\t6\tS\tP\tH\tD", "names no group and deal"},
+                {"split\t-1\t10\t10\t6\tS\tP\tH\tD", "names no group and deal"},
+                {"split\t1\t10\t9\t6\tS\tP\tH\tD", "names no group and deal"},
+                {"split\t1\t10\t11\t6\tS\tP\tH\tD", "names no group and deal"},
+                {"split\t1\t10\t10\t0\tS\tP\tH\tD", "names no group and deal"},
+                {"split\t1\t1\t10\t6\tS\tH", "the player's natural"},
+                {"split\t1\t10\t10\t6\tS\tP\tH\tH", "not its first line's moves"},
+                {"split\t1\t10\t10\t6\tS\tP\tH", "not its first line's moves"},
+                {"split\t1\t10\t10\t6\tS\tP\tH\tD\tR", "not its first line's moves"},
+                {"split\t1\t10\t10\t6\tP\tS\tH\tD", "repeats its first line's order"},
+                {"split\t1\t10\t10\t6", "names at least one move"},
+                {"split\t1\t10\t10\t6\tS\tP\tH\tX", "no move X"}}) {
+            refused(handMade(l -> l.equals(tens) ? bad[0] : l), bad[1]);
+        }
+        refused(handMade(l -> l.equals(threeEight) ? tens : l.equals(tens) ? threeEight : l), "split lines go by group");
+        refused(handMade(l -> l.equals(tens) ? tens + "\n" + tens : l), "split lines go by group");
+        refused(handMade(l -> l.equals(threeEight) ? null : l.startsWith("first\t0\t1\t1\t1\t") ? threeEight + "\n" + l
+                : l), "a first line is due, not split");
+        refused(handMade(l -> l.equals(tens) ? null : l.startsWith("insure\t") ? l + "\n" + tens : l),
+                "lgroups line is due, not split");
+        // Each line taken out alone, the file still reads: no line means the two rankings agree.
+        assertEquals(1, ExportBundle.readStrategyText(handMade(l -> l.equals(tens) ? null : l)).splitLines());
     }
 
     static ExportBundle.Strategy handMadeFull() {
@@ -827,6 +991,12 @@ public class StrategyExportTest {
                 }
             }
         }
+        // Two deals ranked by a fit, each with a split line: B2.4's example, and a deal of no pair.
+        s.first[1][TENS] = new PlayerMove[]{PlayerMove.Split, PlayerMove.Stand, PlayerMove.Hit, PlayerMove.Double};
+        s.first[0][THREE_EIGHT] = new PlayerMove[]{PlayerMove.Double, PlayerMove.Hit, PlayerMove.Stand};
+        s.split = new PlayerMove[2][Deals.COUNT][];
+        s.split[1][TENS] = new PlayerMove[]{PlayerMove.Stand, PlayerMove.Split, PlayerMove.Hit, PlayerMove.Double};
+        s.split[0][THREE_EIGHT] = new PlayerMove[]{PlayerMove.Hit, PlayerMove.Double, PlayerMove.Stand};
         s.laterLo = new int[]{-12, 2};
         s.laterHi = new int[]{1, 9};
         s.stands = new boolean[2][ExportBundle.CELLS];

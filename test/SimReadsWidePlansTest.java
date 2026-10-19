@@ -25,11 +25,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * bundle, so D4 recomputes every bet key and every bet under every plan, the wide plans among
  * them, at every valued state at 80%, and holds each to states.bin's to the bit.
  *
- * <p>What the fixture allows. The replay is of two counts of the test's own, so the bundle's
- * keys-sample.tsv has their columns and none of the catalog's: D2 compares those columns with no
- * mismatch and reports the 31 catalog counts missing, so p2 counts its exact checks failed and
- * does not go on to P2 (sim/QUESTIONS.md item 23). D1, D4 and D5 pass. The real replay exports the
- * catalog's counts, so its D2 has every column.
+ * <p>The replay is of two counts of the test's own, and its export samples the catalog's keys
+ * beside theirs (StrategyExport.ReplayExport.finish), so D2 compares every column with no mismatch
+ * and no catalog count missing, D1, D4 and D5 pass, and p2 goes on to P2. Until 19 October 2026 the
+ * export sampled only the counts a replay scored: D2 here reported the catalog's counts missing,
+ * so p2 counted its exact checks failed and did not run P2 (sim/QUESTIONS.md item 23), and so it
+ * would have on the page look's full-play bundle, a replay of the registered counts alone
+ * (SimReadsSplitLinesTest).
  *
  * <p>A copy of the bundle whose X0,8 bets after the exit are written as if seated, resealed, is
  * the planted check of the test itself: D4 then counts mismatches and names X0,8. And p3 on the
@@ -96,14 +98,14 @@ public class SimReadsWidePlansTest {
         assertTrue(line(checks, "D1").matches("D1\t(\\d+) of \\1 records card for card .*; 0 mismatches"), all);
         Matcher d5 = Pattern.compile("D5\t(\\d+) of (\\d+) lookups .*; 0 mismatches").matcher(line(checks, "D5"));
         assertTrue(d5.matches() && d5.group(1).equals(d5.group(2)) && Long.parseLong(d5.group(1)) > 0, all);
-        // D2: the replay's own counts compared with no mismatch, the catalog's columns absent from this fixture.
+        // D2: the catalog's columns and the replay's own counts' compared with no mismatch, none missing, so P2 runs.
         String d2 = line(checks, "D2");
         Matcher m = Pattern.compile("D2\t(\\d+) of (\\d+) keys .*; 0 mismatches; catalog counts missing from its header: (.*)")
                 .matcher(d2);
         assertTrue(m.matches() && m.group(1).equals(m.group(2)) && Long.parseLong(m.group(1)) > 0, d2);
-        assertFalse(m.group(3).trim().isEmpty() || m.group(3).trim().equals("[]"), "the catalog's columns are absent: " + d2);
-        assertEquals(1, p2exit, "D2 lacks the catalog's columns, so P2 does not run: " + p2log);
-        assertTrue(p2log.contains("an exact check failed: P2 is not run"), p2log);
+        assertEquals("[]", m.group(3).trim(), "no catalog count missing: " + d2);
+        assertEquals(0, p2exit, "every exact check passed, so P2 runs: " + p2log);
+        assertTrue(p2log.contains("P2: ") && !p2log.contains("an exact check failed"), p2log);
     }
 
     /** The test's own check: X0,8's bets after the exit written as if seated, resealed; the simulator's D4 finds them. */

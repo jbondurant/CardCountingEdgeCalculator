@@ -56,6 +56,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * the test named: ReplayExport's rows and plans left out of the replay's identity
  * (aReplayKilledAndResumed...), and its refusal of an existing bundle at the start left out, so
  * the replay scored every item before the export refused (aReplayRefuses...).
+ * Planted for the split lines on 19 October 2026, the same way, each failing
+ * theHooksOutputsHoldWhatTheReplayScored: the replay's log line of how each strategy's fit ended
+ * left out; and lookups.tsv written without its split lines, which the export's own round trip
+ * refuses at the replay's end (0 split lines, all 1,000 due). After the review of 134da21, the
+ * splits the last round valued not played again from the files failed it too (0 played).
  */
 public class FullIndexReplayTest {
 
@@ -415,21 +420,50 @@ public class FullIndexReplayTest {
     }
 
     /**
+     * Each fold strategy's walked ranking as the replay holds it after the last round (now.ranking),
+     * the ranking its splits were valued under, which a full-play file's split hands must read.
+     */
+    static final class RankingHook implements FullIndexReplay.Hook {
+        @Override
+        public String name() {
+            return "ranking";
+        }
+
+        @Override
+        public Serializable after(FullIndexReplay.Item item, SystemScorer scorer, SystemScorer.Result scored,
+                                  List<FullIndexFit.Strategy> two) {
+            ArrayList<PlayerMove[][][]> out = new ArrayList<>();
+            for (FullIndexFit.Strategy t : two) {
+                out.add(t.now.ranking);
+            }
+            return out;
+        }
+    }
+
+    /**
      * The three hooks' outputs hold what the replay scored. Every item, scored with the wide plans
      * on, is still the run's part to the bit, the wide arrays only added; wide.ser holds every
      * replayed row with the oracle and bound rows under the replay's identity and passes
      * WideReport's checks. The sink's run-b.ser hands back each entry's states at each penetration,
      * whose weighted mean is the entry's flat figure. The bundle's strategy files read back as
      * Part B says, play their first moves as the replayed fit and their later cells as the play in
-     * force, and its states.bin gives the replayed figures. Planted: a P8 one unit in its last place
-     * off, an entry without its wide figures, a round value or a bet moved in the bundle's states.bin:
-     * each stops.
+     * force, and its states.bin gives the replayed figures. Each file's first lines are the replayed
+     * fit's ranking whole, and the ranking its split hands read (B2.4) is the strategy's walked one,
+     * with a split line wherever the two differ, none on this fixture; every split the last round
+     * valued, played again from the files, is played as valued; lookups.tsv holds the 1,000
+     * split lines. The log says, for every strategy replayed, how its fit ended and its
+     * refitDiffers, and for every fold exported its split lines. Planted: a P8 one unit in its last
+     * place off, an entry without its wide figures, a round value or a bet moved in the bundle's
+     * states.bin: each stops.
      */
     @Test
     public void theHooksOutputsHoldWhatTheReplayScored() throws Exception {
         FullIndexReplay.Options o = withHooks(root.resolve("hooks"));
         o.hooks.add(new LaterHook());
-        FullIndexReplay.Assembled h = FullIndexReplay.run(o, "hooks", QUIET);
+        o.hooks.add(new RankingHook());
+        ByteArrayOutputStream text = new ByteArrayOutputStream();
+        FullIndexReplay.Assembled h = FullIndexReplay.run(o, "hooks", new PrintStream(text, true, "UTF-8"));
+        String log = text.toString("UTF-8");
         List<SystemScorer.Result> merged = h.results();
         int rows = 0;
         for (int k = 0; k < h.items.size(); k++) {
@@ -478,11 +512,14 @@ public class FullIndexReplayTest {
         ExportBundle.States bin = ExportBundle.readStates(bundle.resolve("states.bin"));
         assertEquals(2 * o.exportRows.size(), bin.sections.size(), "every row at 75% and 80%");
         int checkedFiles = 0;
+        ScoringStates states12 = FullIndexPilot.load(states, 12);
         for (int k = 0; k < h.items.size(); k++) {
             FullIndexReplay.Record rec = h.record(k);
             int p = rec.item.pen;
             @SuppressWarnings("unchecked")
             List<boolean[][]> later = (List<boolean[][]>) rec.kept.get("later");
+            @SuppressWarnings("unchecked")
+            List<PlayerMove[][][]> walked = (List<PlayerMove[][][]>) rec.kept.get("ranking");
             for (SystemScorer.Entry e : rec.result.fullEntries) {
                 if (e.ownValue) {
                     continue;
@@ -492,22 +529,62 @@ public class FullIndexReplayTest {
                             ExportBundle.Strategy.fileName(e.name, ExportBundle.PENS[p], f)));
                     SystemScorer.Fit fit = rec.result.fullFirst[p][f];
                     assertArrayEquals(fit.groups.hi, s.hi);
+                    PlayerMove[][][] ranked = FullIndexFit.rankings(states12, StateRun.montreal(), fit);
+                    int differ = 0;
                     for (int g = 0; g < s.hi.length; g++) {
                         for (int i = 0; i < Deals.COUNT; i++) {
-                            if (!Deals.playerNatural(i) && fit.reach[g][i] > 0) {
+                            if (Deals.playerNatural(i)) {
+                                continue;
+                            }
+                            if (fit.reach[g][i] > 0) {
                                 assertEquals(StateValuer.MOVES[fit.move[g][i]], s.first[g][i][0], g + " " + i);
                             }
+                            assertArrayEquals(ranked[g][i], s.first[g][i], "the dealt hand's ranking, " + g + " " + i);
+                            assertArrayEquals(walked.get(f)[g][i], s.splitRanking(g, i), "split hands', " + g + " " + i);
+                            differ += Arrays.equals(ranked[g][i], walked.get(f)[g][i]) ? 0 : 1;
                         }
                     }
+                    assertEquals(differ, s.splitLines());
+                    assertEquals(0, differ, "this fixture's fits rank every deal one way");
                     assertEquals(later.get(f).length, s.stands.length);
                     for (int l = 0; l < s.stands.length; l++) {
                         assertArrayEquals(later.get(f)[l], s.stands[l], "later group " + l);
                     }
+                    assertTrue(log.contains("export: " + rec.result.count.name + " at " + SystemScorer.PENETRATIONS[p]
+                            + ", fold " + f + ": 0 split lines\n"), log);
                     checkedFiles++;
                 }
             }
+            for (FullIndexFit.Summary t : rec.result.fullFit[p]) {
+                String line = "  " + t.name + ": " + t.passes + " passes, " + (t.capped ? "stopped at the pass cap" : "converged");
+                int at = log.indexOf(line);
+                assertTrue(at >= 0 && log.substring(at, log.indexOf('\n', at)).endsWith("; refitDiffers " + t.refitDiffers),
+                        line + "\n" + log);
+            }
         }
         assertEquals(4 * o.exportRows.size(), checkedFiles);
+        // Each row's check on its values played every split its strategies' last round valued again
+        // from its files (StrategyExport.playedAsValued), so the split hands are held to what the
+        // Split values were worked out under, not only to the walked ranking Refit took.
+        java.util.regex.Matcher played = java.util.regex.Pattern.compile("checked on its values, \\d+ values compared, "
+                + "(\\d+) splits the last round valued played again from its files").matcher(log);
+        int rowsPlayed = 0;
+        while (played.find()) {
+            assertTrue(Integer.parseInt(played.group(1)) > 0, played.group());
+            rowsPlayed++;
+        }
+        assertEquals(2 * o.exportRows.size(), rowsPlayed, log);
+        ExportBundle.Lookups lk = ExportBundle.readLookups(bundle.resolve("lookups.tsv"), true);
+        int splitLines = 0;
+        for (ExportBundle.LookupLine l : lk.lines) {
+            if (l.split) {
+                splitLines++;
+                for (String cell : l.cells) {
+                    assertTrue(cell.matches("[SHDP]+(:[SHDP]+)?"), cell);
+                }
+            }
+        }
+        assertEquals(1000, splitLines);
 
         // Planted, one at a time.
         FullIndexReplay.Record rec = h.record(h.items.size() - 1);
@@ -539,15 +616,16 @@ public class FullIndexReplayTest {
                 expected.add(r.expect);
             }
         }
-        List<CountKeys.Count> catalog = new ArrayList<>();
+        // keys-sample.tsv's counts: the whole catalog, then the run's counts outside it.
+        List<CountKeys.Count> catalog = CountKeys.catalog();
         List<CountKeys.Count> own = new ArrayList<>();
         List<String> catalogNames = new ArrayList<>();
-        for (CountKeys.Count k : CountKeys.catalog()) {
+        for (CountKeys.Count k : catalog) {
             catalogNames.add(k.name);
         }
         for (CountKeys.Count k : h.counts) {
-            if (!k.name.equals(CountKeys.nullCount().name)) {
-                (catalogNames.contains(k.name) ? catalog : own).add(k);
+            if (!k.name.equals(CountKeys.nullCount().name) && !catalogNames.contains(k.name)) {
+                own.add(k);
             }
         }
         List<CountKeys.Count> keyCounts = StrategyExport.keyCounts(catalog, own);
