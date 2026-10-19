@@ -255,6 +255,70 @@ class SimCommandsTest {
     }
 
     /**
+     * B4's header lists the registered counts and their own betting variants, so a count the
+     * bundle's strategy files play or bet with must have a column (sim/QUESTIONS.md item 33). The
+     * fixture's two Hi-Lo files renamed to play "F9 test" and bet "F9 test + vector" (their tags
+     * unchanged): with the two columns where B4 puts them, D2 passes and checks.txt is as on any
+     * bundle; with the two misnamed, they are left out as no count's, and D2 fails, a note naming
+     * each count of the files the header lacks, once, right after the two D2 lines; with neither
+     * column, the same notes, before a changed cell's note. Planted on 19 October 2026 in a scratch
+     * copy of sim/ outside the worktree, one at a time; each failed this test: the files' counts not
+     * required; their absence named but not failing D2; the notes not written; the notes written
+     * after the cells' notes; each count named once for each file naming it; the betcount not looked
+     * for; the counts named in the first line's list of catalog counts missing. The reader's plants
+     * are in KeysSampleTest's comment.
+     */
+    @Test
+    void checksTxtNamesAFilesCountTheHeaderLacks() throws Exception {
+        Map<String, String> status = new LinkedHashMap<>();
+        Path dir = BundleFixture.write(tmp.resolve("f9"));
+        for (int fold = 0; fold < 2; fold++) {
+            String path = "strategy-hi-lo-hi-lo-lite-p80-f" + fold + ".txt";
+            List<String> lines = new ArrayList<>(BundleFixture.hiLo("first", fold).lines());
+            lines.replaceAll(l -> l.startsWith("playcount\t") ? "playcount\tF9 test"
+                    : l.startsWith("betcount\t") ? "betcount\tF9 test + vector" : l);
+            BundleFixture.write(dir.resolve(path), lines);
+            BundleFixture.reseal(dir, path + "\t" + BundleFixture.HILO + "\t80\t" + fold + "\tfirst");
+        }
+        Bundle b = new Bundle(dir, Plants.NONE);
+        Catalog c = KeysSampleTest.catalog();
+        List<KeysSample.Column> f9 = List.of(KeysSample.column("F9 test", c, b.strategies.values(), false),
+                KeysSample.column("F9 test + vector", c, b.strategies.values(), false));
+        String none = "D2\tcolumns left out, since no count of the catalog or of the bundle's files has the name: 0";
+        List<String> notes = List.of(KeysSample.unlistedNote("F9 test"), KeysSample.unlistedNote("F9 test + vector"));
+        assertEquals("count F9 test, which a strategy file of the bundle plays or bets with: no column of"
+                + " keys-sample.tsv's header has this name, so D2 holds none of its keys", notes.get(0));
+        // the two columns there
+        int lines = writeKeys(dir, f9, List.of(), null, null);
+        List<String> named = checks(dir, tmp.resolve("runNamed"), status);
+        assertEquals(List.of("D2\t" + 41 * lines + " of " + 41 * lines + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 0 mismatches; catalog counts missing from its header: []", none), d2Lines(named));
+        assertFalse(named.stream().anyMatch(notes::contains), named.toString());
+        assertEquals("passed", status.get("D2"));
+        // the two misnamed, with made-up cells
+        String d2 = "D2\t" + 39 * lines + " of " + 39 * lines + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 0 mismatches; catalog counts missing from its header: []";
+        assertEquals(lines, writeKeys(dir, List.of(), List.of("F9 Test", "F9 Test + vector"), null, null));
+        List<String> misnamed = checks(dir, tmp.resolve("runMisnamed"), status);
+        int at = misnamed.indexOf(d2);
+        assertEquals(List.of(d2, "D2\tcolumns left out, since no count of the catalog or of the bundle's files has the"
+                + " name: 2\tF9 Test\tF9 Test + vector", notes.get(0), notes.get(1)), misnamed.subList(at, at + 4));
+        assertTrue(misnamed.get(at + 4).startsWith("D4\t"), misnamed.get(at + 4));
+        assertEquals("failed", status.get("D2"));
+        // neither column, and a catalog key changed: the notes come before the cell's
+        writeKeys(dir, List.of(), List.of(), BundleFixture.HILO, null);
+        List<String> absent = checks(dir, tmp.resolve("runAbsent"), status);
+        String changed = "D2\t" + (39 * lines - 1) + " of " + 39 * lines + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 1 mismatches; catalog counts missing from its header: []";
+        at = absent.indexOf(changed);
+        assertEquals(List.of(changed, none, notes.get(0), notes.get(1)), absent.subList(at, at + 4));
+        assertTrue(absent.get(at + 4).startsWith("line 4 bet state 0, " + BundleFixture.HILO + ": the file says "),
+                absent.get(at + 4));
+        assertTrue(absent.get(at + 5).startsWith("D4\t"), absent.get(at + 5));
+        assertEquals("failed", status.get("D2"));
+    }
+
+    /**
      * Writes keys-sample.tsv for the fixture bundle from the simulator's own keys (KeysSampleTest's
      * lines): a bet line and a play line for (9, 9) against a 6 at every fourth state. The columns
      * {@code unknown} names, which no count of the catalog or of the bundle's files has, go after the
@@ -263,15 +327,28 @@ class SimCommandsTest {
      * names, if any, is not written. Returns the number of lines after the header.
      */
     static int writeKeys(Path dir, List<String> unknown, String change, String drop) throws Exception {
+        return writeKeys(dir, List.of(), unknown, change, drop);
+    }
+
+    /**
+     * As above, with the columns {@code known} gives, whose cells are the simulator's own: the first
+     * after the null count, where B4 puts the registered counts, before any of {@code unknown}, and
+     * the rest after the ace variants, where it puts their betting variants.
+     */
+    static int writeKeys(Path dir, List<KeysSample.Column> known, List<String> unknown, String change, String drop)
+            throws Exception {
         Bundle b = new Bundle(dir, Plants.NONE);
         States s = b.states();
         Catalog c = KeysSampleTest.catalog();
-        List<String> natural = List.of(KeysSampleTest.header(c).split("\t", -1));
+        List<String> knownNames = known.stream().map(KeysSample.Column::name).toList();
+        List<String> natural = List.of(KeysSampleTest.header(c, knownNames.toArray(new String[0])).split("\t", -1));
         int afterNull = 8 + 31;
         int end = Math.max(0, unknown.size() - 2);
         List<String> head = new ArrayList<>(natural.subList(0, afterNull));
+        head.addAll(knownNames.subList(0, Math.min(1, knownNames.size())));
         head.addAll(unknown.subList(0, end));
-        head.addAll(natural.subList(afterNull, natural.size()));
+        head.addAll(natural.subList(afterNull, afterNull + 8));
+        head.addAll(knownNames.subList(Math.min(1, knownNames.size()), knownNames.size()));
         head.addAll(unknown.subList(end, unknown.size()));
         head.remove(drop);
         Map<String, String> made = new HashMap<>();
@@ -281,8 +358,8 @@ class SimCommandsTest {
         List<String> text = new ArrayList<>(List.of("# keys-sample.tsv: SHOE_SPEC.md B4, format 1", "# sample seed 20261009",
                 String.join("\t", head)));
         for (int i = 0; i < s.n; i += 4) {
-            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "bet", i, 0, 0, 0, List.of()), made));
-            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "play", i, 9, 9, 6, List.of()), made));
+            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "bet", i, 0, 0, 0, known), made));
+            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "play", i, 9, 9, 6, known), made));
         }
         if (change != null) {
             String[] f = text.get(3).split("\t", -1);

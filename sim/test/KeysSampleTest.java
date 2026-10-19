@@ -34,6 +34,15 @@ import org.junit.jupiter.api.Test;
  * everyCellIsCompared... and theCatalogMakesB9sEntriesAndVariants); a catalog count missing from
  * the header no longer failing D2 (aColumnNoCountNames... and checksTxtNames...). SimCommandsTest's
  * test names what was planted in checks.txt's lines.
+ *
+ * <p>A count of the bundle's files the header lacks (aFileCountTheHeaderLacksFailsD2 here, and
+ * SimCommandsTest.checksTxtNamesAFilesCountTheHeaderLacks for checks.txt), after the clean-room
+ * review of 268b2d0, was planted the same way on 19 October 2026: such a count not required
+ * (aFileCount... and checksTxtNamesAFilesCount...); named but not failing D2 (the same two); named
+ * once for each file that names it (the same two); the files' betcount not looked for (the same
+ * two); a catalog count a file names named here as well as in missing (aFileCount...); named in
+ * missing, the catalog counts' list on the first line (the same two as the first). Each plant of
+ * the paragraph above, run again on that code, still failed the tests it names.
  */
 class KeysSampleTest {
 
@@ -188,6 +197,7 @@ class KeysSampleTest {
         assertEquals(10, clean.lines());
         assertEquals(10L * 41, clean.cells());
         assertEquals(List.of(), clean.leftOut(), "every column here is a count the reader knows");
+        assertEquals(List.of(), clean.unlisted(), "the file's two counts have their columns");
         // the registered count's bet column takes the file's bet tags; its play column the play tags
         assertEquals("5", cell(h, text.get(8), "F9 test + vector"), "ten twos at bet tag 1, running, over divisor 2");
         // one planted difference, and one catalog column dropped from the header
@@ -287,6 +297,7 @@ class KeysSampleTest {
         assertEquals(0, clean.mismatches());
         assertEquals(List.of(), clean.first());
         assertEquals(List.of(), clean.missing());
+        assertEquals(List.of(), clean.unlisted());
         // what the columns left out hold makes no difference
         assertEquals(clean, KeysSample.check(altered, c, List.of(f9), s, Plants.NONE));
         // a key changed in a catalog count's column, an ace variant's, or a column of the file's own
@@ -326,6 +337,92 @@ class KeysSampleTest {
         assertTrue(noFile.passes(), noFile.first().toString());
         assertEquals(List.of(u1, "F9 test", u2, "F9 test + vector", u3), noFile.leftOut());
         assertEquals(10L * 39, noFile.cells());
+    }
+
+    /**
+     * B4's header lists the registered counts and their own betting variants, so a count a strategy
+     * file of the bundle plays or bets with must have its column, as a catalog count must: one the
+     * header lacks is named once, in the files' order, playcount before betcount, and fails D2. A
+     * column of the file's count that is misnamed is left out and named as no count's (it is
+     * unknown), and the file's count it stood for is still named, so the bundle's own count cannot go
+     * unchecked by a slip of its name (the clean-room review of 268b2d0 found that it did). A
+     * catalog count a file names is in {@code missing} alone, and the page look's case, a registered
+     * count's column with no file in the bundle, still passes.
+     */
+    @Test
+    void aFileCountTheHeaderLacksFailsD2() throws IOException {
+        Catalog c = catalog();
+        States s = states();
+        Strategy f9 = registered();
+        List<Strategy> folds = List.of(f9, f9);
+        List<KeysSample.Column> extra = List.of(KeysSample.column("F9 test", c, List.of(f9), false),
+                KeysSample.column("F9 test + vector", c, List.of(f9), false));
+        List<String> natural = List.of(header(c, "F9 test", "F9 test + vector").split("\t", -1));
+        List<String> named = new ArrayList<>();
+        for (int st = 0; st < 2; st++) {
+            for (int[] d : new int[][]{{0, 0, 0}, {7, 7, 2}, {2, 3, 4}, {1, 10, 1}, {10, 10, 10}}) {
+                named.add(line(c, s, d[0] == 0 ? "bet" : "play", st, d[0], d[1], d[2], extra));
+            }
+        }
+        // the header as given, each line's cells by name: F9's columns are what it calls them, with
+        // the cells its map gives, and every other column the simulator's own cell
+        java.util.function.BiFunction<List<String>, java.util.Map<String, String>, List<String>> sample = (head, cells) -> {
+            List<String> text = new ArrayList<>(List.of("# keys-sample.tsv: SHOE_SPEC.md B4, format 1",
+                    "# sample seed 20261009", String.join("\t", head)));
+            for (String l : named) {
+                text.add(arrange(natural, head, l, cells));
+            }
+            return text;
+        };
+        List<String> catalogOnly = new ArrayList<>(natural.subList(0, natural.size() - 2));
+        // F9's two columns misnamed, their cells wrong: left out as no count's, and F9's counts named
+        List<String> misnamed = new ArrayList<>(catalogOnly);
+        misnamed.addAll(List.of("F9 Test", "F9 Test + vector"));
+        KeysSample.Result r = KeysSample.check(sample.apply(misnamed, java.util.Map.of("F9 Test", "888",
+                "F9 Test + vector", "777")), c, folds, s, Plants.NONE);
+        assertFalse(r.passes());
+        assertEquals(List.of("F9 test", "F9 test + vector"), r.unlisted(), "each once, though two files name them");
+        assertEquals(List.of("F9 Test", "F9 Test + vector"), r.leftOut());
+        assertEquals(0, r.mismatches());
+        assertEquals(10L * 39, r.cells());
+        assertEquals(List.of(), r.missing());
+        assertEquals(List.of(), r.first());
+        // no column for either: the same two named
+        r = KeysSample.check(sample.apply(catalogOnly, java.util.Map.of()), c, folds, s, Plants.NONE);
+        assertFalse(r.passes());
+        assertEquals(List.of("F9 test", "F9 test + vector"), r.unlisted());
+        assertEquals(List.of(), r.leftOut());
+        // the play count's column there and the betting variant's not: the variant alone named
+        List<String> playOnly = new ArrayList<>(catalogOnly);
+        playOnly.add(39, "F9 test");
+        r = KeysSample.check(sample.apply(playOnly, java.util.Map.of()), c, folds, s, Plants.NONE);
+        assertFalse(r.passes());
+        assertEquals(List.of("F9 test + vector"), r.unlisted());
+        assertEquals(10L * 40, r.cells());
+        // and the other way round
+        List<String> betOnly = new ArrayList<>(catalogOnly);
+        betOnly.add("F9 test + vector");
+        r = KeysSample.check(sample.apply(betOnly, java.util.Map.of()), c, folds, s, Plants.NONE);
+        assertFalse(r.passes());
+        assertEquals(List.of("F9 test"), r.unlisted());
+        // both there: passes
+        r = KeysSample.check(sample.apply(natural, java.util.Map.of()), c, folds, s, Plants.NONE);
+        assertTrue(r.passes(), r.first().toString());
+        assertEquals(List.of(), r.unlisted());
+        // a file of a catalog count, Hi-Lo, whose column the header lacks: in missing, and not again here
+        Strategy hiLo = Strategy.parse(new StrategyFixture().lines(), "hi-lo", Plants.NONE);
+        List<String> noHiLo = new ArrayList<>(catalogOnly);
+        noHiLo.remove("Hi-Lo = Hi-Lo Lite");
+        r = KeysSample.check(sample.apply(noHiLo, java.util.Map.of()), c, List.of(hiLo, hiLo), s, Plants.NONE);
+        assertFalse(r.passes());
+        assertEquals(List.of("Hi-Lo = Hi-Lo Lite"), r.missing());
+        assertEquals(List.of(), r.unlisted());
+        // with no file of F9 in the bundle, its misnamed columns are only left out, and D2 passes
+        r = KeysSample.check(sample.apply(misnamed, java.util.Map.of("F9 Test", "888", "F9 Test + vector", "777")),
+                c, List.of(hiLo), s, Plants.NONE);
+        assertTrue(r.passes(), r.first().toString());
+        assertEquals(List.of(), r.unlisted());
+        assertEquals(List.of("F9 Test", "F9 Test + vector"), r.leftOut());
     }
 
     /** A strategy of a count of our own: running, divisor 2, betting on a vector of its own. */

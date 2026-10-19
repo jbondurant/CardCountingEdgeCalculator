@@ -289,6 +289,10 @@ public final class Sim {
             // The columns left out (SHOE_SPEC.md B4), on a line of their own, always written, so that the
             // line above keeps its form: their number, then each name (sim/QUESTIONS.md item 33).
             checks.add(KeysSample.leftOutLine(d2.leftOut()));
+            // A count of the bundle's files the header lacks fails D2: one note each, before the cells' notes.
+            for (String name : d2.unlisted()) {
+                checks.add(KeysSample.unlistedNote(name));
+            }
             checks.addAll(d2.first());
             status.put("D2", d2.passes() ? "passed" : "failed");
         } else {
