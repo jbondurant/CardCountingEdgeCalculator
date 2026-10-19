@@ -353,6 +353,36 @@ public class SiteSimTest {
         }
     }
 
+    /**
+     * D2's second line, the key-sample columns it left out (SHOE_SPEC.md B4; sim/QUESTIONS.md item
+     * 33, since 0f087c4): with none or with names it passes when its count is right, and the first
+     * line's mismatches still fail D2; a note that a count of the bundle's files has no column fails
+     * D2 though the first line shows none. Until 19 October 2026 the reader took the second line,
+     * which has no "of", for a failure, and skipped the note, which has no tab. Planted on 19
+     * October 2026 in scratch copies of SiteSim, each failing this test: the second line's branch
+     * removed, the note not read, and the second line's count of names not checked.
+     */
+    @Test
+    public void d2sColumnsLeftOutPassAndAFileCountWithNoColumnFails() throws Exception {
+        String left = "D2\t" + SiteSim.D2_LEFT_OUT;
+        String note = "count F9 own, which a strategy file of the bundle plays or bets with: no column of keys-sample.tsv's "
+                + "header has this name, so D2 holds none of its keys\n";
+        String[][] cases = {
+                {left + "0\n", ""},
+                {left + "2\tF1 flat (f1-flat-pub-uston-apc)\tHi-Opt II at grain 500/10000\n", ""},
+                {left + "2\tF1 flat (f1-flat-pub-uston-apc)\n", "D2"},
+                {left + "0\n" + note, "D2"}};
+        for (String[] c : cases) {
+            Path checks = Files.write(dir.resolve("checks.txt"), (CHECKS + c[0]).getBytes(StandardCharsets.UTF_8));
+            List<String> failed = SiteSim.failedChecks(checks);
+            assertEquals(c[1].isEmpty() ? List.of() : List.of(c[1]), SiteSim.checkNames(failed), c[0] + failed);
+        }
+        String mismatched = CHECKS.replace("596232 of 596232 keys equal to keys-sample.tsv's on 15288 lines; 0 mismatches",
+                "596231 of 596232 keys equal to keys-sample.tsv's on 15288 lines; 1 mismatches");
+        Path checks = Files.write(dir.resolve("checks.txt"), (mismatched + left + "1\tF1 flat\n").getBytes(StandardCharsets.UTF_8));
+        assertEquals(List.of("D2"), SiteSim.checkNames(SiteSim.failedChecks(checks)));
+    }
+
     /** Two parts, three runs: part 2's tests split over two bundles' runs (the replay's and the page look's), the rule over their union. */
     @Test
     public void thePartsAndBundlesAreTakenTogether() throws Exception {

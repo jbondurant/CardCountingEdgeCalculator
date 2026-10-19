@@ -836,6 +836,16 @@ play	0	0	0	0	1	1	1	0	0	…
   in catalog order), then the null count, then the registered counts, if any, then every betting
   variant (ace side-count variants, then the registered counts' own betting variants, if any).
   The header is the only place the list of counts is given, and the reader takes it from there.
+- A column may name a registered count that has no strategy file in the bundle: an export of a
+  registration's rows samples the keys of every count the registration lists, beside the rows it
+  writes. Such a count's tags are in neither counting-systems.json nor the bundle, so a reader
+  cannot work out its keys. Check D2 (SIM_CHECK.md section 5) is over the catalog's 31 counts and
+  their 8 ace variants: a reader leaves such a column out of D2's comparison and its count of
+  mismatches, and names every column it left out. Every catalog count and variant must still be
+  in the header, and every column whose count the reader can know, the catalog's and the counts
+  of the bundle's own strategy files with their betting variants, is held key for key as before.
+  (Added 19 October 2026: the page look's two bundles hold such columns, and part 2's pilot
+  stopped on them.)
 - `state` is the record's place in states.bin, so the tallies and depth come from there; `shoe`,
   `round` and `depth` repeat them for reading.
 - A `bet` line holds each count's bet key at the state (B2.2), `-` in `p1`, `p2` and `up`.

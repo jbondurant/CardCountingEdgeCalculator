@@ -420,6 +420,29 @@ Open:
      stopped at the pass cap with pass 3's play kept and refitDiffers 1 (the replay's new log
      line), which bears out the inference above. The identity table records all three part 2
      bundles.
+   - **Part 2's pilot stopped on D2 for the page look's two bundles** (19 October 2026, 12:05 to
+     12:09, runs/sim/pilot-part2-ae283e4, script runs/site-runs/sim-part2-pilot-ae283e4.sh). The
+     replay's bundle and part 1's passed every exact check and wrote their pilot files (the
+     replay's D5 compared 30,000 split cells, 0 mismatches). The page look's export-first and
+     export-full passed D1, D4 and D5 (export-full's 4,000 split cells equal), but their
+     keys-sample.tsv holds the registration's other counts (21 columns in export-first, 3 in
+     export-full: F1 flat, F1r, the twin-half counts, the controls at the search's grain), whose
+     tags neither counting-systems.json nor the bundle gives; the simulator counted each such
+     column as a mismatch, and D2 failed. Every key it compared matched: the 21 and 3 mismatches
+     were the columns themselves, counted one each with none of their cells (corrected 19 October
+     2026: this note and d188bca's message first said 1,386,357 of 1,386,357, reading the line
+     wrongly; the fixed simulator's run below shows 1,386,378 of 1,386,378 in both). D2 as SIM_CHECK.md section 5 registers
+     it is over the catalog's 31 counts and 8 ace variants. So the part stopped there, as section 5
+     says, and is fixed before it reruns: SHOE_SPEC.md B4 says such a column is outside D2, left
+     out and named (d188bca), and the simulator's reader is changed to match in a fifth clean-room
+     session; then the identity table records the new commits, deviation 1's check on part 1's
+     bundle is run again, and the pilot reruns on all four bundles. Done: the simulator's fifth
+     clean-room session (268b2d0, and 0f087c4 after its review, which found that a misnamed
+     column of a bundle file's own count would have gone unchecked: D2 now fails on it, with a
+     note), merged as 513e0eb; SiteSim reads D2's second line and that note (2330f17). On the page
+     look's two bundles (runs/sim/d2check-0f087c4, p2 at K = 20): D2 1,386,378 of 1,386,378 keys
+     equal, 0 mismatches, the 21 and 3 columns named; D1, D4 and D5 as before, export-full's 4,000
+     split cells equal.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the

@@ -18,7 +18,8 @@ import org.junit.jupiter.api.io.TempDir;
  * The simulator's own file formats, those SHOE_SPEC.md Part C does not fix, held to the
  * {@code sim-formats} block of sim/QUESTIONS.md (item 27), so the engine side can write its
  * readers from that block: each file's header line, the keys of a summary's comparison and
- * difference in order, and the pilot's line kinds. Run from the repository's root.
+ * difference in order, and the pilot's line kinds; and checks.txt's second D2 line held to the
+ * {@code sim-checks} block (item 33). Run from the repository's root.
  */
 class FormatsTest {
 
@@ -83,6 +84,37 @@ class FormatsTest {
         List<String> kinds = List.of(spec.get("sim-pilot-partN.tsv").get(0).split("\\|"));
         for (String line : pilot) {
             assertTrue(kinds.contains(line.split("\t")[0]), line);
+        }
+    }
+
+    /**
+     * checks.txt's second D2 line, the columns D2 left out (SHOE_SPEC.md B4; sim/QUESTIONS.md item
+     * 33), held to the {@code sim-checks} block: its first two fields as the block gives them, N
+     * the number of columns left out, then one field a name, as many as N, in header order; with
+     * none left out the line ends after the number.
+     */
+    @Test
+    void checksTxtsSecondD2LineIsTheDocumentedForm() throws Exception {
+        List<String> doc = Files.readAllLines(Path.of("sim/QUESTIONS.md"), StandardCharsets.UTF_8);
+        int start = doc.indexOf("```sim-checks");
+        assertTrue(start >= 0, "sim/QUESTIONS.md has no sim-checks block");
+        assertEquals("```", doc.get(start + 2), "the block holds one line");
+        List<String> spec = List.of(doc.get(start + 1).split("\t", -1));
+        assertEquals(List.of("D2", "NAME\u2026"), List.of(spec.get(0), spec.get(2)));
+        assertEquals(3, spec.size());
+        assertTrue(spec.get(1).endsWith(": N"), spec.get(1));
+        String text = spec.get(1).substring(0, spec.get(1).length() - 1);
+        Map<String, String> status = new LinkedHashMap<>();
+        for (List<String> names : List.of(List.<String>of(), List.of("F1 flat (f1-flat-pub-uston-apc)",
+                "Hi-Opt II at grain 500/10000", "F1r's tags as a true count (f1r-double-shift-half)"))) {
+            Path dir = BundleFixture.write(tmp.resolve("b" + names.size()));
+            SimCommandsTest.writeKeys(dir, names, null, null);
+            List<String> d2 = SimCommandsTest.d2Lines(SimCommandsTest.checks(dir, tmp.resolve("run" + names.size()), status));
+            assertEquals(2, d2.size(), d2.toString());
+            List<String> f = List.of(d2.get(1).split("\t", -1));
+            assertEquals(spec.get(0), f.get(0));
+            assertEquals(text + names.size(), f.get(1));
+            assertEquals(names, f.subList(2, f.size()));
         }
     }
 }
