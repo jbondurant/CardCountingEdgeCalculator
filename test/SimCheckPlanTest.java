@@ -325,8 +325,14 @@ public class SimCheckPlanTest {
         assertEquals(4, found.size(), found.toString());
         assertEquals(block, SimCheckPlan.fill(SimCheckPlan.Pilots.read(found)));
         assertEquals(1, SimCheckPlan.pilotFiles(dir, 1).size());
-        String doc = new String(Files.readAllBytes(ROOT.resolve("SIM_CHECK.md")), StandardCharsets.UTF_8)
-                .replace(SimCheckPlan.unfilled(2), block);
+        // The fixture's block between the fill-2 markers, whatever the real one holds: part 2's has been
+        // filled from its pilot since 19 October 2026, so "Not filled" is no longer there to replace.
+        String real = new String(Files.readAllBytes(ROOT.resolve("SIM_CHECK.md")), StandardCharsets.UTF_8);
+        String open = "<!-- SimCheckPlan fill-2 -->\n";
+        int a = real.indexOf(open);
+        int b = real.indexOf("<!-- /SimCheckPlan fill-2 -->");
+        assertTrue(a >= 0 && b > a, "SIM_CHECK.md's fill-2 markers");
+        String doc = real.substring(0, a + open.length()) + block + real.substring(b);
         SiteSim.Plan plan = SiteSim.Plan.read(Files.write(dir.resolve("SIM_CHECK.md"), doc.getBytes(StandardCharsets.UTF_8)));
         assertArrayEquals(new long[]{26, 84_000}, plan.sizes.get(2), "SiteSim holds part 2's runs to the block's sizes");
 
