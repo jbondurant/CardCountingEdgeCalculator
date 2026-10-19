@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -181,6 +184,128 @@ class SimCommandsTest {
         Sim.p2(new String[]{"--bundle", dir.toString(), "--out", out.toString(), "--sim-commit", "test", "--k", "2",
                 "--plant", "s17"});
         return Files.readAllLines(out.resolve("checks.txt")).stream().filter(l -> l.startsWith("D5\t")).toList();
+    }
+
+    /**
+     * D2 in checks.txt (SHOE_SPEC.md B4's bullet of 19 October 2026; sim/QUESTIONS.md item 33). Its
+     * line keeps its form and counts only the keys compared; a second D2 line follows it, always,
+     * with the number of columns left out and their names, and any mismatch's note comes after both.
+     * On a bundle whose keys-sample.tsv names only counts the reader knows, as part 1's and the
+     * replay's do, the second line gives 0 and is the one line added; on one with twelve columns no
+     * count names, more than the ten notes checks.txt keeps, D2 passes, all twelve are named in header
+     * order, and every other line is the same; a catalog key changed, or a catalog count missing from
+     * the header, still fails it. Planted on 19 October 2026 in a scratch copy of sim/ outside the
+     * worktree, one at a time; each failed this test: the second line written only when a column
+     * was left out, and the names written as a Java list (both also failing
+     * FormatsTest.checksTxtsSecondD2LineIsTheDocumentedForm); only the first ten named; the second
+     * line written after the mismatches' notes; the first line's mismatches counting the columns
+     * left out; a count of them appended after the missing list; the first line's form changed
+     * (" lines: " for " lines; "). The plants of D2's reading are in KeysSampleTest's comment.
+     */
+    @Test
+    void checksTxtNamesTheColumnsD2LeftOut() throws Exception {
+        Map<String, String> status = new LinkedHashMap<>();
+        Path plain = BundleFixture.write(tmp.resolve("plain"));
+        int lines = writeKeys(plain, List.of(), null, null);
+        int cells = 39 * lines;
+        String d2 = "D2\t" + cells + " of " + cells + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 0 mismatches; catalog counts missing from its header: []";
+        String none = "D2\tcolumns left out, since no count of the catalog or of the bundle's files has the name: 0";
+        List<String> without = checks(plain, tmp.resolve("runPlain"), status);
+        assertEquals(List.of(d2, none), d2Lines(without));
+        assertEquals(without.indexOf(d2) + 1, without.indexOf(none), "the second line follows the first");
+        assertEquals("passed", status.get("D2"));
+        // twelve columns no count names: ten registered counts after the null count and two registered
+        // betting variants at the end, where B4 puts them
+        List<String> unknown = new ArrayList<>();
+        for (int i = 1; i <= 12; i++) {
+            unknown.add("F" + i + (i > 10 ? " + vector" : "") + " at 1-8 (f" + i + "'s, no file in the bundle)");
+        }
+        Path look = BundleFixture.write(tmp.resolve("look"));
+        assertEquals(lines, writeKeys(look, unknown, null, null));
+        List<String> with = checks(look, tmp.resolve("runLook"), status);
+        String twelve = "D2\tcolumns left out, since no count of the catalog or of the bundle's files has the name: 12\t"
+                + String.join("\t", unknown);
+        assertEquals(List.of(d2, twelve), d2Lines(with));
+        assertEquals("passed", status.get("D2"));
+        List<String> rest = new ArrayList<>(with);
+        rest.remove(twelve);
+        List<String> restWithout = new ArrayList<>(without);
+        restWithout.remove(none);
+        assertEquals(restWithout, rest, "every other line is the same");
+        // a catalog key changed still fails D2; its note follows both D2 lines
+        Path changed = BundleFixture.write(tmp.resolve("changed"));
+        writeKeys(changed, unknown, BundleFixture.HILO, null);
+        List<String> failed = checks(changed, tmp.resolve("runChanged"), status);
+        int at = failed.indexOf(d2Lines(failed).get(0));
+        assertEquals("D2\t" + (cells - 1) + " of " + cells + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 1 mismatches; catalog counts missing from its header: []", failed.get(at));
+        assertEquals(twelve, failed.get(at + 1));
+        assertTrue(failed.get(at + 2).startsWith("line 4 bet state 0, " + BundleFixture.HILO + ": the file says "),
+                failed.get(at + 2));
+        assertEquals("failed", status.get("D2"));
+        // a catalog count missing from the header still fails D2
+        Path dropped = BundleFixture.write(tmp.resolve("dropped"));
+        writeKeys(dropped, unknown, null, "Red Seven (Red 7)");
+        List<String> missing = checks(dropped, tmp.resolve("runDropped"), status);
+        assertEquals(List.of("D2\t" + 38 * lines + " of " + 38 * lines + " keys equal to keys-sample.tsv's on " + lines
+                + " lines; 0 mismatches; catalog counts missing from its header: [Red Seven (Red 7)]", twelve),
+                d2Lines(missing));
+        assertEquals("failed", status.get("D2"));
+    }
+
+    /**
+     * Writes keys-sample.tsv for the fixture bundle from the simulator's own keys (KeysSampleTest's
+     * lines): a bet line and a play line for (9, 9) against a 6 at every fourth state. The columns
+     * {@code unknown} names, which no count of the catalog or of the bundle's files has, go after the
+     * null count, all but the last two, which go at the end, with made-up cells; the column
+     * {@code change} names, if any, is one more on the first bet line, and the column {@code drop}
+     * names, if any, is not written. Returns the number of lines after the header.
+     */
+    static int writeKeys(Path dir, List<String> unknown, String change, String drop) throws Exception {
+        Bundle b = new Bundle(dir, Plants.NONE);
+        States s = b.states();
+        Catalog c = KeysSampleTest.catalog();
+        List<String> natural = List.of(KeysSampleTest.header(c).split("\t", -1));
+        int afterNull = 8 + 31;
+        int end = Math.max(0, unknown.size() - 2);
+        List<String> head = new ArrayList<>(natural.subList(0, afterNull));
+        head.addAll(unknown.subList(0, end));
+        head.addAll(natural.subList(afterNull, natural.size()));
+        head.addAll(unknown.subList(end, unknown.size()));
+        head.remove(drop);
+        Map<String, String> made = new HashMap<>();
+        for (String u : unknown) {
+            made.put(u, Integer.toString(made.size() - 5));
+        }
+        List<String> text = new ArrayList<>(List.of("# keys-sample.tsv: SHOE_SPEC.md B4, format 1", "# sample seed 20261009",
+                String.join("\t", head)));
+        for (int i = 0; i < s.n; i += 4) {
+            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "bet", i, 0, 0, 0, List.of()), made));
+            text.add(KeysSampleTest.arrange(natural, head, KeysSampleTest.line(c, s, "play", i, 9, 9, 6, List.of()), made));
+        }
+        if (change != null) {
+            String[] f = text.get(3).split("\t", -1);
+            int at = head.indexOf(change);
+            f[at] = Integer.toString(Integer.parseInt(f[at]) + 1);
+            text.set(3, String.join("\t", f));
+        }
+        BundleFixture.write(dir.resolve("keys-sample.tsv"), text);
+        BundleFixture.reseal(dir, "keys-sample.tsv\t-\t-\t-\t-");
+        return text.size() - 3;
+    }
+
+    /** The exact checks on the bundle, as p2 and the pilot run them; checks.txt's lines. */
+    static List<String> checks(Path dir, Path out, Map<String, String> status) throws Exception {
+        Bundle b = new Bundle(dir, Plants.NONE);
+        States s = b.states();
+        status.clear();
+        Sim.exactChecks(b, s, Sim.p2For(b, s, 2, Plants.NONE), Path.of("counting-systems.json"), Plants.NONE, out, status);
+        return Files.readAllLines(out.resolve("checks.txt"));
+    }
+
+    static List<String> d2Lines(List<String> checks) {
+        return checks.stream().filter(l -> l.startsWith("D2\t")).toList();
     }
 
     static String[] concat(String[] a, String... b) {

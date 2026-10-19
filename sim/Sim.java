@@ -286,6 +286,9 @@ public final class Sim {
             checks.add("D2\t" + (d2.cells() - d2.mismatches()) + " of " + d2.cells() + " keys equal to keys-sample.tsv's on "
                     + d2.lines() + " lines; " + d2.mismatches() + " mismatches; catalog counts missing from its header: "
                     + d2.missing());
+            // The columns left out (SHOE_SPEC.md B4), on a line of their own, always written, so that the
+            // line above keeps its form: their number, then each name (sim/QUESTIONS.md item 33).
+            checks.add(KeysSample.leftOutLine(d2.leftOut()));
             checks.addAll(d2.first());
             status.put("D2", d2.passes() ? "passed" : "failed");
         } else {
