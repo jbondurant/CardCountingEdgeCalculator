@@ -1,0 +1,15 @@
+states loaded: 149 from 150 shoes
+hands per up-card: 3061 (54 two-card starts, 3007 of 3+ cards)
+rank graph: 3061 nodes; contested live 768 positions; every-node live 2368
+hands read: contested walk 2709 (reachable-only 2452); every-node walk (perfect) 3007
+  of the contested walk's: 689 contested hands (3+ cards), 2020 chart-stand children
+graph classes [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] (Hi-Lo = Hi-Lo Lite...): 3061 nodes, contested live 768, hands read 2709, same set as rank graph: true
+graph classes [0, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1] (Red Seven (Red 7)...): 3600 nodes, contested live 863, hands read 2709, same set as rank graph: true
+graph classes [0, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2] (KISS I...): 7849 nodes, contested live 1747, hands read 2709, same set as rank graph: true
+graph classes [0, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1] (KISS II...): 7485 nodes, contested live 1697, hands read 2709, same set as rank graph: true
+walk check counts: [Hi-Lo = Hi-Lo Lite] [Red Seven (Red 7)] [Omega II = Canfield Master] [KISS I] [BRH-I]
+states 149: feasible stand values a state 29223.6 (of 30610 slots); needed by the contested walk 26118.0 a state (min 17152, max 27090); reachable-only 23945.5
+bytes a state: full row store 244928 B; needed doubles only 208944 B (85.3%); 60,743 states: 14.88 GB vs 12.69 GB
+stand values compared 3891586, bit mismatches (incl. NaN pattern) 0
+walks: part Hit values compared 1419420, differing 0 (departing parts 729953); decisions compared 11781090, differing 0
+build CPU a state, one thread at nice 15: full 0.0973 s, needed-only 0.0867 s (89.1%)

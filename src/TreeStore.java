@@ -38,6 +38,12 @@ import java.util.BitSet;
  * only read: a store of other states is refused, never deleted, a tree it does not hold is built
  * and not written, and nothing is written to the file or its index (TreeStoreTest).
  *
+ * A store may keep only the first states' trees (keep, the states numbered below it), when the
+ * runs folder's budget leaves room for no more (DiskBudget): the others are built each time they
+ * are asked for and never written, as a read-only store builds what it does not hold, and the file
+ * holds keep records at most. Opened again with a smaller keep, the store lets the states beyond it
+ * go: their marks first, then the file cut to keep records.
+ *
  * Several threads may read and write at once, each its own states: positional reads and writes
  * of a FileChannel do not interfere.
  */
@@ -60,6 +66,8 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
     private final java.util.concurrent.atomic.AtomicLong read = new java.util.concurrent.atomic.AtomicLong();
     /** Whether the store is only read: nothing is written, and a tree it does not hold is built and not kept. */
     final boolean readOnly;
+    /** The states whose trees are kept, those numbered below it; the others are built and not written. */
+    final int keep;
 
     /**
      * Opens the store at file (and file + ".index"), keeping what it holds if its identity is
@@ -67,11 +75,20 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
      * than margin bytes once every state's tree is written.
      */
     TreeStore(ScoringStates st, Path file, String identity, long margin) throws IOException {
+        this(st, file, identity, margin, st.size);
+    }
+
+    /** The same, keeping only the trees of the states numbered below keep. */
+    TreeStore(ScoringStates st, Path file, String identity, long margin, int keep) throws IOException {
+        if (keep < 0 || keep > st.size) {
+            throw new IllegalArgumentException("a store keeps 0 to " + st.size + " states' trees, not " + keep);
+        }
         this.st = st;
         this.file = file;
         this.index = indexOf(file);
         this.identity = identity;
         this.readOnly = false;
+        this.keep = keep;
         refuseNonStore(file);
         BitSet kept = readIndex(index, identity, st.size);
         boolean fresh = kept == null;
@@ -82,11 +99,21 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
             kept = new BitSet(st.size);
         }
         held = kept;
-        long need = RECORD * st.size - (Files.exists(file) ? Files.size(file) : 0);
+        if (!fresh && Files.exists(file) && Files.size(file) > RECORD * keep) {
+            // Kept with more room before: the marks beyond keep go first, so a crash between the
+            // two leaves no state marked whose record is gone.
+            held.clear(keep, st.size);
+            writeIndex((BitSet) held.clone());
+            try (FileChannel c = FileChannel.open(file, StandardOpenOption.WRITE)) {
+                c.truncate(RECORD * keep);
+                c.force(true);
+            }
+        }
+        long need = RECORD * keep - (Files.exists(file) ? Files.size(file) : 0);
         long free = Files.getFileStore(file.toAbsolutePath().getParent()).getUsableSpace();
         if (free - need < margin) {
             throw new IOException(String.format("the trees of %d states need %.1f GB more on disk; %.1f GB is free, and "
-                    + "%.1f GB must be left", st.size, need / 1e9, free / 1e9, margin / 1e9));
+                    + "%.1f GB must be left", keep, need / 1e9, free / 1e9, margin / 1e9));
         }
         if (fresh) {
             // The index first, holding no state, so the store's file never stands without one.
@@ -144,6 +171,7 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
         this.index = indexOf(file);
         this.identity = identity;
         this.readOnly = true;
+        this.keep = 0;
         this.held = held;
         channel = FileChannel.open(file, StandardOpenOption.READ);
     }
@@ -203,7 +231,7 @@ final class TreeStore implements FullIndexFit.Trees, AutoCloseable {
                 return readTree(s);
             }
             PlayerTree tree = new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[s]));
-            if (readOnly) {
+            if (readOnly || s >= keep) {
                 built.incrementAndGet();
                 return tree;
             }

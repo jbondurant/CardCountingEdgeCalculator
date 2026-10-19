@@ -1,0 +1,35 @@
+strategy name: Null count (no count) 70% fold 0
+strategy name: Null count (no count) 70% fold 1
+strategy name: Null count (no count) 75% fold 0
+strategy name: Null count (no count) 75% fold 1
+strategies 372 (186 named half)
+  10 states done
+  20 states done
+  30 states done
+  40 states done
+  50 states done
+  60 states done
+  70 states done
+
+78 states (offsets 3,5003,10003,15003,20003,25003,30003,35003,40003,45003,50003,55003,60003, 6 each); depths: 200 17 79 178 236 331 48 221 286 293 313 144 168 327 227 286 11 227 217 24 230 317 192 272 227 115 260 95 210 301 204 317 219 269 149 311 299 322 331 133 31 321 33 157 311 83 138 160 301 318 69 298 125 327 277 323 245 265 313 235 161 260 310 254 42 51 316 232 64 20 75 152 239 314 319 323 136 94
+(strategy, state) pairs walked: 24056
+parts: all 13617136, live (chance > 0, not a natural) 13617136 (100.0% of all), departing 1975904 = 14.5% of live, 14.5% of all
+  at 70%: departing 12.8% of live
+  at 75%: departing 14.6% of live
+  at 80%: departing 15.7% of live
+  fold fits 14.5%, half fits 14.5% of live
+  per count, departing share of all parts: lowest 5.0% (Revere Five-Count), highest 17.9% (Revere Advanced Plus-Minus)
+
+PlayerTree build 0.0865 s CPU a state; replicated per up-card (setup + batched distributions + stood):
+  up  1: 20.6% of build CPU; feasible cells 2944 a state; N (all 372 + chart) 2359 a state = 11.5% of N
+  up  2: 21.8% of build CPU; feasible cells 2962 a state; N (all 372 + chart) 2013 a state = 9.8% of N
+  up  3: 16.7% of build CPU; feasible cells 2969 a state; N (all 372 + chart) 1967 a state = 9.6% of N
+  up  4: 12.3% of build CPU; feasible cells 2973 a state; N (all 372 + chart) 1769 a state = 8.6% of N
+  up  5: 9.3% of build CPU; feasible cells 2971 a state; N (all 372 + chart) 1583 a state = 7.7% of N
+  up  6: 6.6% of build CPU; feasible cells 2973 a state; N (all 372 + chart) 1476 a state = 7.2% of N
+  up  7: 4.9% of build CPU; feasible cells 2973 a state; N (all 372 + chart) 2307 a state = 11.2% of N
+  up  8: 3.6% of build CPU; feasible cells 2973 a state; N (all 372 + chart) 2310 a state = 11.2% of N
+  up  9: 2.6% of build CPU; feasible cells 2973 a state; N (all 372 + chart) 2373 a state = 11.5% of N
+  up 10: 1.7% of build CPU; feasible cells 2974 a state; N (all 372 + chart) 2422 a state = 11.8% of N
+  total replicated 0.0865 s; N 20580 of feasible 29686 a state (69.3%)
+nice -n 15 java -Xmx3g -cp $D/out:$C:$J DesignProbe $R/montreal-80.states   6  39.96s user 0.44s system 109% cpu 36.972 total

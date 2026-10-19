@@ -60,10 +60,16 @@ import java.util.List;
  * B2.4) is named in the log as its item is replayed and refused at the end, after the other hooks
  * have written their files.
  *
+ * The runs folder's budget (DiskBudget) is checked before anything is written, DiskBudget.REPLAY_ITEM
+ * an item for the records and the hooks' files. Once the replay has returned, its caller lets the
+ * records go (letGo: FullIndexRun unless --keep-records, PageLook): only a resume reads them, and
+ * replay.txt, perfect.ser and the hooks' files are written from them by then. A directory whose
+ * records were let go takes no resume.
+ *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --fit-from SOURCE_DIR
  * --states FILE --out DIR (--trees-read-only PATH | --trees none) [--folds-only] [--only COUNT@P,...]
  * [--wide] [--sink SINK_DIR] [--export EXPORT_DIR [--export-row NAME[@P] ...] [--export-plans LABEL,...]]
- * [--resume], with the source's --shoes, --resamples, --threads and --pens.
+ * [--resume] [--disk-budget GB] [--keep-records], with the source's --shoes, --resamples, --threads and --pens.
  */
 final class FullIndexReplay {
 
@@ -116,7 +122,14 @@ final class FullIndexReplay {
         double heapFill = 0.8;
         /** Called after each item's record is written, with the items replayed so far; the tests interrupt here. */
         java.util.function.IntConsumer afterItem;
+        /** The runs folder's budget in bytes (DiskBudget); PageLook, which counts the replay in its own check, gives none. */
+        long budget = DiskBudget.budget(null);
+        /** Whether FullIndexRun keeps the records once the replay has returned (--keep-records) rather than let them go. */
+        boolean keepRecords;
     }
+
+    /** The file left where a finished replay's records were let go (letGo). */
+    static final String LET_GO = "records-let-go.txt";
 
     /** One scoring item: a count's fold fits, or half fits, at a penetration. */
     static final class Item implements Serializable {
@@ -495,6 +508,10 @@ final class FullIndexReplay {
                         + ", where the replay writes nothing");
             }
         }
+        if (Files.exists(out.resolve(LET_GO))) {
+            throw new IllegalStateException("the replay in " + out + " finished and its records were let go (" + LET_GO
+                    + "); what it wrote is there. Replay into a new directory");
+        }
         List<Hook> hooks = hooks(o, log);
         FullIndexCheckpoint src = FullIndexCheckpoint.source(source);
         Path fitFile = source.resolve("fit.ckpt");
@@ -532,6 +549,9 @@ final class FullIndexReplay {
                 throw new IllegalStateException(source + " holds no " + it.key() + ".ckpt to set " + it + " beside");
             }
         }
+        long more = DiskBudget.REPLAY_ITEM * items.size() - DiskBudget.bytes(out)
+                - (o.sink == null ? 0 : DiskBudget.bytes(o.sink)) - (o.export == null ? 0 : DiskBudget.bytes(o.export));
+        DiskBudget.require(out, Math.max(0, more), o.budget, "The replay of " + items.size() + " items");
         String fitSha = sha256(fitFile);
         String identity = identity(commit, source, fitSha, o, hooks, src.identity);
         log.printf("FullIndexRun replay %s%s: the run in %s (fit.ckpt SHA-256 %s), %d items%s; %d shoes, %d valued "
@@ -943,6 +963,35 @@ final class FullIndexReplay {
                         + "%d of them; the source had one the replay did not work out again for %d states; neither had one "
                         + "for %d.%n", valued, source.length, same, ResultDiff.RELATIVE, within,
                 within == 0 ? "" : " (the largest " + largest + ", state " + largestAt + ")", sourceLacked, notAgain, neither);
+    }
+
+    /**
+     * Lets go of a finished replay's records, which only a resume reads: the list of them, each with
+     * its size, written first as LET_GO, then each deleted. Called once the replay has returned,
+     * never inside run, whose Assembled reads the records (record) and whose hooks write their files
+     * from them. Gives the bytes let go.
+     */
+    static long letGo(Assembled all, PrintStream log) throws IOException {
+        StringBuilder t = new StringBuilder("The records of the replay in " + all.out + ", one an item, let go once "
+                + "replay.txt, perfect.ser and every hook's file were written from them (FullIndexReplay.letGo). Only "
+                + "a resume read them.\n\n");
+        List<Path> files = new ArrayList<>();
+        long total = 0;
+        for (Item it : all.items) {
+            Path f = all.out.resolve(it.record() + ".ckpt");
+            long b = Files.size(f);
+            files.add(f);
+            total += b;
+            t.append(f.getFileName()).append('\t').append(b).append('\n');
+        }
+        t.append(String.format("%nRecords: %d, %d bytes.%n", files.size(), total));
+        writeWhole(all.out.resolve(LET_GO), o -> o.write(t.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        for (Path f : files) {
+            Files.delete(f);
+        }
+        log.printf("Let go of the replay's %d records, %.2f GB (%s).%n", files.size(), total / 1e9,
+                all.out.resolve(LET_GO));
+        return total;
     }
 
     /** What writes a file's bytes. */

@@ -1,0 +1,7 @@
+states 46 from 40 shoes
+contested walks, 3 counts x 2 arbitrary plays: parts 128526, departing in the full tree 98349
+  zero-filled R-only tree: parts differing (Hit bits or departs) 0
+  NaN-filled R-only tree: departing parts that lose their departs flag 98349; Hit bits differ 128526; Hit NaN 128526
+  NaN-filled: decisions in full 1238552, differing or missing 0
+perfect walk (EVERY_NODE): parts 24839, differing on the zero-filled R-only tree 1605, largest relative 4.43
+nice -n 15 java -Xmx2g -cp out:$C NanFillProbe  40  10.61s user 0.11s system 124% cpu 8.637 total

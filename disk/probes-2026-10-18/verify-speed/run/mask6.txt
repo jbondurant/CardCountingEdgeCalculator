@@ -1,0 +1,8 @@
+states 240, threads 6; hands in the R-like mask 2982 of 3061 an up-card
+masked cells 28273.1 of 29062.5 feasible a state (97.3%)
+wall s a tree: PlayerTree 0.0196; masked batch 0.0191 (0.977); fast2 full 0.0114 (0.585); fast2 masked 0.0118 (0.602)
+CPU s a tree:  PlayerTree 0.1146; masked batch 0.1117 (0.975); fast2 full 0.0661 (0.577); fast2 masked 0.0672 (0.587)
+bits differing on masked cells: batch 0, fast2 0; load 4.09
+real 16.62
+user 95.71
+sys 0.70

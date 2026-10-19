@@ -48,6 +48,13 @@ import java.util.List;
  * (TreeStore.readOnly): the one way a run of other classes may open a kept store such as
  * runs/full-index/full-c06c061/trees.bin.
  *
+ * The runs folder's budget (DiskBudget) is checked before anything is written: the run's checkpoints
+ * and results, DiskBudget.ITEM a scoring item, must fit beside what the folder holds, or the run is
+ * refused, naming its largest items; and the tree store keeps the trees of as many states as the
+ * room left holds (treesToKeep), the rest built every round, to the same bits. --disk-budget GB
+ * gives a run another budget than DiskBudget's. The trees kept change no figure, so a resume may
+ * keep more or fewer than its first start did.
+ *
  * --fit-from DIR replays the finished run in DIR instead (FullIndexReplay, PLAN_COMPUTE.md 6.1): its
  * strategies put back from its fit.ckpt, the passes skipped, each item given its last round and
  * scored again and set beside the part DIR holds, with --folds-only, --only, --wide, --sink and
@@ -55,9 +62,9 @@ import java.util.List;
  *
  * java -Xmx10g -cp CLASSES:lib/mongo-java-driver-3.12.14.jar FullIndexRun --states FILE --out DIR
  * [--shoes N] [--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH]
- * [--counts FILE] [--pens P,P] [--resume] [--second-look]
+ * [--counts FILE] [--pens P,P] [--resume] [--second-look] [--disk-budget GB]
  * [--fit-from DIR [--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR [--export-row NAME[@P] ...]
- * [--export-plans LABEL,...]]]
+ * [--export-plans LABEL,...]] [--keep-records]]
  */
 public final class FullIndexRun {
 
@@ -102,6 +109,7 @@ public final class FullIndexRun {
         boolean secondLook = false;
         FullIndexReplay.Options replay = new FullIndexReplay.Options();
         boolean replayOnly = false;
+        String budgetGB = null;
         for (int a = 0; a < args.length; a++) {
             switch (args[a]) {
                 case "--states":
@@ -140,6 +148,12 @@ public final class FullIndexRun {
                 case "--second-look":
                     secondLook = true;
                     break;
+                case "--disk-budget":
+                    budgetGB = args[++a];
+                    break;
+                case "--keep-records":
+                    replay.keepRecords = replayOnly = true;
+                    break;
                 case "--fit-from":
                     replay.fitFrom = Paths.get(args[++a]);
                     break;
@@ -175,9 +189,10 @@ public final class FullIndexRun {
                 default:
                     throw new IllegalArgumentException("usage: FullIndexRun --states FILE --out DIR [--shoes N] "
                             + "[--resamples R] [--threads T] [--trees PATH | --trees none | --trees-read-only PATH] "
-                            + "[--counts FILE] [--pens P,P] [--resume] [--second-look], or a replay, --fit-from DIR "
+                            + "[--counts FILE] [--pens P,P] [--resume] [--second-look] [--disk-budget GB], or a "
+                            + "replay, --fit-from DIR "
                             + "[--folds-only] [--only COUNT@P,...] [--wide] [--sink DIR] [--export DIR [--export-row NAME[@P] ...] "
-                            + "[--export-plans LABEL,...]]; not " + args[a]);
+                            + "[--export-plans LABEL,...]] [--keep-records]; not " + args[a]);
             }
         }
         if (states == null || out == null) {
@@ -199,12 +214,16 @@ public final class FullIndexRun {
             replay.threads = threads;
             replay.resume = resume;
             replay.heapFill = heapFill;
-            FullIndexReplay.run(replay, commit, log);
+            replay.budget = DiskBudget.budget(budgetGB);
+            FullIndexReplay.Assembled all = FullIndexReplay.run(replay, commit, log);
+            if (!replay.keepRecords) {
+                FullIndexReplay.letGo(all, log);
+            }
             return;
         }
         if (replayOnly) {
-            throw new IllegalArgumentException("--folds-only, --only, --wide, --sink and --export are for a replay, "
-                    + "which --fit-from DIR asks for");
+            throw new IllegalArgumentException("--folds-only, --only, --wide, --sink, --export and --keep-records are "
+                    + "for a replay, which --fit-from DIR asks for");
         }
         if (treeFile == null && !noTrees) {
             treeFile = out.resolve("trees.bin");
@@ -256,11 +275,21 @@ public final class FullIndexRun {
         }
         String identity = identity(commit, states, shoes, st.size, resamples, threads, counts, pens,
                 listing == null ? null : listing.file + (blob == null ? ", a file not registered" : ", blob " + blob));
+        long budget = DiskBudget.budget(budgetGB);
+        long more = more(out, treeFile, counts.size() * pens.length * 2);
+        // Before anything is written: a store the run writes is not counted, since it is cut to the room left.
+        DiskBudget.require(out, more, budget, "FullIndexRun", noTrees || readOnlyTrees ? null : treeFile);
+        int keep = noTrees || readOnlyTrees ? 0 : treesToKeep(out, treeFile, st.size, more, budget);
         log.printf("FullIndexRun %s%s: %d shoes, %d valued states of %s, read and never written; %d counts at %d "
                         + "penetrations; %d resamples; %d threads; max heap %.0f MB; trees %s; checkpoints in %s.%n",
                 commit, resume ? ", resumed" : "", shoes, st.size, states, counts.size(), pens.length, resamples, threads,
                 Runtime.getRuntime().maxMemory() / 1e6, noTrees ? "built every round"
-                        : (readOnlyTrees ? "read, and never written, from " : "kept in ") + treeFile, out);
+                        : readOnlyTrees ? "read, and never written, from " + treeFile
+                        : keep == st.size ? "kept in " + treeFile
+                        : "kept in " + treeFile + " for the first " + keep + " states, all the runs folder's budget has "
+                        + "room for (DiskBudget), the rest built every round", out);
+        log.printf("The runs folder's budget %.2f GB; this run writes about %.2f GB more beside its trees.%n", budget / 1e9,
+                more / 1e9);
         if (listing != null) {
             log.printf("Counts from %s%s.%n", listing.file, blob == null ? "" : ", git blob " + blob);
         }
@@ -278,7 +307,7 @@ public final class FullIndexRun {
         ck.open(resume);
         TreeStore store = noTrees ? null
                 : readOnlyTrees ? TreeStore.readOnly(st, treeFile, stateFile(states) + "\nstates " + st.size)
-                : new TreeStore(st, treeFile, treeIdentity, diskMargin);
+                : new TreeStore(st, treeFile, treeIdentity, diskMargin, keep);
         FullIndexFit.JointRun run = new FullIndexFit.JointRun(scorer, counts, pens, threads);
         run.trees = store != null ? store : FullIndexFit.built(st);
         run.checkpoint = ck;
@@ -322,6 +351,31 @@ public final class FullIndexRun {
         summary(log, sc, scorer, pens[pens.length - 1]);
         log.printf("%nWrote %s. Finished %s, %.1f h on the wall this start, load average %.2f.%n", results,
                 java.time.LocalDateTime.now(), (System.nanoTime() - t0) / 3.6e12, FullIndexTimingReport.loadAverage());
+    }
+
+    /**
+     * What a run of the given scoring items writes into out beyond what it holds there already
+     * (a resume's checkpoints), its tree store not counted: DiskBudget.ITEM an item.
+     */
+    static long more(Path out, Path treeFile, int items) {
+        Path o = out.toAbsolutePath().normalize();
+        long trees = treeFile != null && treeFile.toAbsolutePath().normalize().startsWith(o) ? DiskBudget.bytes(treeFile)
+                + DiskBudget.bytes(treeFile.resolveSibling(treeFile.getFileName() + ".index")) : 0;
+        return Math.max(0, DiskBudget.ITEM * items - (DiskBudget.bytes(o) - trees));
+    }
+
+    /**
+     * How many states' trees a store at treeFile may keep: all of them where it is outside out's
+     * runs folder (DiskBudget.root), else as many as the budget leaves room for once what the folder
+     * holds, the store not counted, and the run's more bytes are counted; none where they leave no room.
+     */
+    static int treesToKeep(Path out, Path treeFile, int size, long more, long budget) {
+        Path root = DiskBudget.root(out);
+        if (root == null || !treeFile.toAbsolutePath().normalize().startsWith(root)) {
+            return size;
+        }
+        long room = budget - (DiskBudget.bytes(root) - DiskBudget.inside(root, treeFile)) - more;
+        return (int) Math.max(0, Math.min(size, room / TreeStore.RECORD));
     }
 
     /** The commit the classes were built from, as the build wrote it beside them. */

@@ -105,4 +105,51 @@ public class FullIndexRunTest {
             assertFalse(Files.exists(dir.resolve("run")), "nothing written");
         }
     }
+
+    /**
+     * In a runs folder, a budget with room for some states' trees keeps theirs alone in the store,
+     * builds the rest every round, and gives every figure and resample a run building every tree
+     * gives, to the bit; a budget without room for the run's own files refuses it before anything
+     * is written, naming the folder's largest items (DiskBudget, 18 October 2026).
+     */
+    @Test
+    public void theRunsFoldersBudgetSizesTheTreeStore(@TempDir Path dir) throws Exception {
+        Path runs = dir.resolve("runs");
+        Files.createDirectories(runs);
+        Path file = ComparisonReportTest.syntheticRun(runs, 79, 79, 12);
+        Path counts = CustomCountsTest.write(dir, "candidates.json", "{ \"kind\": \"candidates\", \"K\": 10000, "
+                + "\"counts\": [ { \"name\": \"F2 start\", \"family\": \"F2\", \"form\": \"true\", \"divisor\": 2500,\n"
+                + "    \"tags\": [0, 10000, 10000, 20000, 20000, 10000, 10000, 0, 0, -20000],\n"
+                + "    \"betting\": [-20000, 10000, 10000, 20000, 20000, 10000, 10000, 0, 0, -20000] } ] }");
+        PrintStream log = new PrintStream(new ByteArrayOutputStream(), true, "UTF-8");
+        // Outside the runs folder: no budget, every tree built.
+        FullIndexRun.run(args(file, dir.resolve("none"), counts, "--trees", "none"), "test", log, 0);
+        int size = FullIndexPilot.load(file, StateStore.shoesDone(file)).size;
+        int keep = size / 2;
+        assertTrue(keep > 0, size + " states");
+        long more = DiskBudget.ITEM * 2;
+        long budget = DiskBudget.bytes(runs) + more + TreeStore.bytes(keep) + TreeStore.RECORD / 2;
+        ByteArrayOutputStream said = new ByteArrayOutputStream();
+        FullIndexRun.run(args(file, runs.resolve("kept"), counts, "--disk-budget", Double.toString(budget / 1e9)), "test",
+                new PrintStream(said, true, "UTF-8"), 0);
+        assertEquals(TreeStore.bytes(keep), Files.size(runs.resolve("kept").resolve("trees.bin")));
+        assertTrue(said.toString("UTF-8").contains("for the first " + keep + " states"), said.toString("UTF-8"));
+        SystemScorer.Result a = CeilingReport.read(dir.resolve("none").resolve("results.ser")).results.get(0);
+        SystemScorer.Result b = CeilingReport.read(runs.resolve("kept").resolve("results.ser")).results.get(0);
+        for (int k = 0; k < a.entries.size(); k++) {
+            assertArrayEquals(a.entries.get(k).estimate[2], b.entries.get(k).estimate[2], 0);
+        }
+        for (int k = 0; k < a.fullEntries.size(); k++) {
+            assertArrayEquals(a.fullEntries.get(k).estimate[2], b.fullEntries.get(k).estimate[2], 0);
+            for (int m = 0; m < a.fullEntries.get(k).boot[2].length; m++) {
+                assertArrayEquals(a.fullEntries.get(k).boot[2][m], b.fullEntries.get(k).boot[2][m], 0);
+            }
+        }
+
+        String low = Double.toString((DiskBudget.bytes(runs) + more / 2) / 1e9);
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> FullIndexRun.run(args(file,
+                runs.resolve("refused"), counts, "--disk-budget", low), "test", log, 0));
+        assertTrue(e.getMessage().contains("Nothing is written") && e.getMessage().contains("kept"), e.getMessage());
+        assertFalse(Files.exists(runs.resolve("refused")), "nothing written");
+    }
 }

@@ -1,0 +1,10 @@
+states 150; threads 6; processors 8; load 3.46
+PlayerTree, 1 thread, 24 states: wall 0.0864 s a tree, CPU 0.0860 s a tree
+fast2,      1 thread, 24 states: wall 0.0687 s a tree, CPU 0.0683 s a tree (0.794 of PlayerTree)
+PlayerTree, 6 threads, 150 states: wall 0.0201 s a tree (49.8 trees/s), CPU 0.1168 s a tree; 60,743 trees -> 1219 s wall; load 3.79
+fast2,      6 threads, 150 states: wall 0.0164 s a tree, CPU 0.0941 s a tree; wall ratio 0.818, CPU ratio 0.805; cells differing in any bit 0; load 3.79
+PlayerTree, 6 threads, 150 states: wall 0.0212 s a tree (47.1 trees/s), CPU 0.1241 s a tree; 60,743 trees -> 1289 s wall; load 4.13
+fast2,      6 threads, 150 states: wall 0.0171 s a tree, CPU 0.0976 s a tree; wall ratio 0.805, CPU ratio 0.787; cells differing in any bit 0; load 4.13
+real 16.01
+user 73.74
+sys 0.55

@@ -186,4 +186,63 @@ public class TreeStoreTest {
             assertEquals(0, store.holds());
         }
     }
+
+    /**
+     * A store that keeps the first states' trees alone (keep, the room DiskBudget leaves) writes
+     * their records and no more, builds the others each time it is asked and never writes them, and
+     * gives every tree to the bit as built. Opened again with a smaller keep it lets the states
+     * beyond go, their marks and their records; with a larger one it keeps what it held and adds.
+     */
+    @Test
+    public void aStoreKeepsOnlyTheTreesItHasRoomFor() throws Exception {
+        FullIndexFitTest.Fixture fx = FullIndexFitTest.standard();
+        ScoringStates st = fx.st;
+        assertTrue(st.size >= 3, "the fixture has " + st.size + " states");
+        int keep = st.size / 2;
+        Path dir = Files.createTempDirectory("trees-kept");
+        Path file = dir.resolve("trees.bin");
+        ExactRound engine = new ExactRound(RULES);
+        try (TreeStore store = new TreeStore(st, file, "kept", 0, keep)) {
+            for (int pass = 0; pass < 2; pass++) {
+                for (int s = 0; s < st.size; s++) {
+                    sameTree(new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[s])), store.of(s, engine), s);
+                }
+            }
+            assertEquals(keep, store.holds());
+            assertEquals(keep, store.read(), "the kept trees are read the second time");
+            assertEquals(st.size + (st.size - keep), store.built(), "the others are built both times");
+        }
+        assertEquals(TreeStore.bytes(keep), Files.size(file), "no record beyond the kept states");
+
+        try (TreeStore store = new TreeStore(st, file, "kept", 0, 1)) {
+            assertEquals(1, store.holds(), "a smaller keep lets the states beyond it go");
+            sameTree(new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[0])), store.of(0, engine), 0);
+            assertEquals(1, store.read());
+        }
+        assertEquals(TreeStore.bytes(1), Files.size(file));
+
+        try (TreeStore store = new TreeStore(st, file, "kept", 0, st.size)) {
+            assertEquals(1, store.holds(), "a larger keep keeps what was held");
+            for (int s = 0; s < st.size; s++) {
+                sameTree(new PlayerTree(engine, ShoeRun.ranksLeft(st.dealt[s])), store.of(s, engine), s);
+            }
+            assertEquals(1, store.read());
+            assertEquals(st.size - 1, store.built());
+            assertEquals(st.size, store.holds());
+        }
+        assertEquals(TreeStore.bytes(st.size), Files.size(file));
+        assertThrows(IllegalArgumentException.class, () -> new TreeStore(st, file, "kept", 0, st.size + 1));
+    }
+
+    private static void sameTree(PlayerTree built, PlayerTree got, int s) {
+        for (int u = 1; u <= 10; u++) {
+            double[] a = built.standRow(u);
+            double[] b = got.standRow(u);
+            assertEquals(a.length, b.length);
+            for (int h = 0; h < a.length; h++) {
+                assertEquals(Double.doubleToRawLongBits(a[h]), Double.doubleToRawLongBits(b[h]),
+                        "state " + s + " up " + u + " hand " + h);
+            }
+        }
+    }
 }

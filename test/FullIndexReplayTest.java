@@ -777,4 +777,58 @@ public class FullIndexReplayTest {
                 trees.toString(), "--only", "F2 start@0"), "gate", QUIET, 0));
         assertTrue(e.getMessage().contains("--only F2 start@0 names no item"), e.getMessage());
     }
+
+    /**
+     * From the command line, a finished replay lets its records go (FullIndexReplay.letGo), naming
+     * each with its size in records-let-go.txt, and writes replay.txt and perfect.ser to the bit as a
+     * replay that keeps them (--keep-records); a resume into its directory is then refused before
+     * anything is written; and a replay without room in its runs folder's budget is refused before
+     * anything is written (DiskBudget, 18 October 2026).
+     */
+    @Test
+    public void theCommandLineLetsAFinishedReplaysRecordsGo() throws Exception {
+        String[] only = {"--fit-from", source.toString(), "--trees-read-only", trees.toString(), "--folds-only", "--only",
+                "F2 start@2,F1 start@1"};
+        Path kept = root.resolve("records-kept");
+        Path let = root.resolve("records-let-go");
+        FullIndexRun.run(settings(concat(only, "--out", kept.toString(), "--keep-records")), "gate", QUIET, 0);
+        FullIndexRun.run(settings(concat(only, "--out", let.toString())), "gate", QUIET, 0);
+        List<String> records = new ArrayList<>();
+        try (Stream<Path> files = Files.list(kept)) {
+            files.map(p -> p.getFileName().toString()).filter(n -> n.startsWith("replayed-")).sorted().forEach(records::add);
+        }
+        assertEquals(2, records.size(), records.toString());
+        try (Stream<Path> files = Files.list(let)) {
+            assertEquals(0, files.filter(p -> p.getFileName().toString().startsWith("replayed-")).count());
+        }
+        String list = new String(Files.readAllBytes(let.resolve(FullIndexReplay.LET_GO)), "UTF-8");
+        for (String r : records) {
+            assertTrue(list.contains(r + "\t" + Files.size(kept.resolve(r)) + "\n"), list);
+        }
+        assertTrue(list.contains("Records: 2, "), list);
+        for (String f : new String[]{"replay.txt", "perfect.ser"}) {
+            assertArrayEquals(Files.readAllBytes(kept.resolve(f)), Files.readAllBytes(let.resolve(f)), f);
+        }
+        Map<String, String> before = snapshot(let);
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> FullIndexRun.run(settings(concat(only,
+                "--out", let.toString(), "--resume")), "gate", QUIET, 0));
+        assertTrue(e.getMessage().contains("its records were let go"), e.getMessage());
+        assertEquals(before, snapshot(let), "nothing written");
+
+        Path runs = root.resolve("runs");
+        Files.createDirectories(runs);
+        Files.write(runs.resolve("held.bin"), new byte[1000]);
+        Path refused = runs.resolve("replay");
+        IllegalStateException b = assertThrows(IllegalStateException.class, () -> FullIndexRun.run(settings(concat(only,
+                "--out", refused.toString(), "--disk-budget", "0.000002")), "gate", QUIET, 0));
+        assertTrue(b.getMessage().contains("The replay of 2 items would write about") && b.getMessage().contains("held.bin"),
+                b.getMessage());
+        assertFalse(Files.exists(refused), "nothing written");
+    }
+
+    private static String[] concat(String[] a, String... b) {
+        String[] all = Arrays.copyOf(a, a.length + b.length);
+        System.arraycopy(b, 0, all, a.length, b.length);
+        return all;
+    }
 }

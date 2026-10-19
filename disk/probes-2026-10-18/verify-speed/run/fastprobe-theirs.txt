@@ -1,0 +1,5 @@
+all: 9907 entries, 2298 rank sets, most tuples of a set 1837
+28 states: PlayerTree 0.0870 s CPU a state; regrouped 0.0741 s (1.17x faster): setup 0.0005, entries 0.0734, stood 0.0002
+cells compared 857080 (every cell, NaN included), 0 differ in any bit
+variant 2 (compacted, per-size inverse): 0.0605 s a state (1.44x PlayerTree's 0.0869); setup 0.0055, entries 0.0547; 0 cells differ
+again, regrouped first: PlayerTree 0.0869 s, regrouped 0.0732 s (1.19x)
