@@ -396,10 +396,11 @@ Open:
      (runs/site-runs/export15-f3cade3.sh; log runs/replay/c06c061-export15-f3cade3.log). Left: (1) Justin's yes to
      deviation 1, given on 19 October 2026; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
      (the wide plans F43-F48 are attached only with `--wide`), and row 7's F50 and F52, which
-     PageLook writes since 9fb5bdf (branch pagelook-resume) by `--resume` under new classes: the
-     look's replay/ is 0a447de's, so it replays step 8's fit for F1 and F2 at 80% into
-     runs/page-look-0e0920d/replay-9fb5bdf and writes export-full alone, every other output of the
-     look left as it is (section 5, row 7, has the command; not yet run); (3) SHOE_SPEC.md's three passages in "How this file
+     PageLook writes since 68c7c52 (branch pagelook-resume; first written as 9fb5bdf, then
+     tightened after its review) by `--resume` under new classes: the look's replay/ is 0a447de's,
+     so it replays step 8's fit for F1 and F2 at 80% into runs/page-look-0e0920d/replay-68c7c52
+     and writes export-full alone, once, every other output of the look left as it is (section 5,
+     "Finishing the look of 17 October 2026", has the command; not yet run); (3) SHOE_SPEC.md's three passages in "How this file
      is held to the engine" that still describe the split lines as to come (7dca9f5), to be
      corrected in a commit the identity table records again.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
@@ -522,11 +523,20 @@ Open:
        full play are replayed with `--export`, after (e) above. Row 7's look cannot resume its own
        replay (replay/ was written under 0a447de, and a replay refuses a resume under another
        commit, FullIndexCheckpoint.open), so since 9fb5bdf PageLook `--resume` under other classes
-       than replay/'s holds look.txt to its files in every line but the commit, replays step 8's
-       fit into OUT/replay-SHORT with the export and Step8 alone (no wide plans, no sink, only the
-       items whose rows it exports), writes export-full alone and records the resume in
-       OUT/resume-SHORT.txt, refusing if export-full is there or any other output is not
-       (PageLookTest's second test, 14 bugs planted).
+       than replay/'s writes export-full alone. Since 68c7c52, after the review of 9fb5bdf, such a
+       resume is refused, before anything is written, unless the ledger holds the look's own line
+       (its OUT and look.txt's commit) and look.txt is what the files give in every line but its
+       commit; it is refused while OUT holds export-full, export-full.partial, another resume's
+       replay-* directory or a record saying export-full was written (once), or lacks any other
+       output; and the replay it would make must be replay/'s apart from its classes, items, wide
+       plans and sink (replay/run.id's source and fit.ckpt SHA-256, its export's rows, plans and
+       sample seed, the source's identity). It replays step 8's fit into OUT/replay-SHORT with
+       Step8, LookFiles and the export alone (no wide plans, no sink, only the items whose rows it
+       exports), holds every file the look held to replay-SHORT/look-files.tsv (written when the
+       first such attempt starts) as each attempt starts and again before the bundle is written,
+       writes no ledger line and records the resume in OUT/resume-SHORT.txt (PageLookTest: 30 bugs
+       planted, 29 failing its first two tests and one its third, on F52's betting-variant row). Checked read-only
+       against the real files on 19 October 2026: every one of these refusals passes there.
      - **The identity table**: SHOE_SPEC.md's new commit and the simulator's go into
        SIM_CHECK.md's rows before part 2's pilot, by (b). Before that pilot too, deviation 1's
        check of the new simulator commit on part 1's bundle against part 1's main run
@@ -633,7 +643,7 @@ and run A are short single-threaded reads that can sit beside nothing heavier th
 | 4 | Replay gate 0 | yes; it also answers open item 1 |
 | 5 | Simulator part 1 | yes, after rows 1 and 2, with the bundle's SHA-256 recorded before the pilot (item 18 is decided: SIM_CHECK.md section 10) |
 | 6 | Replay of c06c061 | after row 4; its export depends on open item 1 |
-| 7 | Page look | made 17 October 2026 (runs/page-look-0e0920d, look.txt naming 0e0920d), resumed under 0a447de: every output but export-full, which open item 1 refused. To finish: `PageLook --resume` under 9fb5bdf's classes (row 7 below), which writes export-full alone |
+| 7 | Page look | made 17 October 2026 (runs/page-look-0e0920d, look.txt naming 0e0920d), resumed under 0a447de: every output but export-full, which open item 1 refused. To finish: `PageLook --resume` under 68c7c52's classes ("Finishing the look of 17 October 2026", below row 7), which writes export-full alone |
 | 8 | Simulator part 2 | yes: a pilot a bundle, then one fill (open item 17, closed); the planted runs on both bundles (item 18, closed) |
 | 9 | SplitMargin on the twin | yes |
 | 10 | Reports, adapters, the page | each command runs once its inputs exist; `SiteAdapt sim` needs both parts' section 8 blocks filled; the page may pass its 200 KB budget (open item 21), and it prints the planted runs a line a run, without each test's z or the bias it would catch (open item 22) |
@@ -802,62 +812,126 @@ git -C $CD add custom-count-ledger.tsv && git -C $CD commit -m "page look: its o
 It writes $L/run-c.ser, $L/wide-first.ser, $L/export-first (F49, F51), $L/replay/wide.ser,
 $L/run-d/run-b.ser and $L/export-full (F50, F52). It needs step 8's run named by the same counts
 path step 8 was given (the replay holds step 8's identity line for line), and PageLook refuses
-before writing its ledger line if that path is not the count-design file. If F1's or F2's folds
-rank a deal two ways (open item 1), export-full is refused; PageLook keeps the other outputs and
-exits 1 saying so. The two bundles' SHA-256 go into the identity table's part 2 row too.
+before writing its ledger line if that path is not the count-design file. A fold of F1 or F2
+that ranks a deal two ways (open item 1) was refused before f3cade3; since then it is exported with
+split lines (SHOE_SPEC.md B2.4). If export-full is still refused, PageLook keeps the other outputs
+and exits 1 saying so. The two bundles' SHA-256 go into the identity table's part 2 row too.
 
 **Finishing the look of 17 October 2026 (open item 1).** runs/page-look-0e0920d holds look.txt
 (commit 0e0920d), run-c.ser, wide-first.ser, export-first (F49, F51), attempt1-0e0920d (its first
 attempt's files, set aside), and from its resume under 0a447de (runs/site-runs/pagelook-resume-0a447de.sh)
 replay/ (its run.id naming 0a447de, its 15 records, replay.txt with 15 of 15 items step 8's to the
-bit, perfect.ser, wide.ser) and run-d/run-b.ser. Its export-full was refused
-(runs/page-look-0e0920d.log:48, 64) and main did not let replay/'s records go. 0a447de's replay
+bit, perfect.ser, wide.ser) and run-d/run-b.ser: 37 files. Its export-full was refused
+(runs/page-look-0e0920d.log:48, 64) and main did not let replay/'s records go. Two things in that
+resume's record are not what they seem: its `>` truncated runs/page-look-0e0920d.log, whose first
+line now names 0a447de, not 0e0920d; and the "exited rc=0" lines in runs/page-look-0e0920d.starter.log
+are not exit statuses, since `$?` inside `"$(date) ... rc=$?"` is read after the command substitution
+has run, and is always 0 (0a447de's PageLook exits 1 when export-full is refused, and its log shows
+that refusal; runs/site-runs/deviation1-check-ae283e4.sh has the same pattern). 0a447de's replay
 cannot be resumed by other classes, and its files feed the page, so since 9fb5bdf a resume under
 classes other than replay/'s replays step 8's fit into a directory of its own and writes export-full
-alone. The classes are built from 9fb5bdf (the commit after it changes INTEGRATION.md alone); the
-resume takes the machine to itself:
+alone. The classes are built from 68c7c52 (the commit after it changes documents alone). Run the
+block in a shell of its own: its names (PLA, PLC, PLM, PLL, PLT) are not the setup's above, which
+later rows use. The resume takes the machine to itself:
 
 ```sh
 R=/Users/justinbondurant/Documents/CardCountingEdgeCalculator
-A=9fb5bdfb5afcf14cb694c56323812da3340bde1e
-C=$R/runs/full-index/classes-9fb5bdf
-M=$R/lib/mongo-java-driver-3.12.14.jar
-L=$R/runs/page-look-0e0920d
-T=$(mktemp -d) && git -C $R archive $A src counting-systems.json | tar -x -C $T \
-  && mkdir -p $C && javac -nowarn -d $C -cp $M $T/src/*.java && echo $A > $C/commit.txt \
-  && cp $T/counting-systems.json $C/
-cd $C && caffeinate -i nice -n 5 java -Xmx12g -cp "$C:$M" PageLook --states $R/runs/montreal-80.states \
+PLA=68c7c52f56a2d5e75a634dfa2bc20d69bfb19534
+PLC=$R/runs/full-index/classes-68c7c52
+PLM=$R/lib/mongo-java-driver-3.12.14.jar
+PLL=$R/runs/page-look-0e0920d
+PLT=$(mktemp -d) && git -C $R archive $PLA src counting-systems.json | tar -x -C $PLT \
+  && mkdir -p $PLC && javac -nowarn -d $PLC -cp $PLM $PLT/src/*.java && echo $PLA > $PLC/commit.txt \
+  && cp $PLT/counting-systems.json $PLC/
+cd $PLC && caffeinate -i nice -n 5 java -Xmx12g -cp "$PLC:$PLM" PageLook --states $R/runs/montreal-80.states \
   --count-design $R/.worktrees/count-design --saved $R/runs/report-ceiling-97bf834.ser \
   --fullplay-run $R/runs/custom-count/fullplay-main-97bf834 \
-  --trees-read-only $R/runs/full-index/full-c06c061/trees.bin --out $L --threads 7 --resume \
-  > $R/runs/page-look-0e0920d-resume-9fb5bdf.log 2>&1
+  --trees-read-only $R/runs/full-index/full-c06c061/trees.bin --out $PLL --threads 7 --resume \
+  >> $R/runs/page-look-0e0920d-resume-68c7c52.log 2>&1
+rc=$?; echo "$(date) PageLook --resume under 68c7c52 exited rc=$rc" >> $R/runs/page-look-0e0920d.starter.log
 ```
 
-Before it writes anything it holds $L/look.txt to these files in every line but its commit: the
-states file's size and time, both registrations' blobs (39bd6d4 and 250e64a), step 7's save and its
-SHA-256 (c854767f…), step 8's run and the trees. Each of those was checked by hand against look.txt
-on 19 October 2026, PageLook not run. It refuses unless replay/ holds another commit's replay
-(0a447de's), export-full and export-full.partial are not there, and run-c.ser, wide-first.ser,
-export-first/manifest.sha256, replay/replay.txt, replay/wide.ser and run-d/run-b.ser are. It
-writes no ledger line, so nothing is committed in $CD. It writes:
+The log is appended to (`>>`), so an attempt after an interruption keeps the first one's lines, and
+it stays outside $PLL (see below). `rc=$?` is taken on the line after java, before anything else
+runs. Before it writes anything, PageLook refuses unless:
 
-- $L/replay-9fb5bdf/: its run.id (items "the fold fits only, only F1 at 1-8 (f1-8-vidami-ar)@2, F2 at
-  1-8, play vector (f2-pub-victor-apc)@2", hooks export and step 8 to the bit), the two items'
-  records, each held to step 8's part and to step 8's results.ser to the bit before it is kept,
-  replay.txt, perfect.ser, then records-let-go.txt once the look is done and the records are deleted;
-- $L/export-full/: F50 and F52, F1's and F2's full play at 80% at same-8, both folds, with `split`
-  lines wherever a fold's two rankings differ and lookups.tsv's 1,000 split lines, round-tripped
-  before it is renamed;
-- $L/resume-9fb5bdf.txt: when it started and under which classes, where it replayed and whether it
-  resumed there, what it wrote (export-full's manifest SHA-256) or why it stopped, and the records
-  let go.
+- the ledger in $R/.worktrees/count-design holds the look's own line, as lookOnMain wrote it: commit
+  0e0920d0af3b…, blob 39bd6d4…, "page figures: wide plans, per-key tables, simulator export
+  (PageLook into $PLL)" (its fourth line, committed);
+- $PLL/look.txt is what these files give in every line but its commit: the states file's size and
+  time, both registrations' blobs (39bd6d4 and 250e64a), step 7's save and its SHA-256 (c854767f…),
+  step 8's run and the trees;
+- replay/run.id names another commit than these classes' (0a447de). Under replay/'s own classes
+  the resume would instead go on into replay/ the old way, with the wide plans and the sink;
+- $PLL holds no export-full, no export-full.partial, no replay-* directory but replay-68c7c52, and no
+  resume-*.txt whose "finished" line says it wrote export-full, so export-full is written once;
+- $PLL holds run-c.ser, wide-first.ser, export-first/manifest.sha256, replay/replay.txt,
+  replay/wide.ser and run-d/run-b.ser;
+- the replay it would make is replay/'s apart from its classes, items, wide plans and sink:
+  replay/run.id's "of the run in $R/runs/custom-count/fullplay-main-97bf834, its fit.ckpt SHA-256
+  0a2b8c88…", its export ("rows [F1 at 1-8 (f1-8-vidami-ar), full play@80, F2 at 1-8, play vector
+  (f2-pub-victor-apc) + betting vector, full play@80]; plans same-8; sample seed 20261009") and the
+  source's identity.
 
-Nothing else in $L changes. It lists every other file's size and time before the replay and again
-after, and stops if one differs, so its log goes outside $L. Expect about 1 to 1.5 h: the 0a447de
+On 19 October 2026 a read-only probe of these checks on the real files passed every one of them:
+the ledger line, look.txt apart from its commit, replay/'s commit 0a447de, the items "F1 at 1-8
+(f1-8-vidami-ar)@2" and "F2 at 1-8, play vector (f2-pub-victor-apc)@2", and replay/run.id. It
+called the check functions alone, with the blobs as committed, so PageLook was not run, nothing was
+written, and no git command ran in the count-design worktree. The resume writes no ledger line,
+so nothing is committed in the count-design worktree. It writes:
+
+- $PLL/replay-68c7c52/: look-files.tsv first, the 37 files the look holds by size and time, written
+  once; its run.id (items "the fold fits only, only F1 at 1-8 (f1-8-vidami-ar)@2, F2 at 1-8, play
+  vector (f2-pub-victor-apc)@2", hooks "step 8 to the bit", "the look's files" and the export); the
+  two items' records, each held to step 8's part and to step 8's results.ser to the bit before it
+  is kept; replay.txt and perfect.ser; then records-let-go.txt once the look is done and the records
+  are deleted;
+- $PLL/export-full/: F50 and F52, F1's and F2's full play at 80% at same-8, both folds, with `split`
+  lines wherever a fold's two rankings differ and lookups.tsv's 1,000 split lines, round-tripped as
+  export-full.partial before it is renamed;
+- $PLL/resume-68c7c52.txt: a line as each attempt starts (its classes, where it replays and whether it
+  resumes there) and as it ends (what it wrote, with export-full's manifest SHA-256, or why it
+  stopped), and the records let go.
+
+Nothing else in $PLL changes. Every other file is held to look-files.tsv, by size and time, as
+each attempt starts and again once both items are kept, just before the bundle is written. A file
+changed, gone or new stops the resume with no export-full. For that reason the log goes outside
+$PLL. A .DS_Store left by a Finder window is not counted. Expect about 1 to 1.5 h: the 0a447de
 resume's first batch, 4 items, took 77 min for its last round and 20 min to score, and this replay
-has 2 items. Interrupted, the same command resumes it in replay-9fb5bdf. If the export is refused
-again it exits 1 naming the rows, and keeps the records for a resume. Afterwards export-full's
-manifest SHA-256 goes into the identity table's part 2 row, beside export-first's.
+has 2 items.
+
+What can stop it, and what then:
+
+- **Interrupted while the items are replayed.** The same block resumes in replay-68c7c52 (its run.id,
+  records and look-files.tsv), appending to the log and the record.
+- **A refusal before anything is written** (the list above). The message names what differs, and
+  nothing in $PLL has changed.
+- **"the look's own files are not as they were"** (as an attempt starts) or **"changed during this
+  resume"** (before the bundle). A file the look held changed, went or is new. No export-full is
+  written; the record and the message name the file, and replay-68c7c52 keeps its records. Nothing in
+  this code writes there (refuseKept, no sink, no wide plans), so something else touched $PLL. Justin
+  looks at that file before anything else runs. Once it is as listed again, the same block resumes and
+  writes the bundle from the records.
+- **Interrupted while the bundle is written.** export-full.partial is left, and the same block is
+  refused ("a bundle is written once"). With Justin's yes to removing export-full.partial, the same
+  block writes the bundle again from the records, both items read back.
+- **Interrupted after export-full is renamed, before the record's "finished" line or the records are
+  let go** (a moment). export-full is whole, since it is renamed only after its round trip. Every
+  further resume is refused, export-full being there, and replay-68c7c52's two records (about 34 MB)
+  stay until they are let go by hand, with Justin's yes.
+- **The export refused** ("--export writes no bundle"). It exits 1 naming the rows, and the record says
+  "export-full refused". A further attempt needs new classes, and replays into a directory of its own
+  only once replay-68c7c52 is removed (Justin's yes), since another resume's replay-* directory is
+  refused.
+
+**Afterwards:**
+
+- Copy resume-68c7c52.txt's lines and export-full's manifest SHA-256 into this block, committed. runs/ is
+  git-excluded, so this file is the look's committed history: 0e0920d made the look and run C,
+  0a447de wrote replay/ and run-d/, and 68c7c52 wrote export-full.
+- Put export-full's SHA-256 into the identity table's part 2 row, beside export-first's.
+- Ask Justin whether replay/'s 15 records (about 0.23 GB) are let go. Their replay is finished,
+  replay.txt and wide.ser stand, and only a resume of replay/ under 0a447de's classes reads them.
 
 **Row 8. Simulator part 2: pilot, run (2.5 to 4 h, budget 4.5 h).** On the replay's bundle and
 the page look's two, with the planted runs' first halves on part 1's bundle. First the three part 2

@@ -1046,7 +1046,8 @@ Part 1's summary is committed before part 2 starts; the pass rule applies to the
 
 **6.3 The page look at the registered counts.** One tool run, after steps 7 and 8 have exited
 cleanly and their ledger lines are committed, through `CustomCounts.lookOnMain` with one ledger
-line ("page figures: wide plans, per-key tables, simulator export").
+line ("page figures: wide plans, per-key tables, simulator export"). An interrupted look is
+finished by `PageLook --resume`, with no second line (COUNT_DESIGN.md section 5).
 
 **The ledger has one home.** lookOnMain appends to the custom-count-ledger.tsv beside the
 counts file it is given, and checkOnMain checks that ledger only, so a look pointed at another

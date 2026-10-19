@@ -756,8 +756,14 @@ main file: whatever it shows, the tags and g stay as registered. A count changed
 main-file look is a second look and is reported as one; its held-out claim needs a fresh
 file, a third seed, before it may replace the headline.
 - **The one look is every ledger line carrying custom-counts.json's blob or
-  custom-counts-fullplay.json's:** step 7's line, step 8's, and one for each resume. The ledger
-  is committed between runs.
+  custom-counts-fullplay.json's:** step 7's line, step 8's (FullIndexRun adds one for each of its
+  resumes), and the page look's (PLAN_COMPUTE.md 6.3). The ledger is committed between runs.
+- **The page look's resumes write no line.** `PageLook --resume` only finishes the look its one
+  line made. It is refused unless that line names the resume's directory (OUT) and look.txt's
+  commit, and unless look.txt, written with the line, still matches the files in every line but
+  its commit. Each resume is recorded beside look.txt, in OUT/resume-SHORT.txt. OUT is under
+  runs/, which git does not track, so the record's lines go into INTEGRATION.md once the resume
+  finishes.
 - **A look at another registration is refused** (CustomCounts.checkOnMain): a tool will not
   start while the ledger holds a line of any other blob, unless it is given `--second-look`;
   then its own ledger line says "A SECOND LOOK", and the report says so and marks every line of
