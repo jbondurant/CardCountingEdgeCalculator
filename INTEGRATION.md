@@ -430,7 +430,7 @@ Open:
      - **ExportBundle**: `Strategy.split`, the parser and every refusal of B2.1, the B2.4
        accessors (`dealtFirst`, `splitRanking`), and `readLookups(file, full)`, told by the round
        trip whether the bundle holds a full-play file, with B8's presence rule.
-     - **Tests**, each with its plants recorded in its class comment (24 planted in scratch copies
+     - **Tests**, each with its plants recorded in its class comment (22 planted in scratch copies
        outside the worktree, each failing the test named): ShoeSpecTest's split hands of B2.4
        (1,407 decisions of its random tables read a `split` line, 711 of them otherwise than their
        `first` line); StrategyExportTest's hand-made full file with two `split` lines, every
