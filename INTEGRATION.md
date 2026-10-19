@@ -26,6 +26,7 @@ results.ser, and FitCheckpointClassesTest its kept classes.
 | 32422c1 | site-fix-engine (14 October): the wide plans exported, D3, PageLook, SiteSim held to section 12 over several runs, RiskReport's several swings files and ruin paths, the page's tables, fan and registration box, one widening rule, the money sentence | none; two test fixes after it, in section 2 |
 | 5cb48a4 | site-last-a (15 October): `SimCheckPlan fill` takes a part's pilot files together, the planted runs in two halves on both bundles (SIM_CHECK.md section 10), `RiskReport --trip`, SimReadsWidePlansTest | none |
 | 62ae14b | site-last-b (15 October): the BC/IC scatter and its verdict sentence, the every-count chart's views (cut card, spread, wonging), the evidence table (`SiteAdapt evidence`), the simulator's depth and edge-by-key tables in percent | INTEGRATION.md only (section 4's two lists and row 10 of section 5), both sides kept; src/SiteSimReported.java and test/SiteSimTest.java merged without conflict; no code fix needed |
+| fc5e0bb | disk-cap (18 October): DiskBudget, the runs folder's budget (27 GB until the project is wrapped up, Justin's decision; DISK_RESULTS_ONLY.md), a tree store that keeps only the trees that fit, a finished replay letting its records go, and the disk reviews (DISK_CLEANUP.md, DISK_2GB.md, DISK_RESULTS_ONLY.md, DISK_STREAMING.md, disk/). After 7478470 (the page's SHA256SUMS lists only shipped files). The whole suite on the merge: 816 of 816, the simulator's 89 of 89 | none |
 
 Three things the merges needed that no lane had:
 
