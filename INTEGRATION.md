@@ -365,7 +365,7 @@ Open:
 
 1. **A full-play row whose strategies rank a deal two ways: refused on the real runs; the
    exporter writes `split` lines (134da21) and the simulator reads them (ae283e4); the exports
-   again and Justin's yes to deviation 1 remain.** (SHOE_SPEC.md B2.1, B2.4, B6 item 12, B7, B8 and "Changes to Part B";
+   again remain; deviation 1 approved by Justin on 19 October 2026.** (SHOE_SPEC.md B2.1, B2.4, B6 item 12, B7, B8 and "Changes to Part B";
    SIM_CHECK.md deviation 1, sections 5 and 14; drafted and checked 18 October 2026 in the
    split-ranking worktree, the engine's side built there on 19 October.) The engine plays the dealt hand by the scorer's refit of the
    strategy's last-round values (src/SystemScorer.java:2624-2628) and values split hands by the
@@ -394,7 +394,7 @@ Open:
      full-play items alone (row 6's wide.ser and sink for all 93 items stand from
      c06c061-0e0920d), with `--wide`, into runs/sim/export-part2-replay-f3cade3
      (runs/site-runs/export15-f3cade3.sh; log runs/replay/c06c061-export15-f3cade3.log). Left: (1) Justin's yes to
-     deviation 1; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
+     deviation 1, given on 19 October 2026; (2) the exports again: row 6's 15 full-play items with `--export` and `--wide`
      (the wide plans F43-F48 are attached only with `--wide`), and row 7's F50 and F52, for
      which PageLook must first replay into a directory of its own under new classes (its resume
      under another commit is refused today); (3) SHOE_SPEC.md's three passages in "How this file
@@ -442,7 +442,7 @@ Open:
      cause is on record and the inference above is tested: done in 134da21
      (`FullIndexReplay.howFitted`, a line a strategy after its item's comparison).
    - **For Justin.** Deviation 1 changes D5 after part 1's pilot, and SIM_CHECK.md:37-39 lists it
-     on the page with its commit; it needs his yes before that commit.
+     on the page with its commit; it needs his yes before that commit. Justin approved it on 19 October 2026 ("yes to deviation 1").
    - **The engine's side, built in 134da21** (19 October 2026; SHOE_SPEC.md B7 says what each
      part does, corrected there to match):
      - **The exporter.** Refit keeps `t.now.ranking` beside the refit's ranking and refuses a fold
