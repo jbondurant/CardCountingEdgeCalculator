@@ -375,7 +375,10 @@ Open:
    bundle at all, the good rows' included.
    - **Status, 19 October 2026 (integration, split-ranking).** The simulator's side was written
      in a fourth clean-room session (285f0fb, after its review ae283e4; sim/QUESTIONS.md), in a
-     worktree that held only the specs and sim/, and merged as e2cc9e4. SimReadsSplitLinesTest
+     worktree that held only the specs and sim/, and merged as e2cc9e4. A scan of the three
+     clean-room agents' 173 tool calls (builder, reviewer, fixer) found none that read src/, test/,
+     another worktree, INTEGRATION.md or a run's output; the reviewer's own audit of the builder's
+     calls is the one that names those paths. SimReadsSplitLinesTest
      (b6a4b71): the page look's full-play export on PageLookTest's fixture, 31 `split` lines in
      fold 0's file and 1 in fold 1's, played by the compiled simulator: D1, D2, D4 and D5 with 0
      mismatches, D5's split cells compared, then P2; a copy with one split line taken out is
