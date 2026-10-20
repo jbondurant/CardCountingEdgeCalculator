@@ -1,5 +1,15 @@
 # Results only, under 2 GB, nothing on Drive (18 October 2026)
 
+**Done 20 October 2026, with Justin's yes** ("yes"): the tree store (trees.bin, 14.88 GB), the 18
+October batches D1 and D1-after-change-6 (2.56 GB) and the files superseded since (0.28 GB), 7,617
+files and 17,715,853,272 bytes in all, every one listed in disk/2026-10-20-now.tsv, were moved into
+~/.Trash/ccec-runs-2026-10-20/ with their paths, each size checked after its move, and the 64
+folders left empty removed. The disk's space comes back when Justin empties the Trash. runs/ then
+held 7.85 GB. With trees.bin gone, a replay or PageLook builds every tree again (`--trees none`;
+PageLook would first need that option), and with 171 of c06c061's 186 parts gone, replaying those
+items needs the replay to compare with results.ser instead. The rest (D2, D4, D5, D6 and the
+part 2 runs' intermediates) waits for the project's wrap-up.
+
 **Decided 18 October 2026.** Justin, after the 2 GB reviews: "ok, no need to make it small then.
 But we will want to delete it once we wrap up this project". So nothing is rewritten to run small.
 runs/ keeps what it holds, the tree store among it, until the project is wrapped up. Then it goes
