@@ -1,0 +1,17 @@
+sha256	bytes	path (relative to runs/), each hashed with shasum -a 256 on 20 October 2026 before the wrap-up deletes it
+-	-	full-index/full-c06c061/trees.bin: not hashed, the Trash was emptied first (20 October 2026); a cache rebuilt to the same bytes from the state file (TreeStoreTest), cited by no page
+-	-	full-index/full-c06c061/trees.bin.index: not hashed, the Trash was emptied first (20 October 2026); a cache rebuilt to the same bytes from the state file (TreeStoreTest), cited by no page
+ed9e9fb45de18a25d37572d720aa8cfb144e4d6dee9ac695bdba561141016739	1340719767	montreal-80.states
+a2f8a751e8c7ed30ee72e1202e2de805f2904dad6320733bd16243c6a9680d26	1341183279	twin-80.states
+8ba1412b64c8b0276ee988440172737277b36aebec4ab63da94c77536ec93285	430694877	full-index/full-c06c061/results.ser
+479595d13bceba7c098738d052cc86d7a143d3e3305e3d28bba498b8e1fe8642	183689022	full-index/full-c06c061/fit.ckpt
+c854767f4d72e4124f7d465c40f9207347e477bda54878848dab754563de6511	202956286	report-ceiling-97bf834.ser
+6a456558649bf3d01ad7cd543856e8312fe6913c533788e7435501400d8c5302	113431766	custom-count/fullplay-main-97bf834/results.ser
+0a2b8c88c9fd21c17cb4bbcfea71571b309deb3d96dd509ded3038106a952466	40239384	custom-count/fullplay-main-97bf834/fit.ckpt
+ee3ff12140d39c84e5144021147ce90466862a1b7e3e2534b63f4f17c213d0a4	249769420	replay/c06c061-0e0920d/wide.ser
+3c1866b667ea344a131419f75a096766f4ce3db6f02a105216414ab59fde39e6	704599811	replay/c06c061-0e0920d-sink/run-b.ser
+2939a4ea52cd6893c43d126410901664df9ce2bdf9b65b2904cdfcd777f604a0	245680412	page-look-0e0920d/run-c.ser
+3fe732cee59375d5c8430f8b7b3e4e08dfe489f0ec86f3fa825218e6b2f5c72d	191051009	page-look-0e0920d/run-d/run-b.ser
+ed2ed3b9e0cdedefd92d31bdf66bbe4c6e3a97c78f752deeaf1b12c382546202	61532212	page-look-0e0920d/wide-first.ser
+561483938513c1b8fdd7f9a88d7bf5e93f0cbd4b707c1f6f2f0654ddaf857cfd	221351385	key-edges/a-304901c9e8dc586e0382f803096964ec94b549e3.ser
+c649f44fd3b83f60c33ff8e15ab71cd2a603f648100ac6fa6f6f20989b51852b	65554901	key-edges/a-prime-304901c9e8dc586e0382f803096964ec94b549e3.ser
