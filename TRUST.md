@@ -57,8 +57,11 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
 
 ## 2. Before or with the website push
 
-1. **Push the cited commits, and tag each one that produced figures.** The page's link to c06c061
-   is a 404 until then. This needs Justin's yes on the exact list.
+1. **Push the cited commits, and tag each one that produced figures.** *Pushed 20 October 2026,
+   with Justin's yes on the exact list:* the branches site-integration (to 76b17ac, 307 commits) and
+   custom-count-design (to 428ec51, 83 commits), new on GitHub, main untouched, no tags. Every
+   commit the page cites is now on a GitHub branch, and the page's link to c06c061 opens. The
+   tags are still to do.
 2. **Fix HTTPS:** GitHub Pages settings and DNS, Justin's account (PLAN_PAGE.md 2.1). Until then a
    fetcher gets a certificate error and reads nothing.
 3. **Add a LICENSE, a README and CITATION.cff, and call the page version 1.0 instead of "draft".**
