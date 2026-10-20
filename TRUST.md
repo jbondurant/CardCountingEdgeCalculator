@@ -63,7 +63,14 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
    commit the page cites is now on a GitHub branch, and the page's link to c06c061 opens. The
    tags are still to do.
 2. **Fix HTTPS:** GitHub Pages settings and DNS, Justin's account (PLAN_PAGE.md 2.1). Until then a
-   fetcher gets a certificate error and reads nothing.
+   fetcher gets a certificate error and reads nothing. *Diagnosed 20 October 2026:* DNS is right
+   (apex A and AAAA are GitHub's four addresses each, www is a CNAME to jbondurant.github.io,
+   Cloudflare serves it unproxied, no CAA record). Pages publishes from main, whose CNAME file
+   came in on 29 August (4f49a08), and the domain answers over HTTP. But the certificate served for
+   it is still GitHub's own *.github.io one, so the custom-domain certificate was never issued. The
+   fix is in Settings → Pages, signed in: remove the custom domain and add it again, which starts
+   the certificate request, then tick Enforce HTTPS once it is issued. The website push waits
+   for it; the push itself is prepared locally (card-counting at 71e0e1c, a fast-forward of main).
 3. **Add a LICENSE, a README and CITATION.cff, and call the page version 1.0 instead of "draft".**
    The licence is his choice; the plan's default is MIT for code and CC BY 4.0 for data. Correct
    the stale status lines a model reads first, such as PLAN_PAGE.md:12's "Nothing here is built
