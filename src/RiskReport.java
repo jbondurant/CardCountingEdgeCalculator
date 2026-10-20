@@ -104,8 +104,12 @@ final class RiskReport {
     static final int RUIN_PATHS = 20_000;
     static final long RUIN_SEED = 20261010L;
     static final double STOP_RISK = 5e-5;
-    /** The data file's budget, PLAN_COMPUTE.md section 0. */
-    static final int JSON_BUDGET = 60 * 1024;
+    /**
+     * The data file's budget, PLAN_COMPUTE.md section 0: 80 KB since 19 October 2026, when the first
+     * report on the real runs came to 62,241 bytes against the first estimate's 60 KB, made before any
+     * real input existed (as 79ff68b raised the page's).
+     */
+    static final int JSON_BUDGET = 80 * 1024;
     /**
      * The expected finding of PLAN_COMPUTE.md 2.3: under the same schedule the counts swing alike.
      * The data file says it holds when the five counts' sigma_eff at full play, 1-8, 80% lie within

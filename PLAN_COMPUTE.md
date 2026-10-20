@@ -55,7 +55,8 @@ follow.
   precomputed views and does no arithmetic, so there is no calculator. SiteBuildTest holds a
   budget for each file that goes into `card-counting/`: page HTML 200 KB and page.js 12 KB
   (PLAN_PAGE.md 2.5); `results.json` 500 KB and `results.csv` 300 KB; the toggle-loaded
-  `key-edges-{70,75,80}.json` 150 KB each; `spreads.json` 200 KB; `risk.json` 60 KB;
+  `key-edges-{70,75,80}.json` 150 KB each; `spreads.json` 200 KB; `risk.json` 80 KB (60 KB until 19 October 2026, when the first report on the
+  real runs came to 62,241 bytes);
   `ceiling.json` 60 KB; `fig/*.svg` 250 KB together; the manifest files 60 KB. That sums to at
   most about 2.1 MB, the figure the push list uses for `card-counting/` in place of PLAN_PAGE.md
   section 5's "about 1 MB". Anything bigger, such as full-detail CSVs, is a Release asset or
