@@ -464,7 +464,13 @@ Open:
      markers, as SiteSimTest's does. The main run started at 16:49
      (runs/site-runs/sim-part2-main-0f087c4.sh 34 110000, into runs/sim/part2-0f087c4 and
      part2-look-first-0f087c4, part2-look-full-0f087c4), the planted runs after it
-     (runs/site-runs/sim-part2-planted-0f087c4.sh).
+     (runs/site-runs/sim-part2-planted-0f087c4.sh). The main run finished at 20:49 (4.0 h: the
+     replay's P2 19 min, P3 with fans and ruin paths 2.97 h, variants 5 min; the page look's two
+     P2 and P3 38 min), every exact check with 0 mismatches on all three bundles: D1 60,743 of
+     60,743; D2 1,287,351 of 1,287,351 on the replay's, 1,386,378 of 1,386,378 on the page look's
+     two with 21 and 3 registered-only columns left out and named; D4 and D5 whole; D5's split
+     cells 30,000 of 30,000 on the replay's and 4,000 of 4,000 on export-full. The registered
+     tests are read by `SiteAdapt sim` (row 10). The planted runs started at 20:51.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
