@@ -480,6 +480,15 @@ Open:
      as before: the literature check's 57 figures 19 / 18 / 7 / 12 / 1; KeyEdgesRun's 7,646 printed
      lines the same. Part B (`SiteAdapt sim`, then the page into runs/page-1946b3d) waits on the
      planted runs.
+   - **Part 2 done, and the page built** (20 October 2026). The planted runs ended at 00:39; `SiteAdapt
+     sim` read every run (runs/site-1946b3d/sim-1946b3d.json). On the page: all 82 registered tests
+     pass, the largest |z| 1.76 (F42.P2); of the eight planted bugs seven are caught (s17, no-das and
+     split-aces-hit by D1 and D4 and |z| 23 to 37; truncate by D2, D4 and D5; bet-key-plus-one by
+     D4; hole-card and insure-whole-bet by the z tests alone, |z| 15.1 and 7.0) and other-fold is
+     not (no exact check, |z| 2.1, as the clean control's), since the two folds' strategies play
+     almost alike. The page first refused its budget (385,633 bytes against 256 KB; 448 KB since
+     832ef3e, PLAN_PAGE.md 2.5) and was built into runs/page-832ef3e from runs/site-1946b3d: 48
+     files, its SHA256SUMS check passing. Nothing is copied into the website without Justin's yes.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
