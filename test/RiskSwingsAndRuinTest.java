@@ -4,6 +4,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -163,6 +164,26 @@ public class RiskSwingsAndRuinTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> run("both", List.of(one, a), new LinkedHashMap<>()));
         assertTrue(e.getMessage().contains("has swings in both"), e.getMessage());
+        // Each figure from the run its part registers, named (FIGS=PATH): every run also holds F03, the
+        // chart's walk, so part 2's files hold it too. Planted on 19 October 2026 in a scratch copy, the
+        // names ignored (every figure of each file read): the run with "one" and "a" named is refused.
+        List<String> part2AndChart = new ArrayList<>(part2);
+        for (String l : part1) {
+            if (l.split("\t")[1].equals("F03")) {
+                part2AndChart.add(l);
+            }
+        }
+        Path b3 = RiskFixture.write(dir, "swings-part2-with-chart.tsv", part2AndChart);
+        assertThrows(IllegalArgumentException.class, () -> run("chart-twice", List.of(a, b3), new LinkedHashMap<>()));
+        List<String> part2Figs = new ArrayList<>(new java.util.TreeSet<>(part2.stream().map(l -> l.split("\t")[1])
+                .collect(java.util.stream.Collectors.toList())));
+        run("named", List.of(Paths.get("F03,F18=" + a), Paths.get(String.join(",", part2Figs) + "=" + b3)), new LinkedHashMap<>());
+        String jNamed = new String(Files.readAllBytes(dir.resolve("named.json")), StandardCharsets.UTF_8);
+        assertEquals(jOne.replaceAll("\"inputs\":\\{[^}]*\\}", ""), jNamed.replaceAll("\"inputs\":\\{[^}]*\\}", ""),
+                "the figures named give what one file gives");
+        IllegalArgumentException n = assertThrows(IllegalArgumentException.class,
+                () -> run("missing", List.of(Paths.get("F03,F18,F27=" + a), b), new LinkedHashMap<>()));
+        assertTrue(n.getMessage().contains("has no swings of F27"), n.getMessage());
 
         RiskMath.ShoeSums sums = RiskReport.readRecords(dir.resolve("records-F27.tsv")).sums();
         double mu = sums.rate();

@@ -1071,7 +1071,9 @@ java -cp $C SplitMargin --rearranged $R/runs/ceiling/split-margin-$SHA.tsv --res
 
 **Row 10. The reports and the page's inputs, under 1 h.** Each computation writes outside
 runs/site/; an adapter puts each input into runs/site/, the only directory SiteBuild reads.
-RiskReport and WideReport take row 3's wide pilot; SiteExport and CeilingResults take
+RiskReport and WideReport take row 3's wide pilot; RiskReport takes each run's swings for the figures
+its part registers swings for (FIGS=PATH, since 19 October 2026: every run's swings.tsv also holds
+F03, the chart's walk, which only part 1 registers); SiteExport and CeilingResults take
 pilot-1417-100.txt, by one widening rule (open item 13, closed). RiskReport takes every run's
 swings file, each figure from one, and the simulator's ruin paths beside its own (open items 6
 and 10, closed), and the simulator's trip files beside its own trip risk (open item 19, closed).
@@ -1114,7 +1116,9 @@ java -cp "$C:$M" SiteAdapt edges $R/runs/key-edges/key-edges-*.json --out $R/run
 # Swings and risk.
 java -Xmx3g -cp "$C:$M" RiskReport --commit $SHA --source c06c061=$C06/results.ser \
   --source step7=$R/runs/report-ceiling-$REG.ser --source step8=$S8/results.ser --source replay=$P/wide.ser \
-  --widening $WPILOT --swings $O1/swings.tsv --swings $O2/swings.tsv --swings $O2L2/swings.tsv \
+  --widening $WPILOT --swings F03,F18=$O1/swings.tsv \
+  --swings F27,F29,F30,F31,F32,F33,F34,F35,F36,F37,F38,F39,F40,F41,F42,F43,F44,F45,F46,F47,F48=$O2/swings.tsv \
+  --swings F50,F52=$O2L2/swings.tsv \
   --records F27=$O2/records-F27.tsv --records F29=$O2/records-F29.tsv --ruin F27=$O2/ruin-F27.tsv \
   --ruin F29=$O2/ruin-F29.tsv --trip F27=$O2/trip-F27.tsv --trip F29=$O2/trip-F29.tsv --fan F27=$O2/fan-F27.tsv \
   --md $R/runs/risk/report-risk-$SHA.md \

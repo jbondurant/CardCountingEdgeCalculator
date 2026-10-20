@@ -78,7 +78,7 @@ import java.util.TreeMap;
  * java -Xmx3g -cp build/classes:lib/mongo-java-driver-3.12.14.jar RiskReport --commit SHA
  *      --source c06c061=runs/full-index/full-c06c061/results.ser --source step7=runs/report-ceiling-97bf834.ser
  *      [--source step8=PATH] [--source replay=PATH] --widening runs/full-index/pilot-1417-100.txt
- *      --swings DIR/swings.tsv [--swings ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--trip FIG=PATH ...]
+ *      --swings [FIGS=]DIR/swings.tsv [--swings ...] [--records FIG=PATH ...] [--ruin FIG=PATH ...] [--trip FIG=PATH ...]
  *      [--fan FIG=PATH] --md OUT.md --json OUT.json
  */
 final class RiskReport {
@@ -584,14 +584,47 @@ final class RiskReport {
     }
 
     /**
+     * A --swings argument that names the figures it takes from its file, FIGS=PATH (F03,F18=part1/swings.tsv).
+     * Every run's swings.tsv also holds the chart's walk, F03, which only part 1 registers swings for
+     * (SIM_CHECK.md section 3), so a figure two runs hold is taken from the one named.
+     */
+    static final java.util.regex.Pattern SWING_FIGURES = java.util.regex.Pattern.compile("^(F\\d+(?:,F\\d+)*)=(.+)$");
+
+    /** The file a --swings argument reads: PATH itself, or the PATH of FIGS=PATH. */
+    static Path swingFile(Path given) {
+        java.util.regex.Matcher m = SWING_FIGURES.matcher(given.toString());
+        return m.matches() ? Paths.get(m.group(2)) : given;
+    }
+
+    /** The figures a --swings argument takes, FIGS of FIGS=PATH, or null for every figure its file holds. */
+    static java.util.Set<String> swingFigures(Path given) {
+        java.util.regex.Matcher m = SWING_FIGURES.matcher(given.toString());
+        return m.matches() ? new java.util.LinkedHashSet<>(java.util.Arrays.asList(m.group(1).split(","))) : null;
+    }
+
+    /**
      * Reads several swings files as one (INTEGRATION.md open item 6: part 1's and part 2's runs each
-     * write one, and the page look's bundle may have its own): every figure from one file only.
+     * write one, and the page look's bundle may have its own): every figure from one file only, each
+     * argument's figures (FIGS=PATH) or all of its file's; a figure named that its file lacks is refused.
      */
     static Map<String, Swing> readSwingFiles(List<Path> files) throws IOException {
         Map<String, Swing> out = new TreeMap<>();
         Map<String, Path> from = new LinkedHashMap<>();
-        for (Path f : files) {
-            for (Map.Entry<String, Swing> e : readSwings(Files.readAllLines(f, StandardCharsets.UTF_8)).entrySet()) {
+        for (Path given : files) {
+            Path f = swingFile(given);
+            java.util.Set<String> only = swingFigures(given);
+            Map<String, Swing> read = readSwings(Files.readAllLines(f, StandardCharsets.UTF_8));
+            if (only != null) {
+                for (String fig : only) {
+                    if (!read.containsKey(fig)) {
+                        throw new IllegalArgumentException(f + " has no swings of " + fig + ", which " + given + " names");
+                    }
+                }
+            }
+            for (Map.Entry<String, Swing> e : read.entrySet()) {
+                if (only != null && !only.contains(e.getKey())) {
+                    continue;
+                }
                 if (out.put(e.getKey(), e.getValue()) != null) {
                     throw new IllegalArgumentException(e.getKey() + " has swings in both " + from.get(e.getKey()) + " and " + f
                             + "; each figure's swings come from one run");
@@ -1896,7 +1929,7 @@ final class RiskReport {
             inputs.put(pilot.toString(), sha256(pilot));
         }
         for (Path f : swingsFiles) {
-            inputs.put(f.toString(), sha256(f));
+            inputs.put(f.toString(), sha256(swingFile(f)));
         }
         for (Path f : ruinFiles.values()) {
             inputs.put(f.toString(), sha256(f));
