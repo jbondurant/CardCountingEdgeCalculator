@@ -470,7 +470,16 @@ Open:
      60,743; D2 1,287,351 of 1,287,351 on the replay's, 1,386,378 of 1,386,378 on the page look's
      two with 21 and 3 registered-only columns left out and named; D4 and D5 whole; D5's split
      cells 30,000 of 30,000 on the replay's and 4,000 of 4,000 on export-full. The registered
-     tests are read by `SiteAdapt sim` (row 10). The planted runs started at 20:51.
+     tests are read by `SiteAdapt sim` (row 10). The planted runs started at 20:51; a half on the
+     replay's bundle takes about 57 min, since a run of one chunk uses one thread (sim/Chunks.java
+     hands a chunk to each thread), so they end about 06:30 on 20 October.
+   - **Row 10, all but `SiteAdapt sim` and the page** (19 October 2026, runs/site-runs/row10-1946b3d-a.sh,
+     into runs/site-1946b3d). Two stops on the way, each fixed and tested: RiskReport refused F03's
+     swings from two runs (every run's swings.tsv holds the chart's walk; `--swings FIGS=PATH`,
+     0fe95e8), then its data file's budget (62,241 bytes against 60 KB; 80 KB, 1946b3d). The rest
+     as before: the literature check's 57 figures 19 / 18 / 7 / 12 / 1; KeyEdgesRun's 7,646 printed
+     lines the same. Part B (`SiteAdapt sim`, then the page into runs/page-1946b3d) waits on the
+     planted runs.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
