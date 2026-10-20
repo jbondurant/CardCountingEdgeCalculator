@@ -489,6 +489,17 @@ Open:
      almost alike. The page first refused its budget (385,633 bytes against 256 KB; 448 KB since
      832ef3e, PLAN_PAGE.md 2.5) and was built into runs/page-832ef3e from runs/site-1946b3d: 48
      files, its SHA256SUMS check passing. Nothing is copied into the website without Justin's yes.
+   - **Copied into the website repo, not pushed** (20 October 2026, Justin: "we can copy to website").
+     ../jbondurant.github.io, local branch card-counting, commit 59f04c4: card-counting/, the 48
+     files of runs/page-832ef3e unchanged (data/manifest.json c93a0ff4…09b60); main untouched, not
+     linked from index.html. Not pushed: https://justinbondurantdavid.com still fails its
+     certificate check (the CNAME is on the unmerged add-custom-domain branch), and PLAN_PAGE.md
+     section 5 puts the push behind that and Justin's yes on an exact list (SiteManifest
+     --push-list was never built). Before a push: the commits the page cites pushed to
+     github.com/jbondurant/CardCountingEdgeCalculator (the page links c06c061, not yet public);
+     the home page's link and blurb in Justin's words; his decision on the run files' absolute
+     paths (/Users/justinbondurant/…) printed in the downloads section; and the Release, which has
+     to come before the wrap-up deletes the state files and results.ser.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the
