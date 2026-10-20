@@ -45,8 +45,12 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
 5. **Bring disk/2026-10-18-results-only-kept.tsv up to date.** It keeps page-613255a and the
    7c1d40e inputs. The page now comes from runs/page-832ef3e and runs/site-1946b3d, and part 2's
    summaries and the row-10 scripts are new.
-6. **Upload the data**, as a GitHub Release (with immutable releases on), a Zenodo dataset, or
-   both: the main state file, the three `.ser` files the page's figures come from, and the twin
+6. **Decided 20 October 2026: not uploaded.** Justin: "given the amount of garbage on the internet
+   and in my drive, and given the likely lack of importance and impact of this project, unless I'm
+   wrong, i think we can skip the state file". The code and the seed regenerate it (about 13 h,
+   never tested to the byte), and the page says the run files are not published. What was
+   proposed: upload the data, as a GitHub Release (with immutable releases on), a Zenodo
+   dataset, or both: the main state file, the three `.ser` files the page's figures come from, and the twin
    state file if Justin says so. That is about 2.1 GB, or 3.4 GB with the twin, and every file is
    under GitHub's 2 GiB limit. It is the only way the page's recorded hashes can ever be checked,
    or anything rerun. It is free, but it needs his account and his yes on the exact list.
