@@ -1122,7 +1122,8 @@ public class SiteBuildTest {
             }
         }
         assertEquals(39, views, "every view of the every-count chart, each within its budget");
-        String filler = "<p>" + "padding words ".repeat(16 * 1024) + "</p>";
+        // Sized from the budget, so the page is over it whatever the budget is (448 KB since 20 October 2026).
+        String filler = "<p>" + "padding words ".repeat(SiteBuild.PAGE_BUDGET / "padding words ".length() + 1) + "</p>";
         List<String> over = build(small, template.replace("<main>", "<main>" + filler)).problems;
         assertTrue(over.stream().anyMatch(x -> x.startsWith("index.html is ") && x.endsWith("over its budget of " + SiteBuild.PAGE_BUDGET)), over.toString());
     }

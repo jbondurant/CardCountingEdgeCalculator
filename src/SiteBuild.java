@@ -68,7 +68,7 @@ final class SiteBuild {
      * results.json's were raised on 17 October, when the first build on the real inputs measured
      * 213,078 and 1,581,573 bytes against the plan's estimates of 200 KB and 500 KB.
      */
-    static final int PAGE_BUDGET = 256 * 1024;
+    static final int PAGE_BUDGET = 448 * 1024;
     static final int JS_BUDGET = 12 * 1024;
     static final int RESULTS_BUDGET = 2560 * 1024;
     static final int CSV_BUDGET = 300 * 1024;

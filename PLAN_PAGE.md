@@ -613,12 +613,18 @@ output into the website's working tree. It does not commit or push (section 5).
   5.95:1.
 - Without JavaScript the page is complete: the default views are static HTML, and controls
   appear only when the script has set `html.js`. A print stylesheet hides the controls.
-- Budget, enforced by the build: page HTML at most 256 KB, `page.js` at most 12 KB, no web
+- Budget, enforced by the build: page HTML at most 448 KB, `page.js` at most 12 KB, no web
   fonts, no CDN, no images other than inline SVG; `results.json` at most 2,560 KB, loaded only on
   the first toggle. The first build on the real inputs (17 October, 7c1d40e) measured the page at
   213,078 bytes (35,753 gzipped) and results.json at 1,581,573 (225,242 gzipped), over this
   plan's first estimates of 200 KB and 500 KB, which were made before any real input existed;
-  the data file carries every figure the page or a reader can ask for. Data URLs carry
+  the data file carries every figure the page or a reader can ask for. The first build with the
+  simulator's and the risk sections (20 October, 1946b3d) measured the page at 385,633 bytes
+  (58,547 gzipped): the simulator's section is 117,965 of it, its table of every registered test's
+  z 44,787 and its edge by count, folded in a details element, 58,527. The page stays complete
+  without JavaScript, so those stay static HTML and the budget went from 256 KB to 448 KB; moving
+  the edge-by-count table into a downloadable CSV, with a sentence in its place, is the plain cut
+  if the page should be lighter. Data URLs carry
   `?v=` and the manifest's hash, so a cached file from an older version is never mixed in.
 
 ### 2.6 How the page itself is checked
