@@ -527,6 +527,8 @@ Open:
        not fail, and gaps in the guard and the tests; 7954b8e fixes them.
      - One reviewer independently compared all 3,045 figures with every field, and found
        nothing changed but the names.
+     - The whole suite passed at 7954b8e (run-tests.sh): 840 of 840 tests, and the
+       simulator's 103 of 103, none skipped.
 
      **On the website branch, not pushed:** the website's card-counting branch holds the rebuilt
      page (c7ed6cf), .nojekyll (71e0e1c) and the home page's entry (6b41152). Pushing it to
