@@ -238,7 +238,7 @@ series full.70.{x}.perfect
 <p>The tags were searched on a second file of shoes from a different seed, so the shoes the count is graded on played no part in choosing it.{{#if has:search.}} <span data-file="search">On that search file, {{name:f1}} scored {{search.f1.80.s8|s3}} and a separate play and betting vector, {{name:f2}}, {{search.f2.80.s8|s3}}, against {{search.ref.80.s8|s3}} for the highest published count on the same grain (search file).</span>{{else}} <span class="pending">Not yet computed: the searched counts' scores on the search file.</span>{{/if}} Figures from the search file are labelled so every time they appear and are never used in a headline.</p>
 {{#if has:ledger.}}<div class="box" id="registration">
 <h3>The registration and its looks at the main file</h3>
-<p>The searched counts were fixed in a committed file before the main shoes were scored with them. Every run that scored them on the main shoes wrote one line to a ledger kept beside that file, {{ledger.lines|n}} in all: the commit of the code, the registration's git blob, the time and what ran.</p>
+<p>The searched counts were fixed in a committed file before the main shoes were scored with them. Every run that scored them on the main shoes wrote one line to a ledger kept beside that file, {{ledger.lines|n}} in all: the commit of the code, the registration's git blob, the time and what ran. The ledger records each path in full; here a path starts at the repository's folder.</p>
 {{table:ledger
 head Commit|Registration blob|Time|What ran
 col commit
@@ -506,7 +506,7 @@ col misses
 </section>
 </main>
 
-<footer>Source: <a href="https://github.com/jbondurant/CardCountingEdgeCalculator">github.com/jbondurant/CardCountingEdgeCalculator</a>. All rights reserved until a licence is chosen.</footer>
+<footer>Source: <a href="https://github.com/jbondurant/CardCountingEdgeCalculator/tree/site-integration">github.com/jbondurant/CardCountingEdgeCalculator</a>, branch site-integration. All rights reserved until a licence is chosen.</footer>
 <script src="assets/page.js" defer></script>
 </body>
 </html>

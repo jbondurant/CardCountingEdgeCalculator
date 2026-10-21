@@ -1478,6 +1478,9 @@ final class SiteBuild {
 
     private static final Pattern COLOUR = Pattern.compile("#[0-9a-fA-F]{3,8}\\b|\\brgba?\\(|\\bhsla?\\(|\\bcolor-mix\\(");
 
+    /** The start of a path in someone's home folder, which says whose computer a file was on and nothing about the file. */
+    static final Pattern HOME = Pattern.compile("(?<![\\w.~-])/(Users|home)/[^/\\s\"'<>]+/");
+
     /** A view fragment's budget: one figure, fetched when a control asks for it. */
     static final int VIEW_BUDGET = 120 * 1024;
 
@@ -1497,6 +1500,13 @@ final class SiteBuild {
             p.add("page.css sets text in orange (--c2), under 4.5:1 on the light background");
         }
         p.addAll(checkViews(o, page, pageIds));
+        for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
+            Matcher h = HOME.matcher(new String(e.getValue(), StandardCharsets.UTF_8));
+            if (h.find()) {
+                p.add(e.getKey() + " names a file by a path in a home folder (" + h.group() + "…); the page names files "
+                        + "by their path in the repository (SiteBuild --root)");
+            }
+        }
         budget(p, o, "index.html", PAGE_BUDGET);
         budget(p, o, "assets/page.js", JS_BUDGET);
         budget(p, o, "data/results.json", RESULTS_BUDGET);
@@ -1658,9 +1668,11 @@ final class SiteBuild {
 
     /**
      * java -cp build/classes SiteBuild --inputs runs/site --site site --index ../jbondurant.github.io/index.html
-     *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--check] [--draft DIR]
+     *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--root DIR] [--check] [--draft DIR]
      *
-     * --site is the directory holding template.html, page.css and page.js. --out receives
+     * --root is the repository's folder: with it, every file is named by its path in the
+     * repository (SiteData.read), and a page that still names one by a home folder's path is
+     * refused (check). --site is the directory holding template.html, page.css and page.js. --out receives
      * card-counting/'s files; with --check nothing is written, and the build is compared byte for
      * byte with what --out already holds (PLAN_PAGE.md 3.4, depth 1, step 6). A fixture build is
      * refused anywhere inside the website's working tree, so made-up numbers cannot be copied there.
@@ -1682,12 +1694,12 @@ final class SiteBuild {
         for (String k : List.of("inputs", "site", "index", "version", "date", "commit", "out")) {
             if (!a.containsKey(k)) {
                 System.err.println("usage: SiteBuild --inputs DIR --site DIR --index INDEX.html --version V "
-                        + "--date YYYY-MM-DD --commit SHA --out DIR [--check]");
+                        + "--date YYYY-MM-DD --commit SHA --out DIR [--root DIR] [--check]");
                 System.exit(2);
             }
         }
         Path site = Paths.get(a.get("site"));
-        SiteData in = SiteData.read(Paths.get(a.get("inputs")));
+        SiteData in = SiteData.read(Paths.get(a.get("inputs")), a.containsKey("root") ? Paths.get(a.get("root")) : null);
         Output o = build(in, read(site.resolve("template.html")), read(site.resolve("page.css")),
                 read(site.resolve("page.js")), tokens(read(Paths.get(a.get("index")))), a.get("version"), a.get("date"),
                 a.get("commit"));

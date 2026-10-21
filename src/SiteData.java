@@ -92,16 +92,27 @@ final class SiteData {
         }
     }
 
-    /** One input file as read: its name, its SHA-256 and its _source block. */
+    /** One input file as read: its name, its folder in the repository, its SHA-256 and its _source block. */
     static final class Input {
         final String name;
+        final String dir;
         final String sha256;
         final Map<String, Object> source;
 
         Input(String name, String sha256, Map<String, Object> source) {
+            this(name, "runs/site", sha256, source);
+        }
+
+        Input(String name, String dir, String sha256, Map<String, Object> source) {
             this.name = name;
+            this.dir = dir;
             this.sha256 = sha256;
             this.source = source;
+        }
+
+        /** The input file by its path in the repository. */
+        String file() {
+            return dir + "/" + name;
         }
 
         String what() {
@@ -145,8 +156,26 @@ final class SiteData {
         return false;
     }
 
+    /** The inputs' folder, as results.json and the manifest name it. */
+    String dir = "runs/site";
+    /** What inRepo leaves out of a path; null when the inputs are read as they are. */
+    private Pattern repo;
+
     /** Reads every *.json in dir, in name order, so the merge is the same on every build. */
     static SiteData read(Path dir) throws IOException {
+        return read(dir, null);
+    }
+
+    /**
+     * Reads every *.json in dir, and with a root (the repository's folder) names every file by its
+     * path in the repository, the page's way: every string of the inputs loses root's folder from
+     * each path that starts with it, and the folder of a worktree under root/.worktrees with it,
+     * since a worktree's files are the repository's files on another branch. The runs recorded
+     * full paths, such as /Users/NAME/…/runs/full-index/full-c06c061/results.ser; the page says
+     * runs/full-index/full-c06c061/results.ser. The input files are not changed, and their
+     * SHA-256s are those of the files as they are.
+     */
+    static SiteData read(Path dir, Path root) throws IOException {
         List<Path> files;
         try (Stream<Path> s = Files.list(dir)) {
             files = s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().collect(Collectors.toList());
@@ -155,17 +184,51 @@ final class SiteData {
             throw new IllegalArgumentException("no input files (*.json) in " + dir);
         }
         SiteData d = new SiteData();
+        if (root != null) {
+            d.repo = repoPrefix(root);
+            d.dir = d.inRepo(dir.toAbsolutePath().normalize().toString());
+        }
         for (Path p : files) {
             d.add(p.getFileName().toString(), Files.readAllBytes(p));
         }
         return d;
     }
 
+    /** The start of a path in root, with a worktree's folder under root/.worktrees after it when there is one. */
+    static Pattern repoPrefix(Path root) {
+        return Pattern.compile(Pattern.quote(root.toAbsolutePath().normalize().toString())
+                + "/(\\.worktrees/[^/\\s\"'<>]+/)?");
+    }
+
+    /** s with each path in the repository named from the repository's folder (read). */
+    String inRepo(String s) {
+        return repo == null ? s : repo.matcher(s).replaceAll("");
+    }
+
+    /** Every string in o, in its maps and lists, through inRepo; the keys are left as they are. */
+    @SuppressWarnings("unchecked")
+    private Object inRepo(Object o) {
+        if (o instanceof String) {
+            return inRepo((String) o);
+        }
+        if (o instanceof Map) {
+            for (Map.Entry<String, Object> e : ((Map<String, Object>) o).entrySet()) {
+                e.setValue(inRepo(e.getValue()));
+            }
+        } else if (o instanceof List) {
+            List<Object> l = (List<Object>) o;
+            for (int k = 0; k < l.size(); k++) {
+                l.set(k, inRepo(l.get(k)));
+            }
+        }
+        return o;
+    }
+
     static final List<String> BLOCKS = List.of("_source", "figures", "grid", "names", "tables");
 
     @SuppressWarnings("unchecked")
     void add(String name, byte[] bytes) {
-        Object o = Json.parse(new String(bytes, StandardCharsets.UTF_8));
+        Object o = inRepo(Json.parse(new String(bytes, StandardCharsets.UTF_8)));
         if (!(o instanceof Map)) {
             throw new IllegalArgumentException(name + ": an input must be a JSON object");
         }
@@ -192,7 +255,7 @@ final class SiteData {
         if (!file.equals("main") && !file.equals("search")) {
             throw new IllegalArgumentException(name + ": _source.file must be main or search, not " + file);
         }
-        Input in = new Input(name, sha256(bytes), source);
+        Input in = new Input(name, dir, sha256(bytes), source);
         inputs.add(in);
         if (m.containsKey("figures")) {
             for (Map.Entry<String, Object> e : ((Map<String, Object>) m.get("figures")).entrySet()) {
@@ -243,7 +306,7 @@ final class SiteData {
         if (a instanceof List && !((List<Object>) a).isEmpty()) {
             return (String) ((Map<String, Object>) ((List<Object>) a).get(0)).get("path");
         }
-        return "runs/site/" + in.name;
+        return in.file();
     }
 
     private static double optional(Map<String, Object> m, String k, String key) {
@@ -519,7 +582,7 @@ final class SiteData {
         List<Object> ins = new ArrayList<>();
         for (Input in : inputs) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("file", "runs/site/" + in.name);
+            m.put("file", in.file());
             m.put("sha256", in.sha256);
             m.put("source", in.source);
             ins.add(m);
@@ -625,7 +688,9 @@ final class SiteData {
         for (Object o : (List<Object>) root.get("inputs")) {
             Map<String, Object> m = (Map<String, Object>) o;
             String file = (String) m.get("file");
-            d.inputs.add(new Input(file.substring(file.lastIndexOf('/') + 1), (String) m.get("sha256"),
+            int slash = file.lastIndexOf('/');
+            d.dir = slash < 0 ? d.dir : file.substring(0, slash);
+            d.inputs.add(new Input(file.substring(slash + 1), d.dir, (String) m.get("sha256"),
                     (Map<String, Object>) m.get("source")));
         }
         for (Map.Entry<String, Object> e : ((Map<String, Object>) root.get("names")).entrySet()) {

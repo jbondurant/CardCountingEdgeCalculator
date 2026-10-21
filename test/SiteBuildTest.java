@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -1393,5 +1394,66 @@ public class SiteBuildTest {
         }
         Map<String, Object> each = SiteGuards.evaluate(SiteBuild.expandGuard("each > 0: full.80.s8.@top5 - full.80.s8.hi_lo", d), d);
         assertEquals(familyMultiplier(d, vsHiLo), (Double) each.get("multiplier"), 1e-9);
+    }
+
+    /** The results input of a copy of the fixture, with its artifacts and one figure's source at the paths given. */
+    @SuppressWarnings("unchecked")
+    static Path withPaths(String name, String artifact, String worktreeFile) throws IOException {
+        Path p = copy(name);
+        Path f = p.resolve("results-fixture.json");
+        Map<String, Object> m = json(f);
+        Map<String, Object> s = (Map<String, Object>) m.get("_source");
+        List<Object> arts = new ArrayList<>();
+        for (String path : new String[]{artifact, worktreeFile}) {
+            Map<String, Object> a = new LinkedHashMap<>();
+            a.put("path", path);
+            a.put("bytes", 1234L);
+            a.put("sha256", SiteData.sha256(path.getBytes(StandardCharsets.UTF_8)));
+            arts.add(a);
+        }
+        s.put("artifacts", arts);
+        Map<String, Object> figs = (Map<String, Object>) m.get("figures");
+        ((Map<String, Object>) figs.values().iterator().next()).put("src", worktreeFile);
+        write(f, m);
+        return p;
+    }
+
+    /**
+     * With --root, the page names every file by its path in the repository: a run's file from the
+     * repository's folder, a worktree's file from the worktree's, and the inputs by their own
+     * folder, not a fixed runs/site; no file of the page holds the root's path.
+     */
+    @Test
+    public void theRecordedFilesAreNamedByTheirPathInTheRepository() throws IOException {
+        String root = dir.toAbsolutePath().normalize().toString();
+        Path p = withPaths("in-repo", root + "/runs/full-index/full-x/results.ser",
+                root + "/.worktrees/count-design/custom-counts.json");
+        SiteBuild.Output o = SiteBuild.build(SiteData.read(p, dir), template, css, js, SiteBuild.tokens(INDEX), "test-1",
+                "2026-10-12", "0123456789abcdef0123456789abcdef01234567");
+        String results = o.text("data/results.json");
+        assertTrue(results.contains("\"runs/full-index/full-x/results.ser\""), "a run's file from the repository's folder");
+        assertTrue(results.contains("\"custom-counts.json\""), "a worktree's file from the worktree's folder");
+        assertTrue(results.contains("\"in-repo/results-fixture.json\""), "the inputs by their folder in the repository");
+        assertTrue(o.text("data/manifest.json").contains("\"in-repo/results-fixture.json\""));
+        assertFalse(o.text("data/manifest.json").contains("runs/site/"), "no fixed runs/site for inputs read elsewhere");
+        for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
+            assertFalse(new String(e.getValue(), StandardCharsets.UTF_8).contains(root), e.getKey() + " holds the root's path");
+        }
+        assertEquals(page.problems, o.problems);
+        // The prefix ends at a folder: a sibling folder whose name starts with the root's is not inside it.
+        assertEquals("x.json and runs/y and " + root + "sitory/z", SiteData.repoPrefix(dir)
+                .matcher(root + "/.worktrees/w/x.json and " + root + "/runs/y and " + root + "sitory/z").replaceAll(""));
+    }
+
+    /** A page that still names a file by a home folder's path fails its checks, so it is never written. */
+    @Test
+    public void aPathInAHomeFolderIsRefused() throws IOException {
+        Path p = withPaths("in-home", "/Users/someone/Documents/elsewhere/results.ser", "/home/someone/counts.json");
+        SiteBuild.Output o = build(p, template);
+        assertTrue(o.problems.stream().anyMatch(x -> x.startsWith("data/results.json names a file by a path in a home "
+                + "folder (/Users/someone/")), String.join("\n", o.problems));
+        assertTrue(o.problems.stream().anyMatch(x -> x.startsWith("data/manifest.json names a file by a path in a home "
+                + "folder")), String.join("\n", o.problems));
+        assertTrue(page.problems.stream().noneMatch(x -> x.contains("home folder")), "the fixture's own page passes");
     }
 }

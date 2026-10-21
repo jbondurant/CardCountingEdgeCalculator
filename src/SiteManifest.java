@@ -62,7 +62,10 @@ final class SiteManifest {
             + "checks them. The hashes under recorded were taken of the run files the figures were read from. "
             + "Those files do not ship with the page, so their hashes cannot be checked from it alone. "
             + "That the listed commits produced these files is the publisher's statement. "
-            + "A hash says nothing about whether the code is right; a bug is hashed just as faithfully.";
+            + "A hash says nothing about whether the code is right; a bug is hashed just as faithfully. "
+            + "Every file is named by its path in the repository. The runs recorded full paths on the computer "
+            + "they ran on; the part up to the repository's folder is left out here, and the input files "
+            + "keep the paths they recorded.";
 
     /** The folder SHA256SUMS sits in, under card-counting/. Every served file is under it. */
     static final String DATA = "data/";
@@ -108,7 +111,7 @@ final class SiteManifest {
         Map<String, Map<String, Object>> recorded = new TreeMap<>();
         for (SiteData.Input i : in.inputs) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("path", "runs/site/" + i.name);
+            m.put("path", i.file());
             m.put("sha256", i.sha256);
             m.put("what", i.what());
             m.put("commit", i.commit());
