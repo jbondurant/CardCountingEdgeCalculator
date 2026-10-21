@@ -63,9 +63,12 @@ final class SiteManifest {
             + "Those files do not ship with the page, so their hashes cannot be checked from it alone. "
             + "That the listed commits produced these files is the publisher's statement. "
             + "A hash says nothing about whether the code is right; a bug is hashed just as faithfully. "
-            + "Every file is named by its path in the repository. The runs recorded full paths on the computer "
-            + "they ran on; the part up to the repository's folder is left out here, and the input files "
-            + "keep the paths they recorded.";
+            + "Each file is named from the repository's folder. Files under runs/ are run outputs: they are "
+            + "kept out of the repository and are not published. A name with a branch before a colon, such as "
+            + "custom-count-design:custom-counts.json, is the committed file at that path on that branch. The "
+            + "runs recorded full paths on the computer they ran on, and the part up to the repository's folder "
+            + "is left out here. The input files, listed under inputs in manifest.json, still hold the full "
+            + "paths, so their hashes are those of the files as written.";
 
     /** The folder SHA256SUMS sits in, under card-counting/. Every served file is under it. */
     static final String DATA = "data/";

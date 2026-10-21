@@ -1396,15 +1396,24 @@ public class SiteBuildTest {
         assertEquals(familyMultiplier(d, vsHiLo), (Double) each.get("multiplier"), 1e-9);
     }
 
-    /** The results input of a copy of the fixture, with its artifacts and one figure's source at the paths given. */
+    /**
+     * A copy of the fixture in the folder to, with the results input's artifacts at the paths given
+     * and its first figure's source the last of them; and, when bare, one more input that lists no
+     * artifacts at all.
+     */
     @SuppressWarnings("unchecked")
-    static Path withPaths(String name, String artifact, String worktreeFile) throws IOException {
-        Path p = copy(name);
-        Path f = p.resolve("results-fixture.json");
+    static Path withPaths(Path to, boolean bare, String... artifacts) throws IOException {
+        Files.createDirectories(to);
+        try (java.util.stream.Stream<Path> s = Files.list(small)) {
+            for (Path p : (Iterable<Path>) s::iterator) {
+                Files.copy(p, to.resolve(p.getFileName()), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        Path f = to.resolve("results-fixture.json");
         Map<String, Object> m = json(f);
         Map<String, Object> s = (Map<String, Object>) m.get("_source");
         List<Object> arts = new ArrayList<>();
-        for (String path : new String[]{artifact, worktreeFile}) {
+        for (String path : artifacts) {
             Map<String, Object> a = new LinkedHashMap<>();
             a.put("path", path);
             a.put("bytes", 1234L);
@@ -1412,48 +1421,91 @@ public class SiteBuildTest {
             arts.add(a);
         }
         s.put("artifacts", arts);
-        Map<String, Object> figs = (Map<String, Object>) m.get("figures");
-        ((Map<String, Object>) figs.values().iterator().next()).put("src", worktreeFile);
+        Map<String, Object> first = (Map<String, Object>) ((Map<String, Object>) m.get("figures")).values().iterator().next();
+        first.put("src", artifacts[artifacts.length - 1]);
         write(f, m);
-        return p;
+        if (bare) {
+            Files.write(to.resolve("zz-bare.json"), ("{\"_source\":{\"what\":\"bare\",\"commit\":\"abc\",\"fixture\":true,"
+                    + "\"file\":\"main\"},\"figures\":{\"bare.n\":{\"value\":1,\"fmt\":\"n\"}}}").getBytes(StandardCharsets.UTF_8));
+        }
+        return to;
+    }
+
+    static SiteBuild.Output build(SiteData in) {
+        return SiteBuild.build(in, template, css, js, SiteBuild.tokens(INDEX), "test-1", "2026-10-12",
+                "0123456789abcdef0123456789abcdef01234567");
     }
 
     /**
-     * With --root, the page names every file by its path in the repository: a run's file from the
-     * repository's folder, a worktree's file from the worktree's, and the inputs by their own
-     * folder, not a fixed runs/site; no file of the page holds the root's path.
+     * With --root, the page names every file from the repository's folder: a run's file by its path
+     * there; a worktree's file as BRANCH:PATH, or .worktrees/NAME/PATH when its branch is not known;
+     * the inputs by their own folder, not a fixed runs/site, and by its name when it is outside the
+     * root; an input that lists no artifacts by that folder too. No file of the page holds the
+     * root's path. The root's name has regular-expression characters in it, which must be read as
+     * they are.
      */
     @Test
-    public void theRecordedFilesAreNamedByTheirPathInTheRepository() throws IOException {
-        String root = dir.toAbsolutePath().normalize().toString();
-        Path p = withPaths("in-repo", root + "/runs/full-index/full-x/results.ser",
-                root + "/.worktrees/count-design/custom-counts.json");
-        SiteBuild.Output o = SiteBuild.build(SiteData.read(p, dir), template, css, js, SiteBuild.tokens(INDEX), "test-1",
-                "2026-10-12", "0123456789abcdef0123456789abcdef01234567");
+    public void theRecordedFilesAreNamedFromTheRepositorysFolder() throws IOException {
+        Path rootDir = Files.createDirectories(dir.resolve("a+b (c)$"));
+        String root = rootDir.toAbsolutePath().normalize().toString();
+        Path p = withPaths(rootDir.resolve("in-repo"), true, root + "/runs/full-index/full-x/results.ser",
+                root + "/.worktrees/other/x.json", root + "/.worktrees/count-design/custom-counts.json");
+        SiteData in = SiteData.read(p, rootDir, Map.of("count-design", "custom-count-design"));
+        SiteBuild.Output o = build(in);
         String results = o.text("data/results.json");
         assertTrue(results.contains("\"runs/full-index/full-x/results.ser\""), "a run's file from the repository's folder");
-        assertTrue(results.contains("\"custom-counts.json\""), "a worktree's file from the worktree's folder");
+        assertTrue(results.contains("\"custom-count-design:custom-counts.json\""), "a worktree's file as BRANCH:PATH");
+        assertTrue(results.contains("\".worktrees/other/x.json\""), "a worktree of no known branch by its folder");
         assertTrue(results.contains("\"in-repo/results-fixture.json\""), "the inputs by their folder in the repository");
+        SiteData back = SiteData.fromJson(results);
+        assertEquals("in-repo/zz-bare.json", back.figures.get("bare.n").src, "an input with no artifacts, by its own path");
+        assertEquals("in-repo/results-fixture.json", back.inputs.stream().filter(i -> i.name.equals("results-fixture.json"))
+                .findFirst().get().file(), "the inputs' folder, read back");
         assertTrue(o.text("data/manifest.json").contains("\"in-repo/results-fixture.json\""));
         assertFalse(o.text("data/manifest.json").contains("runs/site/"), "no fixed runs/site for inputs read elsewhere");
         for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
             assertFalse(new String(e.getValue(), StandardCharsets.UTF_8).contains(root), e.getKey() + " holds the root's path");
         }
-        assertEquals(page.problems, o.problems);
+        assertTrue(o.problems.stream().noneMatch(x -> x.contains("home folder") || x.contains("repository's folder")),
+                String.join("\n", o.problems));
+        // Inputs outside the root are named by their folder's name, never by a full path.
+        Path q = withPaths(dir.resolve("outside"), false, root + "/runs/a.ser");
+        assertEquals("outside", SiteData.read(q, rootDir, Map.of()).dir);
         // The prefix ends at a folder: a sibling folder whose name starts with the root's is not inside it.
-        assertEquals("x.json and runs/y and " + root + "sitory/z", SiteData.repoPrefix(dir)
-                .matcher(root + "/.worktrees/w/x.json and " + root + "/runs/y and " + root + "sitory/z").replaceAll(""));
+        SiteData r = SiteData.read(q, rootDir, Map.of("w", "b"));
+        assertEquals("b:x.json and runs/y and " + root + "sitory/z",
+                r.inRepo(root + "/.worktrees/w/x.json and " + root + "/runs/y and " + root + "sitory/z"));
     }
 
-    /** A page that still names a file by a home folder's path fails its checks, so it is never written. */
+    /**
+     * A page that still holds a path in a home folder fails its checks, so it is never written:
+     * /Users and /home, after a JSON escape such as a newline, behind a volume's folder; and so does
+     * one that holds the repository's folder in a form the renaming left as it was.
+     */
     @Test
-    public void aPathInAHomeFolderIsRefused() throws IOException {
-        Path p = withPaths("in-home", "/Users/someone/Documents/elsewhere/results.ser", "/home/someone/counts.json");
-        SiteBuild.Output o = build(p, template);
-        assertTrue(o.problems.stream().anyMatch(x -> x.startsWith("data/results.json names a file by a path in a home "
-                + "folder (/Users/someone/")), String.join("\n", o.problems));
-        assertTrue(o.problems.stream().anyMatch(x -> x.startsWith("data/manifest.json names a file by a path in a home "
-                + "folder")), String.join("\n", o.problems));
-        assertTrue(page.problems.stream().noneMatch(x -> x.contains("home folder")), "the fixture's own page passes");
+    public void aPathInAHomeFolderOrTheRepositorysFolderIsRefused() throws IOException {
+        SiteBuild.Output users = build(SiteData.read(withPaths(dir.resolve("in-users"), false,
+                "/Users/someone/Documents/elsewhere/results.ser", "fixture/b.fake")));
+        assertTrue(users.problems.stream().anyMatch(x -> x.startsWith("data/results.json names a file by a path in a home "
+                + "folder (/Users/someone/")), String.join("\n", users.problems));
+        assertTrue(users.problems.stream().anyMatch(x -> x.startsWith("data/manifest.json names a file by a path in a home "
+                + "folder")), String.join("\n", users.problems));
+        SiteBuild.Output home = build(SiteData.read(withPaths(dir.resolve("in-home"), false, "/home/someone/x.ser", "fixture/b.fake")));
+        assertTrue(home.problems.stream().anyMatch(x -> x.contains("(/home/someone/")), String.join("\n", home.problems));
+        SiteBuild.Output escaped = build(SiteData.read(withPaths(dir.resolve("in-escaped"), false,
+                "read on the line\n/Users/someone/x.ser", "fixture/b.fake")));
+        assertTrue(escaped.problems.stream().anyMatch(x -> x.startsWith("data/results.json names a file by a path in a "
+                + "home folder (/Users/someone/")), String.join("\n", escaped.problems));
+        SiteBuild.Output volume = build(SiteData.read(withPaths(dir.resolve("in-volume"), false,
+                "/System/Volumes/Data/Users/someone/x.ser", "fixture/b.fake")));
+        assertTrue(volume.problems.stream().anyMatch(x -> x.contains("(/Users/someone/")), String.join("\n", volume.problems));
+        Path rootDir = Files.createDirectories(dir.resolve("repo-left"));
+        String root = rootDir.toAbsolutePath().normalize().toString();
+        SiteBuild.Output left = build(SiteData.read(withPaths(rootDir.resolve("in"), false,
+                "with --repo " + root, "fixture/b.fake"), rootDir, Map.of()));
+        assertTrue(left.problems.stream().anyMatch(x -> x.startsWith("data/results.json holds the repository's folder")),
+                String.join("\n", left.problems));
+        assertTrue(page.problems.stream().noneMatch(x -> x.contains("home folder") || x.contains("repository's folder")),
+                "the fixture's own page passes");
     }
 }

@@ -1460,6 +1460,14 @@ final class SiteBuild {
             o.files.put(f.getKey(), utf8(f.getValue()));
         }
         o.problems.addAll(check(o, css));
+        if (in.root != null) {
+            for (Map.Entry<String, byte[]> e : o.files.entrySet()) {
+                if (new String(e.getValue(), StandardCharsets.UTF_8).contains(in.root)) {
+                    o.problems.add(e.getKey() + " holds the repository's folder " + in.root + ", a path SiteData.read did "
+                            + "not rename; the page names files from the repository's folder");
+                }
+            }
+        }
         return o;
     }
 
@@ -1478,8 +1486,12 @@ final class SiteBuild {
 
     private static final Pattern COLOUR = Pattern.compile("#[0-9a-fA-F]{3,8}\\b|\\brgba?\\(|\\bhsla?\\(|\\bcolor-mix\\(");
 
-    /** The start of a path in someone's home folder, which says whose computer a file was on and nothing about the file. */
-    static final Pattern HOME = Pattern.compile("(?<![\\w.~-])/(Users|home)/[^/\\s\"'<>]+/");
+    /**
+     * The start of a path in someone's home folder, which says whose computer a file was on and
+     * nothing about the file. Anywhere in a file's bytes: after a JSON escape such as \n, and
+     * behind a volume (/System/Volumes/Data/Users/NAME/) too.
+     */
+    static final Pattern HOME = Pattern.compile("/(Users|home)/[^/\\s\"'<>\\\\]+/");
 
     /** A view fragment's budget: one figure, fetched when a control asks for it. */
     static final int VIEW_BUDGET = 120 * 1024;
@@ -1670,9 +1682,9 @@ final class SiteBuild {
      * java -cp build/classes SiteBuild --inputs runs/site --site site --index ../jbondurant.github.io/index.html
      *     --version V --date YYYY-MM-DD --commit SHA --out DIR [--root DIR] [--check] [--draft DIR]
      *
-     * --root is the repository's folder: with it, every file is named by its path in the
-     * repository (SiteData.read), and a page that still names one by a home folder's path is
-     * refused (check). --site is the directory holding template.html, page.css and page.js. --out receives
+     * --root is the repository's folder: with it, every file is named from it, a worktree's file
+     * as BRANCH:PATH (SiteData.read), and a page that still holds root's path, or any path in a
+     * home folder, is refused (build, check). --site is the directory holding template.html, page.css and page.js. --out receives
      * card-counting/'s files; with --check nothing is written, and the build is compared byte for
      * byte with what --out already holds (PLAN_PAGE.md 3.4, depth 1, step 6). A fixture build is
      * refused anywhere inside the website's working tree, so made-up numbers cannot be copied there.
@@ -1699,7 +1711,8 @@ final class SiteBuild {
             }
         }
         Path site = Paths.get(a.get("site"));
-        SiteData in = SiteData.read(Paths.get(a.get("inputs")), a.containsKey("root") ? Paths.get(a.get("root")) : null);
+        Path root = a.containsKey("root") ? Paths.get(a.get("root")) : null;
+        SiteData in = SiteData.read(Paths.get(a.get("inputs")), root, root == null ? Map.of() : SiteData.worktreeBranches(root));
         Output o = build(in, read(site.resolve("template.html")), read(site.resolve("page.css")),
                 read(site.resolve("page.js")), tokens(read(Paths.get(a.get("index")))), a.get("version"), a.get("date"),
                 a.get("commit"));

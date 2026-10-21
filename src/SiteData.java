@@ -2,6 +2,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -158,24 +160,30 @@ final class SiteData {
 
     /** The inputs' folder, as results.json and the manifest name it. */
     String dir = "runs/site";
-    /** What inRepo leaves out of a path; null when the inputs are read as they are. */
+    /** The repository's folder the inputs were read against (read), or null. */
+    String root;
+    /** What inRepo renames in a path; null when the inputs are read as they are. */
     private Pattern repo;
+    /** Each worktree's folder name under root/.worktrees, to the branch checked out in it. */
+    private Map<String, String> branches = Map.of();
 
     /** Reads every *.json in dir, in name order, so the merge is the same on every build. */
     static SiteData read(Path dir) throws IOException {
-        return read(dir, null);
+        return read(dir, null, Map.of());
     }
 
     /**
-     * Reads every *.json in dir, and with a root (the repository's folder) names every file by its
-     * path in the repository, the page's way: every string of the inputs loses root's folder from
-     * each path that starts with it, and the folder of a worktree under root/.worktrees with it,
-     * since a worktree's files are the repository's files on another branch. The runs recorded
-     * full paths, such as /Users/NAME/…/runs/full-index/full-c06c061/results.ser; the page says
-     * runs/full-index/full-c06c061/results.ser. The input files are not changed, and their
+     * Reads every *.json in dir, and with a root (the repository's folder) names every file the
+     * page's way, from the repository's folder: every string of the inputs loses root's folder from
+     * each path that starts with it. A file in a worktree under root/.worktrees is named
+     * BRANCH:PATH, git's name for the file at PATH on the branch branches gives for that worktree
+     * (.worktrees/NAME/PATH when it gives none). The runs recorded full paths, such as
+     * /Users/NAME/…/runs/full-index/full-c06c061/results.ser; the page says
+     * runs/full-index/full-c06c061/results.ser. The inputs' own folder is named the same way, or by
+     * its folder's name when it is outside root. The input files are not changed, and their
      * SHA-256s are those of the files as they are.
      */
-    static SiteData read(Path dir, Path root) throws IOException {
+    static SiteData read(Path dir, Path root, Map<String, String> branches) throws IOException {
         List<Path> files;
         try (Stream<Path> s = Files.list(dir)) {
             files = s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().collect(Collectors.toList());
@@ -185,8 +193,11 @@ final class SiteData {
         }
         SiteData d = new SiteData();
         if (root != null) {
+            d.root = root.toAbsolutePath().normalize().toString();
             d.repo = repoPrefix(root);
-            d.dir = d.inRepo(dir.toAbsolutePath().normalize().toString());
+            d.branches = branches;
+            String shown = d.inRepo(dir.toAbsolutePath().normalize().toString());
+            d.dir = shown.startsWith("/") ? dir.toAbsolutePath().normalize().getFileName().toString() : shown;
         }
         for (Path p : files) {
             d.add(p.getFileName().toString(), Files.readAllBytes(p));
@@ -194,15 +205,43 @@ final class SiteData {
         return d;
     }
 
-    /** The start of a path in root, with a worktree's folder under root/.worktrees after it when there is one. */
+    /** The start of a path in root, with a worktree's folder under root/.worktrees after it (its name, group 1) when there is one. */
     static Pattern repoPrefix(Path root) {
         return Pattern.compile(Pattern.quote(root.toAbsolutePath().normalize().toString())
-                + "/(\\.worktrees/[^/\\s\"'<>]+/)?");
+                + "/(?:\\.worktrees/([^/\\s\"'<>\\\\]+)/)?");
     }
 
-    /** s with each path in the repository named from the repository's folder (read). */
+    /** s with each path under root named from the repository's folder, a worktree's file as BRANCH:PATH (read). */
     String inRepo(String s) {
-        return repo == null ? s : repo.matcher(s).replaceAll("");
+        if (repo == null) {
+            return s;
+        }
+        Matcher m = repo.matcher(s);
+        StringBuilder b = new StringBuilder();
+        while (m.find()) {
+            String worktree = m.group(1);
+            String branch = worktree == null ? null : branches.get(worktree);
+            m.appendReplacement(b, Matcher.quoteReplacement(worktree == null ? ""
+                    : branch != null ? branch + ":" : ".worktrees/" + worktree + "/"));
+        }
+        m.appendTail(b);
+        return b.toString();
+    }
+
+    /** Each worktree under root/.worktrees, by its folder's name, to its branch, from git worktree list. */
+    static Map<String, String> worktreeBranches(Path root) {
+        Path under = root.toAbsolutePath().normalize().resolve(".worktrees");
+        String list = CustomCounts.git(root, "worktree", "list", "--porcelain");
+        Map<String, String> out = new TreeMap<>();
+        Path at = null;
+        for (String line : list == null ? new String[0] : list.split("\n")) {
+            if (line.startsWith("worktree ")) {
+                at = Paths.get(line.substring("worktree ".length())).toAbsolutePath().normalize();
+            } else if (line.startsWith("branch refs/heads/") && at != null && under.equals(at.getParent())) {
+                out.put(at.getFileName().toString(), line.substring("branch refs/heads/".length()));
+            }
+        }
+        return out;
     }
 
     /** Every string in o, in its maps and lists, through inRepo; the keys are left as they are. */

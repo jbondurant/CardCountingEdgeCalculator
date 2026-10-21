@@ -7,8 +7,9 @@
 # --inputs defaults to runs/site, the JSON files the computations write; --index to the website's
 # index.html beside this repo, whose colour tokens the page takes. The build refuses to write a
 # page that fails its checks, and refuses a fixture build anywhere inside the website's tree.
-# The page names every file by its path in the repository: the repository's folder (the main
-# checkout's, found from git, worktree or not) is passed as --root and left out of each path.
+# The page names every file from the repository's folder: that folder (the main checkout's, found
+# from git, worktree or not) is passed as --root and left out of each path, and a worktree's file
+# is named BRANCH:PATH.
 # It never commits, pushes or copies anything into the website repository: that is a separate,
 # listed step that waits for Justin's yes (PLAN_PAGE.md section 5).
 set -e

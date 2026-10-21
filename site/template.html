@@ -478,7 +478,7 @@ col misses
 <p>These files ship with this page:</p>
 {{files: File | Bytes | SHA-256 | Made by}}
 <p>To check them, save them and <a href="data/SHA256SUMS">SHA256SUMS</a> in one folder and run <code>shasum -a 256 -c SHA256SUMS</code> there. The data behind this page is in <a href="data/results.json">results.json</a> and <a href="data/results.csv">results.csv</a>, and the manifest in <a href="data/manifest.json">manifest.json</a> and <a href="data/MANIFEST.md">MANIFEST.md</a>.</p>
-<p>The figures were read from the run files below. Their hashes were taken when the figures were read. These files are not on this page, so you cannot check the hashes from it alone (see <a href="#hash">What a hash proves</a>).</p>
+<p>The figures were read from the run files below. Their hashes were taken when the figures were read. These files are not on this page, so you cannot check the hashes from it alone (see <a href="#hash">What a hash proves</a>). Each is named from the repository's folder. Files under runs/ are run outputs: they are kept out of the repository and are not published. A name with a branch before a colon, such as custom-count-design:custom-counts.json, is the committed file at that path on that branch.</p>
 {{recorded: File | Bytes | SHA-256 | Commit}}
 <p>Reproducing needs Java 25.</p>
 <p>To cite: Justin Bondurant-David, card counting at the Casino de Montréal's blackjack, version {{s:version}}, {{s:date}}, {{link:results}}.</p>
