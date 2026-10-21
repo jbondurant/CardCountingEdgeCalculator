@@ -3,12 +3,14 @@
 # (20 October 2026) with one from after, on the same inputs, to show the change renamed files and
 # nothing else.
 #
-#   site/compare-builds.sh OLD NEW ROOT INPUTS
+#   site/compare-builds.sh OLD NEW ROOT INPUTS OLD_COMMIT NEW_COMMIT
 #
-# OLD and NEW are two builds' folders (card-counting/'s files), ROOT the repository's folder, and
-# INPUTS the inputs' folder in the repository (runs/site-1946b3d). Apart from SiteData.read, it
-# applies the naming rule to OLD's files: ROOT's folder, and a worktree's folder under
-# ROOT/.worktrees, left out of every path; runs/site/ named INPUTS/. Then:
+# OLD and NEW are two builds' folders (card-counting/'s files), ROOT the repository's folder,
+# INPUTS the inputs' folder in the repository (runs/site-1946b3d), and OLD_COMMIT and NEW_COMMIT
+# the two builds' commits in full: the figures SiteBuild computes itself (counts, ranges) are
+# credited to the commit that built the page. Apart from SiteData.read, it applies the naming rule
+# to OLD's files: ROOT's folder, and a worktree's folder under ROOT/.worktrees, left out of every
+# path; runs/site/ named INPUTS/; OLD_COMMIT read as NEW_COMMIT. Then:
 #   1. data/results.json and data/results.csv must be byte for byte the same as NEW's: every
 #      figure, interval, source and table. It exits 1 if not.
 #   2. Every other difference is printed, for a person to read: the hashes that change with them,
@@ -17,15 +19,15 @@
 #      commit, else at the tips of site-integration and custom-count-design. Its SHA-256 must be
 #      the one recorded, so the name a reader is given finds the file the figures were read from.
 set -e
-[ $# -eq 4 ] || { echo "usage: site/compare-builds.sh OLD NEW ROOT INPUTS" >&2; exit 2; }
-OLD=$1; NEW=$2; ROOT=$3; INPUTS=$4
+[ $# -eq 6 ] || { echo "usage: site/compare-builds.sh OLD NEW ROOT INPUTS OLD_COMMIT NEW_COMMIT" >&2; exit 2; }
+OLD=$1; NEW=$2; ROOT=$3; INPUTS=$4; OLDC=$5; NEWC=$6
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 cp -R "$OLD" "$T/old"
 find "$T/old" -type f | while read -r f; do
-  ROOT="$ROOT" INPUTS="$INPUTS" perl -pi -e \
-    's{\Q$ENV{ROOT}\E/(\.worktrees/[^/\s"'"'"'<>]+/)?}{}g; s{runs/site/}{$ENV{INPUTS}/}g' "$f"
+  ROOT="$ROOT" INPUTS="$INPUTS" OLDC="$OLDC" NEWC="$NEWC" perl -pi -e \
+    's{\Q$ENV{ROOT}\E/(\.worktrees/[^/\s"'"'"'<>]+/)?}{}g; s{runs/site/}{$ENV{INPUTS}/}g; s{\Q$ENV{OLDC}\E}{$ENV{NEWC}}g' "$f"
 done
 status=0
 for f in data/results.json data/results.csv; do
