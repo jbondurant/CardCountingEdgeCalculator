@@ -71,6 +71,10 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
    fix is in Settings → Pages, signed in: remove the custom domain and add it again, which starts
    the certificate request, then tick Enforce HTTPS once it is issued. The website push waits
    for it; the push itself is prepared locally (card-counting at 71e0e1c, a fast-forward of main).
+   *Working later on 20 October:* a Let's Encrypt certificate for justinbondurantdavid.com and
+   www.justinbondurantdavid.com was issued at 15:48 UTC (valid to 18 January 2027). Both names
+   pass the certificate check, and www redirects to the bare domain over HTTPS. Plain HTTP still
+   serves the page without redirecting, so Enforce HTTPS is not on yet.
 3. **Add a LICENSE, a README and CITATION.cff, and call the page version 1.0 instead of "draft".**
    The licence is his choice; the plan's default is MIT for code and CC BY 4.0 for data. Correct
    the stale status lines a model reads first, such as PLAN_PAGE.md:12's "Nothing here is built
