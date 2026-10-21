@@ -500,6 +500,37 @@ Open:
      the home page's link and blurb in Justin's words; his decision on the run files' absolute
      paths (/Users/justinbondurant/…) printed in the downloads section; and the Release, which has
      to come before the wrap-up deletes the state files and results.ser.
+   - **Before the push, later on 20 October 2026.** Most of the blockers above are cleared:
+     - The cited commits are on GitHub (site-integration and custom-count-design, Justin's yes).
+     - HTTPS works: GitHub issued justinbondurantdavid.com's certificate that day (TRUST.md 2.2).
+     - The Release was decided against.
+     - Justin approved the home-page blurb as drafted and asked that its repository link open
+       site-integration ("blurb as is, link to site-integration, fix the paths").
+
+     **The paths are fixed:**
+     - The page printed 3,261 full paths of his computer.
+     - c0f0eb9 and 7954b8e name every file from the repository's folder, and a worktree's file
+       as BRANCH:PATH.
+     - The page says files under runs/ are not published.
+     - A page holding a home folder's path or the repository's own folder is refused.
+     - The page was rebuilt from the same inputs (runs/site-1946b3d) into runs/page-7954b8e
+       (data/manifest.json 5c794870…cbb91).
+     - site/compare_builds.py checks that build against runs/page-832ef3e
+       (runs/site-runs/page-7954b8e.log). The two data files are byte for byte the same once
+       renamed. Every other file is too, once the hashes are read as the new build's and the five
+       edits in verification/page-paths-2026-10-20.expect.jsonl are made. The five committed
+       files the page names are found by those names, on GitHub too.
+
+     **How it was checked:**
+     - Three read-only reviewers looked at c0f0eb9 (workflow wf_007c933a-3b3). They found the
+       ledger named without its branch, the false sentence about runs/, a comparison that could
+       not fail, and gaps in the guard and the tests; 7954b8e fixes them.
+     - One reviewer independently compared all 3,045 figures with every field, and found
+       nothing changed but the names.
+
+     **On the website branch, not pushed:** the website's card-counting branch holds the rebuilt
+     page (c7ed6cf), .nojekyll (71e0e1c) and the home page's entry (6b41152). Pushing it to
+     main is a fast-forward of origin/main and waits for Justin's yes on the list.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the

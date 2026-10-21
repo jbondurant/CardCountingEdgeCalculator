@@ -80,11 +80,18 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
    the stale status lines a model reads first, such as PLAN_PAGE.md:12's "Nothing here is built
    yet".
 4. **Fix the manifest:**
-   - paths relative, not /Users/justinbondurant/…;
+   - paths relative, not /Users/justinbondurant/…; *done 20 October 2026 (c0f0eb9, 7954b8e;
+     Justin: "fix the paths"):* every file is named from the repository's folder, a worktree's
+     file as BRANCH:PATH, and the page says files under runs/ are not published. The page was
+     rebuilt from the same inputs into runs/page-7954b8e, and site/compare_builds.py finds its
+     data files byte for byte 832ef3e's once renamed;
    - commits in full;
    - four labels corrected (the ledger's "commit" is a blob; report-final is credited to 1946b3d;
      part 2's simulator summaries to fe9a91e, which 0f087c4 made; the inputs' directory is
-     runs/site-1946b3d);
+     runs/site-1946b3d, *done with the paths*). The reviewers of the path fix found the same
+     kind of thing in general: the Commit column gives the commit of the input that read a file,
+     not of the run that wrote it, while the hash box says "That the commits named produced the
+     files is my statement";
    - the seeds, the Java build, the machine, the thread counts and the jars' hashes added.
 5. **Add the missing disclosures:**
    - deviation 1, which SIM_CHECK.md requires the page to list;
