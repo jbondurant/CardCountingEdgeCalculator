@@ -26,7 +26,9 @@ import java.util.regex.Pattern;
  * of its 16 lines named files the page did not have, two of them both "results.ser".
  *
  * What a hash proves is narrow, and the manifest says so in its own words: that a file is, byte
- * for byte, the file listed. That the listed commit made it is the publisher's statement. Running
+ * for byte, the file listed. That the figures were read from it is the publisher's statement; the
+ * commit beside it is the one its input names, not always the one that made it (22 October 2026,
+ * after the review of the page's paths). Running
  * the code again tests the figures, not the hashes of the saved results: each .ser records its
  * own run times (SystemScorer's Result.seconds, FullIndexFit's PassRecord.wallSeconds), so a new
  * run writes other bytes even when every figure comes back the same. Whether the code is right is
@@ -61,7 +63,9 @@ final class SiteManifest {
             + "The files under served ship with the page, and SHA256SUMS lists them, so shasum -a 256 -c SHA256SUMS "
             + "checks them. The hashes under recorded were taken of the run files the figures were read from. "
             + "Those files do not ship with the page, so their hashes cannot be checked from it alone. "
-            + "That the listed commits produced these files is the publisher's statement. "
+            + "That these are the files the figures were read from is the publisher's statement. The commit "
+            + "beside each is the one its input names, usually the run that made the figures read from it; it is "
+            + "not always the commit that made the file, and for the ledger it is the git blob of the registration. "
             + "A hash says nothing about whether the code is right; a bug is hashed just as faithfully. "
             + "Each file is named from the repository's folder. Files under runs/ are run outputs: they are "
             + "kept out of the repository and are not published. A name with a branch before a colon, such as "
@@ -149,7 +153,7 @@ final class SiteManifest {
             md.append("| ").append(m.get("path")).append(" | ").append(m.get("bytes")).append(" | `").append(m.get("sha256"))
                     .append("` | SiteBuild |\n");
         }
-        md.append("\n## Recorded\n\n| File | Bytes | SHA-256 | Commit |\n|---|---|---|---|\n");
+        md.append("\n## Recorded\n\n| File | Bytes | SHA-256 | Input's commit |\n|---|---|---|---|\n");
         for (Map<String, Object> a : recorded.values()) {
             md.append("| ").append(a.get("path")).append(" | ").append(a.getOrDefault("bytes", "")).append(" | `")
                     .append(a.getOrDefault("sha256", "")).append("` | ").append(a.get("commit")).append(" |\n");
