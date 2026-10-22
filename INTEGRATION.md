@@ -533,6 +533,20 @@ Open:
      **On the website branch, not pushed:** the website's card-counting branch holds the rebuilt
      page (c7ed6cf), .nojekyll (71e0e1c) and the home page's entry (6b41152). Pushing it to
      main is a fast-forward of origin/main and waits for Justin's yes on the list.
+   - **22 October 2026, Justin: "let's fix the 2 things".**
+     - Enforce HTTPS is on (TRUST.md 2.2).
+     - The recorded files' column is "Input's commit". Neither the page nor the manifest says
+       any more that those commits made the files (aefd014, TRUST.md 2.4).
+     - The page was rebuilt into runs/page-aefd014, dated 22 October.
+     - site/compare_builds.py finds it the same as runs/page-7954b8e but for that date and the
+       wording in verification/page-commit-wording-2026-10-22.expect.jsonl
+       (runs/site-runs/page-aefd014-compare.log). The 12 Site* test classes pass (83 tests).
+
+     **What would be pushed:** the website's card-counting branch keeps the first copy of the
+     page (59f04c4), with the full paths, in its history. So the push candidate is
+     publish-card-counting, built on origin/main 4f49a08. It holds .nojekyll (1cda2dc), the home
+     page's entry (7be5d61), the page at 7954b8e (820f906) and at aefd014 (7862a1d). None of its
+     patches holds /Users/.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the

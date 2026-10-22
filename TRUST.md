@@ -74,7 +74,9 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
    *Working later on 20 October:* a Let's Encrypt certificate for justinbondurantdavid.com and
    www.justinbondurantdavid.com was issued at 15:48 UTC (valid to 18 January 2027). Both names
    pass the certificate check, and www redirects to the bare domain over HTTPS. Plain HTTP still
-   serves the page without redirecting, so Enforce HTTPS is not on yet.
+   serves the page without redirecting, so Enforce HTTPS is not on yet. *Enforce HTTPS ticked 22
+   October 2026* (Justin: "let's fix the 2 things"; Settings → Pages, signed in, "DNS check
+   successful"): uncached paths redirect to https at once, cached ones within GitHub's 10 minutes.
 3. **Add a LICENSE, a README and CITATION.cff, and call the page version 1.0 instead of "draft".**
    The licence is his choice; the plan's default is MIT for code and CC BY 4.0 for data. Correct
    the stale status lines a model reads first, such as PLAN_PAGE.md:12's "Nothing here is built
@@ -91,7 +93,11 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
      runs/site-1946b3d, *done with the paths*). The reviewers of the path fix found the same
      kind of thing in general: the Commit column gives the commit of the input that read a file,
      not of the run that wrote it, while the hash box says "That the commits named produced the
-     files is my statement";
+     files is my statement". *Wording fixed 22 October 2026 (aefd014):* the column is headed
+     "Input's commit", and the page and manifest say what it holds and that it is not always the
+     commit that made the file. Most run files record their own commit (the simulator summaries'
+     simulatorCommit, the .ser files, the risk, spreads, ceiling and key-edge JSON); carrying it
+     into the column means running every adapter again, not done;
    - the seeds, the Java build, the machine, the thread counts and the jars' hashes added.
 5. **Add the missing disclosures:**
    - deviation 1, which SIM_CHECK.md requires the page to list;
