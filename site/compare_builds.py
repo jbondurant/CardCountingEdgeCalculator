@@ -5,7 +5,9 @@
 OLD and NEW are two builds' folders (card-counting/'s files), ROOT the repository's folder, INPUTS
 the inputs' folder in the repository (runs/site-1946b3d), OLD_COMMIT and NEW_COMMIT the two builds'
 commits in full, and EXPECT a file of the text edits the change meant to make, one JSON object a
-line: {"file": "index.html", "old": "...", "new": "..."}.
+line: {"file": "index.html", "old": "...", "new": "..."}. An edit with "all": true is a token of the
+build itself, such as its date, read as NEW's everywhere it occurs in the file named ("*": every
+file, the data files too), before anything is compared.
 
 Written apart from SiteData.read, it renames OLD's files by the naming rule: ROOT's folder left out
 of every path, a file of a worktree under ROOT/.worktrees named BRANCH:PATH by the branch git
@@ -142,6 +144,9 @@ def main(argv):
         if name not in files_old:
             continue
         a = rename(open(os.path.join(old, name), encoding="utf-8").read(), root, branches, inputs, old_commit, new_commit)
+        for e in edits:
+            if e.get("all") and e["file"] in ("*", name):
+                a = a.replace(e["old"], e["new"])
         b = open(os.path.join(new, name), encoding="utf-8").read()
         if name in ("data/results.json", "data/results.csv"):
             if a == b:
@@ -160,7 +165,7 @@ def main(argv):
             a = a.replace(">%s<" % grouped(s["bytes"]), ">%s<" % grouped(t["bytes"]))
         a = a.replace(man_old, man_new)
         for e in edits:
-            if e["file"] == name:
+            if e["file"] == name and not e.get("all"):
                 n = a.count(e["old"])
                 if n != 1:
                     print("EXPECTED EDIT NOT FOUND ONCE (%d times) in %s: %r" % (n, name, e["old"][:120]))
