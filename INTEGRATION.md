@@ -547,6 +547,14 @@ Open:
      publish-card-counting, built on origin/main 4f49a08. It holds .nojekyll (1cda2dc), the home
      page's entry (7be5d61), the page at 7954b8e (820f906) and at aefd014 (7862a1d). None of its
      patches holds /Users/.
+   - **Published 23 October 2026, Justin: "yes".**
+     - publish-card-counting was pushed to the website's main (4f49a08..7862a1d), and
+       site-integration here (76b17ac..2db5a5e). Both were fast-forwards.
+     - GitHub Pages deployed 7862a1d, and https://justinbondurantdavid.com/card-counting/ is
+       live.
+     - All 48 files fetched from it are byte for byte runs/page-aefd014; its SHA256SUMS passes on
+       the downloads; MANIFEST.md is served as markdown; the home page is the pushed index.html.
+     - Plain HTTP redirects to HTTPS.
    - **What rows 4, 6 and 7 found.** Row 4's gate (Hi-Lo at 70%) exported and passed
      (runs/replay/gate0-304901c.log:14, 32). On c06c061's replay (runs/replay/c06c061-0e0920d.log),
      6 of the 15 full-play rows were checked (largest relative difference 0.0) and 9 refused; the

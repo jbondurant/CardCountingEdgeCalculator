@@ -61,7 +61,9 @@ Most of that is built here, but on 20 October it existed only on Justin's laptop
    with Justin's yes on the exact list:* the branches site-integration (to 76b17ac, 307 commits) and
    custom-count-design (to 428ec51, 83 commits), new on GitHub, main untouched, no tags. Every
    commit the page cites is now on a GitHub branch, and the page's link to c06c061 opens. The
-   tags are still to do.
+   tags are still to do. *Published 23 October 2026* with Justin's yes: the page is live at
+   https://justinbondurantdavid.com/card-counting/, byte for byte runs/page-aefd014, and the
+   path fix and wording commits are on site-integration (to 2db5a5e).
 2. **Fix HTTPS:** GitHub Pages settings and DNS, Justin's account (PLAN_PAGE.md 2.1). Until then a
    fetcher gets a certificate error and reads nothing. *Diagnosed 20 October 2026:* DNS is right
    (apex A and AAAA are GitHub's four addresses each, www is a CNAME to jbondurant.github.io,
