@@ -284,7 +284,8 @@ col check
 col key
 col z|s2
 col verdict
-}}{{/if}}
+}}
+<p>One change was made to the check after its rules were fixed, and its rules ask that it be listed here: deviation 1, written down with its reason on 18 October 2026 (<a href="https://github.com/jbondurant/CardCountingEdgeCalculator/commit/46d76a5e0447424d26722f5c743d1b3a28ee640b"><code>46d76a5</code></a>), before part 2's pilot, and approved by me on 19 October 2026 (<a href="https://github.com/jbondurant/CardCountingEdgeCalculator/commit/db57070076056ff01836f2d5d47f591d458eb17b"><code>db57070</code></a>). In full play the engine values a split hand under the ranking of the play the fit kept, which can rank a deal differently from the play the dealt hand uses, and the strategy files the simulator reads held only one ranking. They now carry split lines with the second ranking, the simulator reads them, and test D5 checks those split hands too. It applies to part 2 only. No figure, seed, size rule or threshold changed, the engine's figures were always computed this way, and part 1 stands as it was run.</p>{{/if}}
 {{#if has:sim.planted}}<p>Bugs planted on purpose in the simulator, each run beside a clean control: {{sim.planted_caught|n}} of {{sim.planted|n}} were caught.</p>
 {{table:sim_planted
 head Run|Exact checks failed|Largest abs. z|Caught|By the z tests alone
